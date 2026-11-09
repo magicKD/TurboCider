@@ -919,10 +919,10 @@ struct StudioView: View {
                     Text("关闭时保留放大后尺寸；开启时用双线性缩放回基准画布。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-            } else if studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" {
-                LabeledContent("采样步数", value: "3 步（FastWan DMD 固定）")
+            } else if studio.draft.isWan22Video {
+                LabeledContent("采样步数", value: studio.draft.wan22FixedSteps == 4 ? "4 步（quanhaol Turbo 固定）" : "3 步（FastWan DMD 固定）")
                     .accessibilityIdentifier("wan22FixedSteps")
-                Text("实验性全注意力蒸馏模型；使用重新加噪调度，不是普通三步 Euler。")
+                Text("实验性全注意力蒸馏模型；使用重新加噪调度，不是普通 Euler。")
                     .font(.caption2).foregroundStyle(.secondary)
                 Text("提示词最多 1023 个内容 token；超过 511 时使用扩展上下文，与 FastVideo 默认的 512 token 有差异。")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -989,13 +989,13 @@ struct StudioView: View {
                 Text("LTX 会使用 64 的倍数；480/720 高度分别向下对齐为 448/704。121 帧约 5.04 秒。")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
-                HStack { ForEach(studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" ? [256, 512, 640, 768] : [256, 512, 768, 1024], id: \.self) { size in
+                HStack { ForEach(studio.draft.isWan22Video ? [256, 512, 640, 768] : [256, 512, 768, 1024], id: \.self) { size in
                     Button("\(size)") { studio.draft.width = size; studio.draft.height = size }
                         .font(.caption).disabled((qwenCanvasLocked && size != 512) ||
                             (studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" && size > 512) ||
-                            (studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" && size > 512 && ProcessInfo.processInfo.physicalMemory < (64 * 1024 * 1024 * 1024)))
+                            (studio.draft.isWan22Video && size > 512 && ProcessInfo.processInfo.physicalMemory < (64 * 1024 * 1024 * 1024)))
                 } }
-                if studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" {
+                if studio.draft.isWan22Video {
                     Text("支持宽高分别输入 128–768 的 32 倍数；超过 512 需要至少 64 GiB 统一内存。高分辨率不保证人物一致性。")
                         .font(.caption2).foregroundStyle(.secondary)
                     if (studio.draft.width > 512 || studio.draft.height > 512) && studio.draft.wan22TinyVAEDecoder == "original" {
@@ -1040,7 +1040,7 @@ struct StudioView: View {
                     Toggle("生成音频", isOn: $studio.draft.audio).controlSize(.small)
                 } else { Text("当前执行器输出无音轨视频。").font(.caption).foregroundStyle(.secondary) }
             }
-            if studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" && studio.draft.operation == "video.image" {
+            if studio.draft.isWan22Video && studio.draft.operation == "video.image" {
                 Divider()
                 Text("首帧条件固定为 1；后续帧会正常生成。")
                     .font(.caption2).foregroundStyle(.secondary)

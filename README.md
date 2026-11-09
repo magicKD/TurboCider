@@ -100,6 +100,7 @@ For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`.
 | LTX 2.5 Distilled | Text-to-video, image-to-video and optional audio output; backend/configuration limits apply |
 | [LTX-Video 0.9.8 2B Distilled](docs/public/LTX_VIDEO_098.md) | Experimental GPU-only image-to-video; 8-step single-scale or 7+3-step multiscale, 24 fps, up to 121 frames; no audio, LoRA, streaming or ANE yet |
 | Wan 2.2 TI2V 5B FastWan | Experimental GPU-only image-to-video; fixed three-step DMD, up to 768×768 and 97 frames at 24 fps; above 512 requires 64 GiB unified memory; Super or full video VAE |
+| Wan 2.2 TI2V 5B quanhaol Turbo | Experimental GPU-only image-to-video; separate fixed four-step shift-8 schedule and Kijai FP16-converted checkpoint; same canvas, frame and VAE limits as FastWan; verify model weight permissions |
 | Wan 2.1 1.3B QAD | Native three-step video generation; offline-converted assets and verified premerged LoRA required |
 
 `turbocider models` and request `plan` report the executable capabilities. LoRA, input and acceleration options vary by model. See the [model and request reference](docs/public/USAGE.md#model-capabilities), [Qwen guide](docs/public/QWEN_IMAGE_21.md) and [GPU/ANE acceleration status](docs/status/acceleration.md).

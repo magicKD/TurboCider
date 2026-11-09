@@ -319,6 +319,23 @@ struct StudioDraft: Codable, Sendable {
     var loras: [StudioLoRA] = []
     var modelLoRAs: [String: [StudioLoRA]] = [:]
     var initImageID: UUID?
+    var isWan22Video: Bool {
+        ["wan2.2-ti2v-5b-fastwan", "wan2.2-ti2v-5b-quanhaol"].contains(modelID)
+    }
+    var wan22FixedSteps: Int { modelID == "wan2.2-ti2v-5b-quanhaol" ? 4 : 3 }
+    mutating func reuseWan22SiblingInstallation() {
+        guard isWan22Video, modelPaths[modelID, default: ""].isEmpty else { return }
+        let sibling = modelID == "wan2.2-ti2v-5b-quanhaol" ? "wan2.2-ti2v-5b-fastwan" : "wan2.2-ti2v-5b-quanhaol"
+        guard let path = modelPaths[sibling], !path.isEmpty else { return }
+        let transformer = modelID == "wan2.2-ti2v-5b-quanhaol" ?
+            "diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors" :
+            "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors"
+        let root = URL(fileURLWithPath: path)
+        let files = [transformer, "text_encoders/umt5_xxl_fp16.safetensors", "vae/wan2.2_vae.safetensors", "tokenizer/tokenizer.json"]
+        if files.allSatisfy({ (try? root.appendingPathComponent($0).resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }) {
+            modelPaths[modelID] = path
+        }
+    }
     init() {}
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode, ltx098ResizeToBase
@@ -846,11 +863,11 @@ struct StudioDraft: Codable, Sendable {
                 }
             }
         }
-        if modelID == "wan2.2-ti2v-5b-fastwan" {
+        if isWan22Video {
             guard width >= 128, height >= 128, width <= 768, height <= 768,
                   width % 32 == 0, height % 32 == 0, (5...97).contains(frames), frames % 4 == 1,
-                  fps == 24, steps == 3, strength == 1 else {
-                throw NativeFailure(message: "Wan2.2 实验版使用 128–768 的 32 倍数画布、5–97 帧（4n+1）、24 fps、固定三步和首帧强度 1。")
+                  fps == 24, steps == wan22FixedSteps, strength == 1 else {
+                throw NativeFailure(message: "Wan2.2 实验版使用 128–768 的 32 倍数画布、5–97 帧（4n+1）、24 fps、固定 \(wan22FixedSteps) 步和首帧强度 1。")
             }
             guard (width <= 512 && height <= 512) || ProcessInfo.processInfo.physicalMemory >= (64 * 1024 * 1024 * 1024) else {
                 throw NativeFailure(message: "Wan2.2 超过 512 的画布目前仅在 64 GiB 或更大统一内存设备上开放；完整 VAE 更占内存。")
@@ -1908,6 +1925,7 @@ final class StudioState: ObservableObject {
         draft.rememberQwen21DMD2Selection()
         draft.modelLoRAs[draft.modelID] = draft.loras
         draft.modelID = id
+        draft.reuseWan22SiblingInstallation()
         draft.operation = (model.executor_operations ?? model.operations).first ??
             (model.isVideo ? "video.generate" : "image.generate")
         // Image work starts small; explicit dimensions in saved drafts/history
@@ -1917,7 +1935,7 @@ final class StudioState: ObservableObject {
         draft.steps = model.default_steps; draft.frames = model.default_frames
         draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
         draft.audio = model.default_audio ?? false
-        if id == "wan2.2-ti2v-5b-fastwan" { draft.strength = 1 }
+        if draft.isWan22Video { draft.strength = 1 }
         draft.ltxBackend = "auto"; draft.ltxFastAV = true
         draft.ltxVideoAttentionBatch = false
         draft.ltxAccelerationMode = "quality"
@@ -2433,7 +2451,7 @@ final class StudioState: ObservableObject {
         }
         draft.qwen21DiTW8A8 = request.qwen21_dit_w8a8 ?? false
         draft.qwen21DiTSmoothQuantConvRot = request.qwen21_dit_smoothquant_convrot ?? false
-        if request.model == "wan2.2-ti2v-5b-fastwan" {
+        if ["wan2.2-ti2v-5b-fastwan", "wan2.2-ti2v-5b-quanhaol"].contains(request.model) {
             draft.wan22TinyVAEDecoder = request.tiny_vae?.decoder ?? "original"
         } else {
             draft.tinyVAEEncoder = request.tiny_vae?.encoder ?? "original"

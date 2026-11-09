@@ -6,6 +6,7 @@
 #include "../../models/qwen21/native_route.hpp"
 #include "../../models/qwen21/viggle_adapter.hpp"
 #include "../../models/qwen21/dmd2_adapter.hpp"
+#include "../../models/wan22/identifiers.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
@@ -128,7 +129,7 @@ static NSString *executed_encoder_precision(const RunResult& result) {
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
     if (request.model == "seedvr2-3b") return @"embedded_conditioning_no_text_encoder";
     if (request.model == "ltx-video-0.9.8-distilled") return @"t5xxl_gpu_only";
-    if (request.model == "wan2.2-ti2v-5b-fastwan") return @"umt5_xxl_gpu_only";
+    if (wan22::is_model(request.model)) return @"umt5_xxl_gpu_only";
     if (request.model == "qwen-image-2.1")
         return hybrid ? @"qwen3_vl_language_runtime_ffn_gpu_complement" : @"qwen3_vl_deepstack_gpu_only";
     if (ltx_gemma4_encoder(request))
@@ -313,7 +314,7 @@ static NSString *encoder_backend_label(const RunResult &result) {
     return encoder_backend_label(result.request, encoder_executed(result));
 }
 static NSString *encoder_precision_label(const RunResult &result) {
-    if (result.request.model == "ltx-video-0.9.8-distilled" || result.request.model == "wan2.2-ti2v-5b-fastwan")
+    if (result.request.model == "ltx-video-0.9.8-distilled" || wan22::is_model(result.request.model))
         return @"bf16_weights_fp32_activations";
     if(result.request.model=="qwen-image-2.1" && result.precision.find("q4_k_m_text")!=std::string::npos)
         return @"q4_k_m_affine_fp16_io";
@@ -339,7 +340,7 @@ static NSString *encoder_weight_validation_label(const Request &request,
     if (request.model == "ltx-video-0.9.8-distilled")
         return executed ? @"native T5-XXL checkpoint loaded directly"
                         : @"native T5-XXL checkpoint required at execution";
-    if (request.model == "wan2.2-ti2v-5b-fastwan")
+    if (wan22::is_model(request.model))
         return executed ? @"native UMT5-XXL checkpoint loaded directly"
                         : @"native UMT5-XXL checkpoint required at execution";
     if (request.model == "qwen-image-2.1")
@@ -745,7 +746,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"encoder_backend" : encoder_backend_label(r, encoder_hybrid),
         @"encoder_gpu_graph" : encoder_gpu_graph_label(r, encoder_hybrid),
         @"encoder_precision" : r.model == "seedvr2-3b" ? @"not_applicable" :
-                                (r.model == "ltx-video-0.9.8-distilled" || r.model == "wan2.2-ti2v-5b-fastwan") ? @"bf16_weights_fp32_activations" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
+                                (r.model == "ltx-video-0.9.8-distilled" || wan22::is_model(r.model)) ? @"bf16_weights_fp32_activations" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
                                                 : @"bf16",
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),

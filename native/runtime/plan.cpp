@@ -4,6 +4,7 @@
 #include "../models/qwen21/checkpoint_recipe.hpp"
 #include "../models/qwen21/memory_policy.hpp"
 #include "../models/qwen21/native_route.hpp"
+#include "../models/wan22/identifiers.hpp"
 #include <set>
 #include <cmath>
 #include <algorithm>
@@ -268,10 +269,12 @@ static ExecutionPlan make_plan_impl(
         // this remains a heuristic, not an allocator-enforced limit.
         plan.memory_estimate_bytes = (12ull << 30) +
             uint64_t(r.width) * r.height * r.frames * (hybrid ? 1024 : 1408);
-    else if (r.model == "wan2.2-ti2v-5b-fastwan")
+    else if (wan22::is_model(r.model)) {
         // Conservative heuristic only. The 512x512x97 native component run
         // peaked around 44 GiB process footprint without text encoding.
-        plan.memory_estimate_bytes = (38ull << 30) + uint64_t(r.width) * r.height * r.frames * 384;
+        plan.memory_estimate_bytes = (38ull << 30) + uint64_t(r.width) * r.height * r.frames * 384 +
+            (device_info().physical_memory >= (64ull << 30) ? (384ull << 20) : 0ull);
+    }
     else if (r.model == "seedvr2-3b")
         // Resident checkpoint bank, causal histories, sliced VAE activations
         // and whole-clip DiT. A conservative heuristic, not an enforced cap.

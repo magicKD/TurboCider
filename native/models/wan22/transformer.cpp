@@ -59,6 +59,7 @@ void Transformer::load(const std::filesystem::path &path, TransformerConfig conf
     blocks_.clear();
     top_.load_file(path);
     top_.erase_prefix("blocks.");
+    if (config.layout == CheckpointLayout::comfy) prepare_comfy_weights(top_, false);
     for (const auto *name : {"patch_embedding.weight", "condition_embedder.time_embedder.linear_1.weight",
                               "condition_embedder.time_embedder.linear_2.weight", "condition_embedder.time_proj.weight",
                               "condition_embedder.text_embedder.linear_1.weight", "condition_embedder.text_embedder.linear_2.weight",
@@ -73,7 +74,7 @@ void Transformer::load(const std::filesystem::path &path, TransformerConfig conf
     blocks_.reserve(config.layers);
     for (int index = 0; index < config.layers; ++index) {
         auto block = std::make_unique<Block>();
-        block->load(path, index, {config.hidden, config.heads, config.intermediate, config.epsilon});
+        block->load(path, index, {config.hidden, config.heads, config.intermediate, config.epsilon, config.layout});
         blocks_.push_back(std::move(block));
     }
 }
@@ -87,8 +88,21 @@ Tensor Transformer::prepare_text(const Tensor &text, const Trace &trace) const {
     return context;
 }
 
+std::vector<CrossAttentionKV> Transformer::prepare_cross_attention(const Tensor &context,
+                                                                   std::atomic<bool> &cancelled) const {
+    require(!blocks_.empty(), "Wan2.2 transformer is not loaded");
+    std::vector<CrossAttentionKV> result;
+    result.reserve(blocks_.size());
+    for (const auto &block : blocks_) {
+        checkpoint(cancelled);
+        result.push_back(block->prepare_cross_attention(context));
+    }
+    return result;
+}
+
 Tensor Transformer::forward(const Tensor &latents, const Tensor &context, float timestep,
-                            const Event &event, std::atomic<bool> &cancelled, const Trace &trace) const {
+                            const Event &event, std::atomic<bool> &cancelled, const Trace &trace,
+                            const std::vector<CrossAttentionKV> *cached_cross) const {
     const auto &c = config_;
     require(!blocks_.empty() && latents.ndim() == 5 && latents.shape(0) == 1 && latents.shape(1) == c.channels &&
                 latents.shape(2) >= 2 && latents.shape(3) > 0 && latents.shape(3) % 2 == 0 &&
@@ -96,6 +110,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &context, float 
                 context.ndim() == 3 && context.shape(0) == 1 && context.shape(2) == c.hidden &&
                 context.dtype() == mx::bfloat16 && std::isfinite(timestep) && timestep >= 0 && timestep <= 1000,
             "invalid Wan2.2 latent, context or timestep");
+    require(!cached_cross || cached_cross->size() == blocks_.size(), "invalid Wan2.2 cross-attention cache size");
     const int f = latents.shape(2), h = latents.shape(3), w = latents.shape(4);
     const int first_frame_tokens = (h / 2) * (w / 2), token_count = f * first_frame_tokens;
     auto patch = mx::reshape(latents, {1, c.channels, f, h / 2, 2, w / 2, 2});
@@ -117,7 +132,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &context, float 
     for (int index = 0; index < c.layers; ++index) {
         checkpoint(cancelled);
         event("wan22_dit_block", index, c.layers);
-        hidden = blocks_[index]->forward(hidden, context, modulation, cosine, sine, first_frame_tokens);
+        hidden = blocks_[index]->forward(hidden, context, modulation, cosine, sine, first_frame_tokens, {},
+                                         cached_cross ? &cached_cross->at(index) : nullptr);
         mx::eval(hidden);
         if (trace) trace("block_" + std::to_string(index), hidden);
     }

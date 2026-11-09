@@ -281,3 +281,82 @@ The 768-pixel ceiling is a conservative experimental App constraint, not the
 FastWan training geometry. The official Wan2.2 TI2V-5B example uses 1280×704
 or 704×1280, and the FastWan model card specifies 121×704×1280 training;
 neither geometry has been validated on this Mac in this implementation.
+
+## Quanhaol four-step candidate
+
+`quanhaol/Wan2.2-TI2V-5B-Turbo` is a separate full-model checkpoint, not
+the FastWan three-step model or a LoRA. The model card links to Kijai's
+ComfyUI-compatible FP16 conversion. The evaluated file, pinned at Kijai
+revision `0965236c19506478103b9709085db130c2742dbe`, has SHA-256
+`fa70f4f760bd97ed435e2a8206f0b459192d9955cd60414e2815ed0c5d147f16`.
+Its tensors are a mixture of FP16 and FP32 and are converted to BF16 for the
+native graph; it is not the author's original 19,999,421,147-byte PyTorch
+checkpoint. The model card does not specify a weight license. The upstream
+code repository declares CC BY-NC-SA 4.0; that does not establish separate
+permission for the weights. Confirm the applicable terms before use.
+
+The I2V reference uses four model calls with shift 8 and table indices
+1000, 750, 500 and 250: sigmas 1, 0.96, 8/9 and 8/11. The published I2V
+path narrows the model timesteps through BF16 before converting to integers,
+giving 1000, 960, 888 and 728. Its re-noising is also BF16. The native
+candidate follows those choices, but uses the existing seeded CPU FP32 noise
+generator followed by BF16 conversion rather than CUDA BF16 random draws,
+and uses FP32 rather than upstream FP64 for the clean-latent calculation.
+This portrait's 526-token Comfy-style context also exceeds the upstream
+512-token text limit. Consequently it is not bit-identical to the original
+CUDA implementation.
+
+On the same portrait, input size, 526-token prompt and seed as above, the
+isolated native probe generated 512×512, 97 frames at 24 fps in **24.17 s**
+with Super, or **61.99 s** with the full VAE. The latter includes text,
+model loads, inference, video export and diagnostic latent/conditioning
+writes. A fresh isolated ComfyUI 0.39.0 MPS request using the same FP16
+conversion, full VAE, BF16 model computation, and a diagnostic four-step
+sampler completed in **151.35 s**, including export but excluding startup
+and hashes. ComfyUI used PyTorch 2.10.0 in an isolated dependency overlay;
+the prior FastWan run used PyTorch 2.12.1. Neither path is the original
+upstream CUDA pipeline, and the single probe and request are not a speed
+distribution or a universal performance guarantee.
+
+Visual inspection showed similar main sword movement between the native and
+ComfyUI four-step outputs, with differences in face, clothing and fine
+geometry. Their compressed-video YUV SSIM All was **0.9213**; this is an
+agreement measure, not a quality score. The four-step and FastWan samples
+also differed in expression and sword motion; neither kept the first-frame
+identity and hand/sword geometry perfectly. One image and one seed cannot
+establish which model is generally better. Local artifacts are under
+`outputs/wan22-quanhaol-portrait-*`; no private image or prompt is checked in.
+
+The same four-step portrait was generated at 768×768 with Super in **64.81 s**
+in the uncached isolated probe. Its face was more detailed but still changed
+relative to the input, and the sword and hands were not consistently stable.
+The source image was 512×512, and changing resolution also changes the noise
+shape; this is not a controlled estimate of identity improvement.
+
+The packaged desktop `StudioState`/`NativeJobStore` path subsequently ran
+the four-step 512×512 request with bundled Super and cross-attention reuse in
+**24.21 s**. It verified all 526 text tokens, four actual denoising calls,
+97 frames, and automatic reuse of a complete sibling FastWan model directory.
+The same packaged path took **64.68 s** at 768×768; a FastWan 512×512
+regression job in the same package took **18.36 s**. These are real embedded
+desktop jobs, not graphical-window click-throughs or repeated-run medians.
+
+## Cross-attention reuse experiment
+
+The text context is constant across denoising steps, so the native executor
+can compute each block's cross-attention key and value once per request.
+For the 526-token portrait at 512×512, two four-step paired probe timings
+were **22.185 / 22.186 s** for transformer load and denoising without reuse
+and **22.046 / 22.044 s** with reuse. One FastWan three-step pair was
+**16.634 / 16.556 s**. At 768×768 one four-step pair was **62.365 / 62.245 s**.
+The saved final latent tensors were bit-identical for the checked three-step
+512 and four-step 512/768 pairs. This small saving is device- and
+workload-specific; these are not complete App job medians.
+
+The probe's sampled process footprint increased by approximately 0.18 GB
+at 512 and 0.36 GB at 768 in the four-step tests. The cache is consequently
+enabled only on devices with at least 64 GiB unified memory; smaller systems
+retain the previous execution path. The plan adds 384 MiB of conservative
+headroom, and the result receipt identifies whether reuse ran. A separate
+two-block evaluation grouping experiment produced no material speedup on
+the tested 512 sample and was not enabled.

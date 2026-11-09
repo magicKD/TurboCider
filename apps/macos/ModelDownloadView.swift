@@ -50,7 +50,7 @@ struct ModelDownloadView: View {
         }
         if isPreset, let preset {
             var base = try preset.request(modelID: model.id, provider: downloadProvider, componentKind: componentKind == "all" ? nil : componentKind)
-            if !hasPinnedSource { base.revision = revision.isEmpty ? nil : revision }
+            if !hasPinnedSource { base.applyRevisionOverride(revision) }
             return try include.map { try base.subset(include: $0) } ?? base
         }
         return LibraryDownloadRequest(modelID: model.id, repository: repository.trimmingCharacters(in: .whitespacesAndNewlines), provider: provider,
@@ -133,7 +133,10 @@ struct ModelDownloadView: View {
                         DisclosureGroup("仓库与版本") {
                             VStack(alignment: .leading, spacing: 10) {
                                 TextField("仓库 owner/name", text: $repository).textFieldStyle(.roundedBorder).accessibilityIdentifier("downloadRepository")
-                                TextField("版本 · 留空使用来源默认版本", text: $revision).textFieldStyle(.roundedBorder)
+                                TextField("版本 · 留空使用配方或来源默认版本", text: $revision).textFieldStyle(.roundedBorder)
+                                if isPreset, let pinnedRevision = preset?.revision, revision.isEmpty {
+                                    Text("配方默认固定版本：\(pinnedRevision)").font(.caption2).foregroundStyle(.secondary)
+                                }
                                 Text("修改仓库后将使用该仓库的自定义文件选择；请核对模型兼容性。").font(.caption).foregroundStyle(.secondary)
                             }.padding(.top, 10)
                         }
@@ -194,6 +197,7 @@ struct ModelDownloadView: View {
             .onAppear {
                 presetID = presets.first(where: { $0.id == initialPresetID })?.id ?? presets.first?.id ?? "default"
                 repository = model.id == "z-image-turbo" ? ZImageVariant.repository : preset?.repository ?? ""
+                if model.id == "wan2.2-ti2v-5b-quanhaol" { provider = .huggingface }
                 library.message = nil
             }
             .onChange(of: presetID) { _, _ in

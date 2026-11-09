@@ -51,6 +51,7 @@ void Block::load(const std::filesystem::path &path, int index, BlockConfig confi
     config_ = config;
     weights_.clear();
     weights_.load_file(path, "blocks." + std::to_string(index) + ".");
+    if (config.layout == CheckpointLayout::comfy) prepare_comfy_weights(weights_, true);
     require(weights_.has("scale_shift_table") &&
                 weights_.at("scale_shift_table").shape() == mx::Shape{1, 6, config.hidden},
             "Wan2.2 modulation table is missing or incompatible");
@@ -68,8 +69,20 @@ void Block::load(const std::filesystem::path &path, int index, BlockConfig confi
     weights_.materialize();
 }
 
+CrossAttentionKV Block::prepare_cross_attention(const Tensor &context) const {
+    require(context.ndim() == 3 && context.shape(0) == 1 && context.shape(1) > 0 &&
+                context.shape(2) == config_.hidden && context.dtype() == mx::bfloat16,
+            "invalid Wan2.2 cross-attention context");
+    auto key = linear(weights_, context, "attn2.to_k");
+    key = mx::fast::rms_norm(key, weights_.at("attn2.norm_k.weight"), config_.epsilon);
+    auto value = linear(weights_, context, "attn2.to_v");
+    mx::eval(key, value);
+    return {key, value};
+}
+
 Tensor Block::forward(const Tensor &hidden, const Tensor &context, const Tensor &modulation,
-                      const Tensor &cosine, const Tensor &sine, int first_frame_tokens, const Trace &trace) const {
+                      const Tensor &cosine, const Tensor &sine, int first_frame_tokens, const Trace &trace,
+                      const CrossAttentionKV *cached_cross) const {
     const int dim = config_.hidden, heads = config_.heads, head_dim = dim / heads;
     require(hidden.ndim() == 3 && hidden.shape(0) == 1 && hidden.shape(1) > 0 && hidden.shape(2) == dim &&
                 hidden.dtype() == mx::bfloat16 && context.ndim() == 3 && context.shape(0) == 1 &&
@@ -82,6 +95,10 @@ Tensor Block::forward(const Tensor &hidden, const Tensor &context, const Tensor 
     require(cosine.shape() == mx::Shape{rows, head_dim} && sine.shape() == cosine.shape() &&
                 cosine.dtype() == mx::float32 && sine.dtype() == mx::float32,
             "invalid Wan2.2 rotary frequencies");
+    if (cached_cross)
+        require(cached_cross->key.shape() == context.shape() && cached_cross->value.shape() == context.shape() &&
+                    cached_cross->key.dtype() == context.dtype() && cached_cross->value.dtype() == context.dtype(),
+                "invalid Wan2.2 cross-attention cache");
     auto packed = modulation + mx::reshape(mx::astype(weights_.at("scale_shift_table"), hidden.dtype()), {1, 1, 6, dim});
     auto parameter = [&](int which) {
         auto entry = mx::squeeze(mx::slice(packed, {0, 0, which, 0}, {1, groups, which + 1, dim}), 2);
@@ -98,13 +115,14 @@ Tensor Block::forward(const Tensor &hidden, const Tensor &context, const Tensor 
     };
     auto attention = [&](const Tensor &query_input, const Tensor &memory, const std::string &prefix, bool rope) {
         const auto label = rope ? std::string("self") : std::string("cross");
+        const bool reuse = !rope && cached_cross && !trace;
         if (trace) trace(label + "_input", query_input);
         auto q = linear(weights_, query_input, prefix + ".to_q");
-        auto k = linear(weights_, memory, prefix + ".to_k");
-        auto v = linear(weights_, memory, prefix + ".to_v");
+        auto k = reuse ? cached_cross->key : linear(weights_, memory, prefix + ".to_k");
+        auto v = reuse ? cached_cross->value : linear(weights_, memory, prefix + ".to_v");
         if (trace) { trace(label + "_q", q); trace(label + "_k", k); trace(label + "_v", v); }
         q = mx::fast::rms_norm(q, weights_.at(prefix + ".norm_q.weight"), config_.epsilon);
-        k = mx::fast::rms_norm(k, weights_.at(prefix + ".norm_k.weight"), config_.epsilon);
+        if (!reuse) k = mx::fast::rms_norm(k, weights_.at(prefix + ".norm_k.weight"), config_.epsilon);
         if (trace) { trace(label + "_q_norm", q); trace(label + "_k_norm", k); }
         if (rope) {
             q = rotate(q, cosine, sine, heads);

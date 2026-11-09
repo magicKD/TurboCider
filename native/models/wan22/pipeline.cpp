@@ -3,8 +3,6 @@
 #include "tae_super.hpp"
 #include "../../components/diffusion/seeded_noise.hpp"
 
-#include <array>
-
 namespace tc::wan22 {
 namespace {
 Tensor condition_first_frame(const Tensor &value, const Tensor &first) {
@@ -50,29 +48,45 @@ GenerateResult Pipeline::generate(const Tensor &pixels, const Tensor &text, cons
         auto values = generator.normal(size_t(48) * f * h * w);
         return Tensor(values.data(), shape, mx::float32);
     };
+    const bool quanhaol = options.distillation == Distillation::quanhaol_4;
+    if (quanhaol) clean = mx::astype(clean, mx::bfloat16);
     auto latents = draw();
-    // FastVideo MLX reference's shift=5 warped DMD schedule; this is not
-    // equivalent to an ordinary three-step Euler sampler.
-    constexpr std::array<float, 3> sigmas{1.f, .9396722939424031f, .8452072538860105f};
+    if (quanhaol) latents = mx::astype(latents, mx::bfloat16);
+    const auto sigmas = denoising_sigmas(options.distillation);
+    const int steps = int(sigmas.size());
     const auto denoise_started = Clock::now();
     {
         Transformer transformer;
-        transformer.load(transformer_checkpoint_);
+        TransformerConfig config;
+        if (quanhaol) config.layout = CheckpointLayout::comfy;
+        transformer.load(transformer_checkpoint_, config);
         auto context = transformer.prepare_text(text);
         mx::eval(context);
-        for (int step = 0; step < 3; ++step) {
+        std::vector<CrossAttentionKV> cross;
+        if (options.cache_cross_attention) cross = transformer.prepare_cross_attention(context, cancelled);
+        for (int step = 0; step < steps; ++step) {
             checkpoint(cancelled);
-            event("wan22_denoise", step, 3);
+            event("wan22_denoise", step, steps);
             auto input = condition_first_frame(latents, clean);
             if (trace) trace("model_input_" + std::to_string(step), input);
             auto prediction = transformer.forward(mx::astype(input, mx::bfloat16), context,
-                                                  sigmas[step] * 1000.f, event, cancelled);
+                                                  transformer_timestep(options.distillation, step), event, cancelled, {},
+                                                  options.cache_cross_attention ? &cross : nullptr);
             if (trace) trace("prediction_" + std::to_string(step), prediction);
             auto denoised = condition_first_frame(input - mx::astype(prediction, mx::float32) * sigmas[step], clean);
+            if (quanhaol) denoised = mx::astype(denoised, mx::bfloat16);
             if (trace) trace("denoised_" + std::to_string(step), denoised);
-            if (step < 2) {
+            if (step + 1 < steps) {
                 auto fresh = draw();
-                latents = (1.f - sigmas[step + 1]) * denoised + sigmas[step + 1] * fresh;
+                if (quanhaol) {
+                    auto sigma = Tensor(sigmas[step + 1], mx::bfloat16);
+                    auto retained = (Tensor(1.f, mx::bfloat16) - sigma) * denoised;
+                    auto added = sigma * mx::astype(fresh, mx::bfloat16);
+                    mx::eval(retained, added);
+                    latents = retained + added;
+                } else {
+                    latents = (1.f - sigmas[step + 1]) * denoised + sigmas[step + 1] * fresh;
+                }
             } else latents = denoised;
             mx::eval(latents);
             if (trace) trace("step_" + std::to_string(step), latents);
@@ -101,7 +115,7 @@ GenerateResult Pipeline::generate(const Tensor &pixels, const Tensor &text, cons
     mx::eval(decoded);
     const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_started).count();
     checkpoint(cancelled);
-    event("wan22_denoise", 3, 3);
+    event("wan22_denoise", steps, steps);
     return {raw_latents, decoded, encode_seconds, denoise_seconds, decode_seconds};
 }
 

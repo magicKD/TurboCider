@@ -102,6 +102,10 @@ import Foundation
         let wan22 = inspect("wan2.2-ti2v-5b-fastwan", at: "wan22")
         try check(wan22.status == "files_present" && wan22.checkedWeightFiles == 3,
                   "Wan2.2 installation layout was rejected")
+        try tensor("wan22/diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors")
+        let quanhaol = inspect("wan2.2-ti2v-5b-quanhaol", at: "wan22")
+        try check(quanhaol.status == "files_present" && quanhaol.checkedWeightFiles == 3,
+                  "quanhaol Wan2.2 installation layout was rejected")
         try fm.removeItem(at: root.appendingPathComponent("wan22/vae/wan2.2_vae.safetensors"))
         try check(inspect("wan2.2-ti2v-5b-fastwan", at: "wan22").status == "incomplete",
                   "Wan2.2 without its full VAE was accepted")

@@ -48,6 +48,11 @@ struct LibraryDownloadRequest: Codable, Sendable {
         pinnedVariantID = try c.decodeIfPresent(String.self, forKey: .pinnedVariantID)
     }
 
+    /// An empty UI field leaves a preset's source revision unchanged.
+    mutating func applyRevisionOverride(_ value: String) {
+        if !value.isEmpty { revision = value }
+    }
+
     /// Narrow a preset to explicit source paths. Never turn an empty selection
     /// into the downloader's legacy "whole repository" convention.
     func subset(include selected: [String]) throws -> Self {

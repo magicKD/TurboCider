@@ -14,14 +14,21 @@
 int main(int argc, char **argv) {
     @autoreleasepool {
         try {
-            tc::require(argc == 7, "usage: wan22-resolution-probe MODEL_ROOT JOBS_JSON OUTPUT_DIR WIDTH HEIGHT super|full");
+            tc::require(argc >= 7 && argc <= 9, "usage: wan22-resolution-probe MODEL_ROOT JOBS_JSON OUTPUT_DIR WIDTH HEIGHT super|full [fastwan|quanhaol] [cross-kv]");
             const auto root = std::filesystem::absolute(argv[1]);
             const auto output = std::filesystem::absolute(argv[3]);
             const int width = std::stoi(argv[4]), height = std::stoi(argv[5]);
             const std::string decoder(argv[6]);
+            const std::string variant = argc >= 8 ? argv[7] : "fastwan";
+            bool cache_cross = false;
+            for (int i = 8; i < argc; ++i) {
+                if (std::string(argv[i]) == "cross-kv") cache_cross = true;
+                else tc::require(false, "invalid experimental probe option");
+            }
             tc::require(width >= 128 && height >= 128 && width <= 768 && height <= 768 &&
                             width % 32 == 0 && height % 32 == 0 &&
-                            (decoder == "super" || decoder == "full") && !std::filesystem::exists(output),
+                            (decoder == "super" || decoder == "full") &&
+                            (variant == "fastwan" || variant == "quanhaol") && !std::filesystem::exists(output),
                         "invalid test canvas, decoder or existing output directory");
             NSData *data = [NSData dataWithContentsOfFile:@(argv[2])];
             id jobs = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
@@ -63,11 +70,15 @@ int main(int argc, char **argv) {
             auto image = tc::load_image_center_crop_tensor(image_path.UTF8String, width, height);
             image = tc::mx::astype(tc::mx::expand_dims(tc::mx::transpose(image, {0, 3, 1, 2}), 2), tc::mx::bfloat16);
             tc::mx::eval(image);
-            tc::wan22::Pipeline pipeline(root / "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors",
+            const auto checkpoint = variant == "quanhaol" ? "diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors" :
+                                                          "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors";
+            tc::wan22::Pipeline pipeline(root / checkpoint,
                                          root / "vae/wan2.2_vae.safetensors");
             tc::wan22::GenerateOptions options;
             options.frames = frames;
             options.seed = [request[@"seed"] unsignedLongLongValue];
+            if (variant == "quanhaol") options.distillation = tc::wan22::Distillation::quanhaol_4;
+            options.cache_cross_attention = cache_cross;
             if (decoder == "super") options.tiny_decoder_checkpoint = root / "vae/taew2_2_super.safetensors";
             std::optional<tc::Tensor> first_latent;
             tc::wan22::Pipeline::Trace trace = [&](const std::string &name, const tc::Tensor &value) {
@@ -96,7 +107,9 @@ int main(int argc, char **argv) {
                         "encoded video geometry mismatch");
             const double elapsed = std::chrono::duration<double>(tc::Clock::now() - started).count();
             NSDictionary *report = @{@"width":@(width), @"height":@(height), @"frames":@(frames), @"fps":@(fps),
-                @"seed":@(options.seed), @"decoder":@(decoder.c_str()), @"valid_text_tokens":@(tokens.valid),
+                @"seed":@(options.seed), @"decoder":@(decoder.c_str()), @"variant":@(variant.c_str()),
+                @"cross_attention_cache":@(cache_cross),
+                @"valid_text_tokens":@(tokens.valid),
                 @"wall_seconds":@(elapsed), @"first_frame_vae_seconds":@(result.first_frame_vae_seconds),
                 @"transformer_and_denoise_seconds":@(result.transformer_and_denoise_seconds),
                 @"video_vae_seconds":@(result.video_vae_seconds), @"sampled_peak_footprint_bytes":@(peak_footprint),

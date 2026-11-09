@@ -10,6 +10,8 @@ import unittest
 LIBRARY = Path(os.environ.get("TURBOCIDER_NATIVE_LIBRARY", "/nonexistent")).resolve()
 MODEL = Path(os.environ.get("TURBOCIDER_WAN22_MODEL", "/nonexistent")).resolve()
 IMAGE = Path(os.environ.get("TURBOCIDER_WAN22_IMAGE", "/nonexistent")).resolve()
+VARIANT = os.environ.get("TURBOCIDER_WAN22_VARIANT", "fastwan")
+MODEL_ID = f"wan2.2-ti2v-5b-{VARIANT}"
 CALLBACK = C.CFUNCTYPE(None, C.c_char_p, C.c_void_p)
 
 
@@ -17,6 +19,7 @@ CALLBACK = C.CFUNCTYPE(None, C.c_char_p, C.c_void_p)
                      "native library, real Wan2.2 model and image required")
 class Wan22SessionSafetyTests(unittest.TestCase):
     def setUp(self):
+        self.assertIn(VARIANT, ("fastwan", "quanhaol"))
         self.lib = C.CDLL(str(LIBRARY))
         self.lib.tc_engine_create_model.argtypes = [C.c_char_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
         self.lib.tc_engine_generate.argtypes = [C.c_void_p, C.c_char_p, CALLBACK, C.c_void_p,
@@ -25,7 +28,7 @@ class Wan22SessionSafetyTests(unittest.TestCase):
         self.lib.tc_engine_free.argtypes = [C.c_void_p]
         self.lib.tc_string_free.argtypes = [C.c_void_p]
         self.engine, error = C.c_void_p(), C.c_void_p()
-        code = self.lib.tc_engine_create_model(b"wan2.2-ti2v-5b-fastwan", str(MODEL).encode(),
+        code = self.lib.tc_engine_create_model(MODEL_ID.encode(), str(MODEL).encode(),
                                                C.byref(self.engine), C.byref(error))
         message = self.consume(error)
         self.assertEqual(code, 0, message)
@@ -42,8 +45,8 @@ class Wan22SessionSafetyTests(unittest.TestCase):
         return result
 
     def request(self, path):
-        return dict(model="wan2.2-ti2v-5b-fastwan", operation="video.image", prompt="A fox walks slowly.",
-                    output=str(path), width=128, height=128, frames=9, fps=24, steps=3, seed=42,
+        return dict(model=MODEL_ID, operation="video.image", prompt="A fox walks slowly.",
+                    output=str(path), width=128, height=128, frames=9, fps=24, steps=4 if VARIANT == "quanhaol" else 3, seed=42,
                     audio=False, execution="gpu", residency="resident",
                     inputs=[dict(kind="image", role="first_frame", path=str(IMAGE), strength=1)])
 

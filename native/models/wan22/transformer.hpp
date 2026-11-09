@@ -13,6 +13,7 @@ struct TransformerConfig {
     int text_dim = 4096;
     int frequency_dim = 256;
     float epsilon = 1e-6f;
+    CheckpointLayout layout = CheckpointLayout::diffusers;
 };
 
 // Resident dense BF16 TI2V transformer. A separate session/pipeline owns
@@ -26,8 +27,10 @@ class Transformer {
     using Trace = std::function<void(const std::string &, const Tensor &)>;
     void load(const std::filesystem::path &, TransformerConfig = {});
     Tensor prepare_text(const Tensor &, const Trace &trace = {}) const;
+    std::vector<CrossAttentionKV> prepare_cross_attention(const Tensor &, std::atomic<bool> &) const;
     Tensor forward(const Tensor &latents, const Tensor &prepared_text, float timestep,
-                   const Event &, std::atomic<bool> &, const Trace &trace = {}) const;
+                   const Event &, std::atomic<bool> &, const Trace &trace = {},
+                   const std::vector<CrossAttentionKV> *cached_cross = nullptr) const;
 };
 
 } // namespace tc::wan22

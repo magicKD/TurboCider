@@ -167,6 +167,21 @@ private final class ProgressProbe: @unchecked Sendable {
         try check(Set(wan22Encoder.include) == Set(["split_files/text_encoders/umt5_xxl_fp16.safetensors", "tokenizer.json"]) &&
                   wan22Encoder.supplements.count == 2 && wan22Encoder.destinations.isEmpty,
                   "Wan2.2 encoder subset lost its tokenizer or included the Transformer")
+        guard let quanhaol = LibraryRecipe.all.first(where: { $0.modelID == "wan2.2-ti2v-5b-quanhaol" }) else {
+            throw LibraryFailure(message: "quanhaol Wan2.2 recipe missing")
+        }
+        let quanhaolRequest = try quanhaol.downloadVariants[0].request(modelID: quanhaol.modelID, provider: .huggingface)
+        try check(quanhaolRequest.repository == "Kijai/WanVideo_comfy" &&
+                  quanhaolRequest.revision == "0965236c19506478103b9709085db130c2742dbe" &&
+                  quanhaolRequest.destinations["Wan22-Turbo/Wan2_2-TI2V-5B-Turbo_fp16.safetensors"] ==
+                    "diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors" &&
+                  quanhaolRequest.supplements.count == 2,
+                  "quanhaol Wan2.2 source, revision or component layout changed")
+        var overriddenQuanhaol = quanhaolRequest
+        overriddenQuanhaol.applyRevisionOverride("")
+        try check(overriddenQuanhaol.revision == quanhaolRequest.revision, "Blank UI revision removed the preset pin")
+        overriddenQuanhaol.applyRevisionOverride("another-revision")
+        try check(overriddenQuanhaol.revision == "another-revision", "Explicit revision override was ignored")
         guard let zImage = LibraryRecipe.all.first(where: { $0.modelID == "z-image-turbo" }) else {
             throw LibraryFailure(message: "Z-Image recipe missing")
         }

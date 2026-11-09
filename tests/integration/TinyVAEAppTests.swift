@@ -66,6 +66,19 @@ import ImageIO
         try check(wanConfig?.path == superWeights.path && wanConfig?.encoder == "original" &&
                   wanConfig?.decoder == "tiny" && wanConfig?.preview == false,
                   "Wan Super must replace only final video decoding")
+        wan.modelID = "wan2.2-ti2v-5b-quanhaol"
+        for relative in ["diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors",
+                         "text_encoders/umt5_xxl_fp16.safetensors", "vae/wan2.2_vae.safetensors", "tokenizer/tokenizer.json"] {
+            let file = temporary.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data([0]).write(to: file)
+        }
+        wan.reuseWan22SiblingInstallation()
+        try check(wan.modelPath == temporary.path, "Wan did not reuse a complete sibling installation")
+        let quanhaolConfig = try wan.tinyVAEConfiguration()
+        try check(wan.isWan22Video && wan.wan22FixedSteps == 4 && quanhaolConfig?.path == superWeights.path,
+                  "quanhaol must use the four-step Wan route and Super decoding")
+        wan.modelID = "wan2.2-ti2v-5b-fastwan"
         let resources = temporary.appendingPathComponent("resources/tiny-vae")
         try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
         let bundledSuper = resources.appendingPathComponent("taew2_2_super.safetensors")

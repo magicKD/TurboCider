@@ -115,6 +115,31 @@ class TinyVAEContracts(unittest.TestCase):
         request["width"], request["height"] = 736, 510
         self.assertNotEqual(self.call(request)[0], 0)
 
+    def test_quanhaol_has_a_separate_four_step_contract(self):
+        request = dict(model="wan2.2-ti2v-5b-quanhaol", operation="video.image", prompt="test",
+                       width=512, height=512, steps=4, frames=97, fps=24, audio=False,
+                       output=str(self.path.parent / "out.mp4"), execution="gpu", residency="resident",
+                       inputs=[dict(kind="image", role="first_frame", path=str(self.path), strength=1)],
+                       tiny_vae=dict(path=str(self.path), encoder="original", decoder="tiny", preview=False),
+                       allow_approximation=True)
+        code, result, error = self.call(request)
+        self.assertEqual(code, 0, error)
+        plan = json.loads(result)
+        stages = plan["stages"]
+        self.assertEqual(next(stage["iterations"] for stage in stages if stage["id"] == "denoise"), 4)
+        self.lib.tc_system_json.restype = C.c_void_p
+        pointer = C.c_void_p(self.lib.tc_system_json())
+        try:
+            memory = json.loads(C.string_at(pointer).decode())["physical_memory_bytes"]
+        finally:
+            self.lib.tc_string_free(pointer)
+        estimate = (38 << 30) + 512 * 512 * 97 * 384
+        if memory >= (64 << 30):
+            estimate += 384 << 20
+        self.assertEqual(plan["memory_estimate_bytes"], estimate)
+        request["steps"] = 3
+        self.assertNotEqual(self.call(request)[0], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

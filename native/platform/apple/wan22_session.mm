@@ -1,9 +1,11 @@
 #include "bridge.hpp"
+#include "platform.hpp"
 #include "../../core/unigram_tokenizer.hpp"
 #include "../../media/image.hpp"
 #include "../../media/video.hpp"
 #include "../../models/wan22/pipeline.hpp"
 #include "../../models/wan22/text.hpp"
+#include "../../models/wan22/identifiers.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -14,15 +16,20 @@ namespace {
 
 class Wan22Session final : public ModelSession {
     std::filesystem::path root_;
+    std::string model_id_;
+    bool quanhaol_ = false;
     std::unique_ptr<UnigramTokenizer> tokenizer_;
     std::optional<Tensor> cached_text_;
     std::vector<int> cached_ids_;
     int cached_valid_ = 0;
 
   public:
-    explicit Wan22Session(const std::filesystem::path &root) : root_(std::filesystem::absolute(root)) {
-        for (const auto *path : {"diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors",
-                                 "text_encoders/umt5_xxl_fp16.safetensors", "vae/wan2.2_vae.safetensors",
+    explicit Wan22Session(const std::filesystem::path &root, bool quanhaol)
+        : root_(std::filesystem::absolute(root)),
+          model_id_(quanhaol ? wan22::quanhaol_id : wan22::fastwan_id), quanhaol_(quanhaol) {
+        const char *transformer = quanhaol_ ? "diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors" :
+                                              "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors";
+        for (const auto *path : {transformer, "text_encoders/umt5_xxl_fp16.safetensors", "vae/wan2.2_vae.safetensors",
                                  "tokenizer/tokenizer.json"})
             require(std::filesystem::is_regular_file(root_ / path), "Wan2.2 component missing: " + std::string(path));
     }
@@ -35,7 +42,7 @@ class Wan22Session final : public ModelSession {
     }
 
     RunResult generate(const Request &request, const Event &event, std::atomic<bool> &cancelled) override {
-        require(request.model == "wan2.2-ti2v-5b-fastwan", "request model differs from Wan2.2 session");
+        require(request.model == model_id_, "request model differs from Wan2.2 session");
         const auto plan = make_plan(request);
         require(!request.output.empty() && std::filesystem::path(request.output).extension() == ".mp4",
                 "Wan2.2 output must be an .mp4 file");
@@ -64,11 +71,16 @@ class Wan22Session final : public ModelSession {
             auto image = load_image_center_crop_tensor(request.inputs[0].path, request.width, request.height);
             image = mx::astype(mx::expand_dims(mx::transpose(image, {0, 3, 1, 2}), 2), mx::bfloat16);
             mx::eval(image);
-            wan22::Pipeline pipeline(root_ / "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors",
+            const char *transformer = quanhaol_ ? "diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors" :
+                                                  "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors";
+            wan22::Pipeline pipeline(root_ / transformer,
                                      root_ / "vae/wan2.2_vae.safetensors");
             wan22::GenerateOptions options;
             options.frames = request.frames;
             options.seed = request.seed;
+            if (quanhaol_) options.distillation = wan22::Distillation::quanhaol_4;
+            // Keep the previous low-memory path on smaller systems.
+            options.cache_cross_attention = device_info().physical_memory >= (64ull << 30);
             const bool tiny_decoder = request.tiny_vae && request.tiny_vae->decoder == "tiny";
             if (tiny_decoder) options.tiny_decoder_checkpoint = request.tiny_vae->path;
             auto result = pipeline.generate(image, *cached_text_, options, event, cancelled);
@@ -92,16 +104,18 @@ class Wan22Session final : public ModelSession {
             NSDictionary *metadata = @{
                 @"schema_version":@1, @"model":@(request.model.c_str()), @"operation":@"video.image",
                 @"output":@(destination.c_str()), @"width":@(info.width), @"height":@(info.height),
-                @"frames":@(info.frames), @"fps":@(info.fps), @"seed":@(request.seed), @"steps":@3,
-                @"actual_denoise_steps":@3, @"first_frame_strength":@1.0,
-                @"scheduler":@"fastvideo-mlx-dmd-shift5-warped", @"execution":@"gpu",
+                @"frames":@(info.frames), @"fps":@(info.fps), @"seed":@(request.seed), @"steps":@(quanhaol_ ? 4 : 3),
+                @"actual_denoise_steps":@(quanhaol_ ? 4 : 3), @"first_frame_strength":@1.0,
+                @"scheduler":quanhaol_ ? @"quanhaol-dmd-shift8-bf16" : @"fastvideo-mlx-dmd-shift5-warped", @"execution":@"gpu",
                 @"runtime_backend":@"wan22-mlx-metal", @"runtime_dependency":@"native",
-                @"runtime_precision":tiny_decoder ? @"bf16-dit-vae-encoder+fp16-taew22-super+umt5-bf16-weights-fp32-activations+fp32-scheduler" : @"bf16-dit-vae+umt5-bf16-weights-fp32-activations+fp32-scheduler",
+                @"runtime_precision":quanhaol_ ? (tiny_decoder ? @"mixed-source-bf16-dit-vae-encoder+fp16-taew22-super+umt5-bf16-weights-fp32-activations+bf16-renoise" : @"mixed-source-bf16-dit-vae+umt5-bf16-weights-fp32-activations+bf16-renoise") :
+                    (tiny_decoder ? @"bf16-dit-vae-encoder+fp16-taew22-super+umt5-bf16-weights-fp32-activations+fp32-scheduler" : @"bf16-dit-vae+umt5-bf16-weights-fp32-activations+fp32-scheduler"),
                 @"video_decoder":tiny_decoder ? @"taew2_2_super" : @"wan2.2_vae",
                 @"stage_seconds":@{@"first_frame_vae_load_and_encode":@(result.first_frame_vae_seconds),
                                     @"transformer_load_and_denoise":@(result.transformer_and_denoise_seconds),
                                     @"video_vae_load_and_decode":@(result.video_vae_seconds)},
                 @"persistent_model":@NO, @"prompt_cache_hit":@(text_cache_hit), @"valid_text_tokens":@(tokens.valid),
+                @"cross_attention_cache":@(options.cache_cross_attention),
                 @"text_sequence_tokens":@(tokens.ids.size()), @"text_context_limit":@1024,
                 @"seconds":@(seconds), @"mlx_active_bytes":@(mx::get_active_memory()), @"mlx_peak_bytes":@(mx::get_peak_memory())
             };
@@ -116,7 +130,7 @@ class Wan22Session final : public ModelSession {
 };
 } // namespace
 
-std::unique_ptr<ModelSession> create_wan22(const std::filesystem::path &root) {
-    return std::make_unique<Wan22Session>(root);
+std::unique_ptr<ModelSession> create_wan22(const std::filesystem::path &root, bool quanhaol) {
+    return std::make_unique<Wan22Session>(root, quanhaol);
 }
 } // namespace tc

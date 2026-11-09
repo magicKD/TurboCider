@@ -22,14 +22,23 @@ import Foundation
         func check(_ condition: Bool, _ message: String) throws {
             if !condition { throw NativeFailure(message: message) }
         }
-        let modelID = "wan2.2-ti2v-5b-fastwan"
+        let variant = ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_VARIANT"] ?? "fastwan"
+        guard ["fastwan", "quanhaol"].contains(variant) else { throw NativeFailure(message: "Invalid Wan2.2 E2E variant") }
+        let modelID = "wan2.2-ti2v-5b-\(variant)"
+        let expectedSteps = variant == "quanhaol" ? 4 : 3
         let studio = StudioState(directory: root)
         let store = NativeJobStore(directory: root)
         guard let entry = studio.models.first(where: { $0.id == modelID }) else {
             throw NativeFailure(message: "Desktop catalog lacks Wan2.2")
         }
         try check(entry.executor && entry.supports("video.image"), "Desktop catalog did not advertise image-to-video")
-        studio.selectInstallation(modelID: modelID, path: model.path)
+        if ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_REQUIRE_SIBLING_REUSE"] == "1" {
+            try check(variant == "quanhaol", "Sibling-reuse smoke test requires the quanhaol variant")
+            studio.selectInstallation(modelID: "wan2.2-ti2v-5b-fastwan", path: model.path)
+            studio.selectModel(modelID)
+        } else {
+            studio.selectInstallation(modelID: modelID, path: model.path)
+        }
         studio.draft.prompt = "A red fox walks slowly toward the camera through a snowy field. Its fur moves gently in the wind and its paws step naturally in the snow. Keep the camera steady and the fox's face and anatomy consistent."
         studio.draft.randomSeed = false
         studio.draft.seedText = "42"
@@ -63,7 +72,7 @@ import Foundation
         let request = pair.legacy
         try check(request.model == modelID && request.operation == "video.image" && request.execution == "gpu" &&
                   request.residency == "resident" && request.width == width && request.height == height &&
-                  request.frames == 97 && request.fps == 24 && request.steps == 3 && request.audio == false &&
+                  request.frames == 97 && request.fps == 24 && request.steps == expectedSteps && request.audio == false &&
                   request.seed == expectedSeed && request.inputs?.count == 1 && request.inputs?.first?.role == "first_frame" &&
                   request.inputs?.first?.strength == 1 && pair.v2 == nil && options == nil &&
                   (useSuper ? (request.tiny_vae?.encoder == "original" &&
@@ -86,7 +95,9 @@ import Foundation
             throw NativeFailure(message: "Desktop job did not provide a result receipt")
         }
         try check(job.state == "succeeded" && !store.busy && files.fileExists(atPath: movie.path) &&
-                  result["execution"] as? String == "gpu" && result["actual_denoise_steps"] as? Int == 3 &&
+                  result["execution"] as? String == "gpu" && result["actual_denoise_steps"] as? Int == expectedSteps &&
+                  result["scheduler"] as? String == (variant == "quanhaol" ? "quanhaol-dmd-shift8-bf16" : "fastvideo-mlx-dmd-shift5-warped") &&
+                  result["cross_attention_cache"] as? Bool == (ProcessInfo.processInfo.physicalMemory >= (64 * 1024 * 1024 * 1024)) &&
                   result["video_decoder"] as? String == (useSuper ? "taew2_2_super" : "wan2.2_vae") &&
                   result["model"] as? String == modelID && result["operation"] as? String == "video.image",
                   "Desktop embedded Wan2.2 generation did not succeed")
@@ -104,7 +115,7 @@ import Foundation
         let report: [String: Any] = ["schema": "wan22-desktop-e2e-v1", "status": "complete",
             "scope": "Desktop StudioState, image importer and embedded NativeJobStore; no GUI window automation",
             "output": movie.path, "seed": request.seed, "width": video.width, "height": video.height,
-            "frames": video.frames ?? 0, "fps": video.fps ?? 0, "decoder": decoder,
+            "frames": video.frames ?? 0, "fps": video.fps ?? 0, "decoder": decoder, "variant": variant,
             "wall_seconds": elapsed, "result": result]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             .write(to: root.appendingPathComponent("report.json"), options: .atomic)

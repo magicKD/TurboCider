@@ -44,13 +44,14 @@ struct LibraryVariant: Codable, Identifiable, Sendable {
     var runnable: Bool
     var preparation: String
     var modelScopePins: [HubFile]? = nil
+    var revision: String? = nil
 
     func request(modelID: String, provider: HubProvider = .modelscope, componentKind: String? = nil) throws -> LibraryDownloadRequest {
         if modelScopePins != nil && provider != .modelscope {
             throw LibraryFailure(message: "此版本使用 ModelScope 固定权重，请选择 ModelScope。")
         }
         let request = LibraryDownloadRequest(modelID: modelID, repository: repository, provider: provider,
-            name: title, include: include, supplements: supplements, destinations: destinations,
+            revision: revision, name: title, include: include, supplements: supplements, destinations: destinations,
             pinnedVariantID: modelScopePins == nil ? nil : id)
         guard let componentKind else { return request }
         let kinds: [String]
@@ -143,6 +144,34 @@ struct LibraryRecipe: Codable, Sendable {
                 .init(kind: "tokenizer", title: "UMT5 Tokenizer", format: "JSON", precision: "原始词表",
                       repository: "google/umt5-xxl", include: [tokenizer], note: "与检查点中的 SentencePiece 词表对应。")
             ], runnable: true, preparation: preparation)
+    }()
+    private static let wan22QuanhaolVariant: LibraryVariant = {
+        let transformer = "Wan22-Turbo/Wan2_2-TI2V-5B-Turbo_fp16.safetensors"
+        let text = "split_files/text_encoders/umt5_xxl_fp16.safetensors"
+        let vae = "split_files/vae/wan2.2_vae.safetensors"
+        let tokenizer = "tokenizer.json"
+        let repo = "Kijai/WanVideo_comfy"
+        let comfy = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+        let supplements: [LibrarySupplement] = [
+            .init(repository: comfy, include: [text, vae], destinations: [
+                text: "text_encoders/umt5_xxl_fp16.safetensors", vae: "vae/wan2.2_vae.safetensors"]),
+            .init(repository: "google/umt5-xxl", include: [tokenizer],
+                  destinations: [tokenizer: "tokenizer/tokenizer.json"])
+        ]
+        let preparation = "实验性四步图生视频，使用 Kijai 的 quanhaol FP16 转换权重和 shift 8 重新加噪调度；请使用 Hugging Face 或其镜像下载。模型卡未明确权重许可，请先确认使用权限。"
+        return LibraryVariant(id: "quanhaol-fp16", title: "quanhaol Turbo · 4 步 · 实验版", repository: repo,
+            include: [transformer, text, vae, tokenizer], supplements: supplements,
+            destinations: [transformer: "diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors"],
+            components: [
+                .init(kind: "dit", title: "quanhaol Turbo 5B Transformer", format: "safetensors", precision: "FP16/FP32 转换版",
+                      repository: repo, include: [transformer], note: "模型作者链接的 ComfyUI 转换版；不是 FastWan。"),
+                .init(kind: "text_encoder", title: "UMT5-XXL", format: "safetensors", precision: "FP16",
+                      repository: comfy, include: [text], note: "与 Wan2.2 VAE 配套。"),
+                .init(kind: "vae", title: "Wan2.2 VAE", format: "safetensors", precision: "原始精度",
+                      repository: comfy, include: [vae], note: "首帧使用完整 VAE 编码。"),
+                .init(kind: "tokenizer", title: "UMT5 Tokenizer", format: "JSON", precision: "原始词表",
+                      repository: "google/umt5-xxl", include: [tokenizer], note: "与检查点中的 SentencePiece 词表对应。")
+            ], runnable: true, preparation: preparation, revision: "0965236c19506478103b9709085db130c2742dbe")
     }()
     private static let qwenTokenizer = "processor/tokenizer.json"
     private static let qwenEncoder = "text_encoders/qwen3vl_8b_bf16.safetensors"
@@ -249,6 +278,9 @@ struct LibraryRecipe: Codable, Sendable {
         .init(modelID: "wan2.2-ti2v-5b-fastwan", repository: wan22Variant.repository,
               include: wan22Variant.include, preparation: wan22Variant.preparation,
               supplements: wan22Variant.supplements, variants: [wan22Variant]),
+        .init(modelID: "wan2.2-ti2v-5b-quanhaol", repository: wan22QuanhaolVariant.repository,
+              include: wan22QuanhaolVariant.include, preparation: wan22QuanhaolVariant.preparation,
+              supplements: wan22QuanhaolVariant.supplements, variants: [wan22QuanhaolVariant]),
         .init(modelID: "minimax-h3-turbo", repository: "MiniMaxAI/MiniMax-H3", include: ["FL2VA/"],
               preparation: "默认仅下载 FL2VA（文生视频、首尾帧）。基础权重还需配套 LightX2V Turbo LoRA，并通过离线 prepare-lora 工具生成预融合模型；参考视频另需 Ref2VA 的独立模型与 Turbo 来源记录。"),
         .init(modelID: "wan2.1-1.3b-qad", repository: "FastVideo/FastMetal-1.3B-QAD", include: ["model_index.json", "mlx_dit.json", "mlx_dit.safetensors", "scheduler/", "text_encoder/", "tokenizer/", "vae/"],

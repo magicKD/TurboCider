@@ -2,12 +2,15 @@
 
 #include "transformer.hpp"
 #include "vae.hpp"
+#include "schedule.hpp"
 
 namespace tc::wan22 {
 
 struct GenerateOptions {
     int frames = 97;
     uint64_t seed = 42;
+    Distillation distillation = Distillation::fastvideo_3;
+    bool cache_cross_attention = false;
     // Empty keeps the full VAE. Super is an explicit, approximate decoder;
     // first-frame conditioning always uses the full VAE encoder.
     std::filesystem::path tiny_decoder_checkpoint;
@@ -21,7 +24,7 @@ struct GenerateResult {
     double video_vae_seconds = 0;
 };
 
-// Native, image-conditioned FastVideo DMD path. Text is the already encoded
+// Native, image-conditioned distilled paths. Text is the already encoded
 // BF16 UMT5 output; tokenization, media export and App registration remain
 // outside this component.
 class Pipeline {

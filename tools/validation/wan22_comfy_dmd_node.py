@@ -39,6 +39,79 @@ def sample_dmd(model, x, sigmas, extra_args=None, callback=None, disable=None, *
     return x
 
 
+def sample_quanhaol_dmd(model, x, sigmas, extra_args=None, callback=None, disable=None, **options):
+    """Diagnostic four-step path; CPU noise is shared with the native probe."""
+    del disable, options
+    extra_args = {} if extra_args is None else extra_args
+    values = [float(value) for value in sigmas]
+    if len(values) != 5 or values[-1] != 0 or not all(
+            abs(a - b) < 1e-6 for a, b in zip(values, (1., .96, 8 / 9, 8 / 11, 0.))):
+        raise ValueError("quanhaol Wan2.2 requires the four-step shift-8 schedule")
+    seed = extra_args.get("seed")
+    if seed is None:
+        raise ValueError("quanhaol Wan2.2 sampler needs the explicit noise seed")
+    generator = torch.Generator(device="cpu").manual_seed(int(seed))
+    torch.randn(tuple(x.shape), generator=generator, dtype=torch.float32, device="cpu")
+    x = x.to(torch.bfloat16)
+    batch = x.new_ones([x.shape[0]], dtype=torch.float32)
+    for index, timestep in enumerate((1000., 960., 888., 728.)):
+        sigma = sigmas[index]
+        model_sigma = timestep / 1000.
+        x_float = x.float()
+        model_denoised = model(x_float, model_sigma * batch, **extra_args)
+        # Comfy returns x0 at the model timestep. Undo that conversion to use
+        # the unrounded scheduler sigma, then restore its inpaint condition.
+        denoised = x_float - (x_float - model_denoised.float()) * (sigma / model_sigma)
+        mask = extra_args.get("denoise_mask")
+        if mask is not None:
+            denoised = torch.where(mask > 0, denoised, model_denoised.float())
+        denoised = denoised.to(torch.bfloat16)
+        if callback is not None:
+            callback({"x": x, "i": index, "sigma": sigma,
+                      "sigma_hat": sigma, "denoised": denoised})
+        if index == 3:
+            x = denoised
+        else:
+            fresh = torch.randn(tuple(x.shape), generator=generator, dtype=torch.float32, device="cpu")
+            fresh = fresh.to(device=x.device, dtype=torch.bfloat16)
+            next_sigma = sigmas[index + 1].to(dtype=torch.bfloat16)
+            x = (1.0 - next_sigma) * denoised + next_sigma * fresh
+    return x
+
+
+class QuanhaolWan22DMDSampler:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {}}
+
+    RETURN_TYPES = ("SAMPLER",)
+    FUNCTION = "sampler"
+    CATEGORY = "diagnostics"
+
+    def sampler(self):
+        import json
+        from pathlib import Path
+        import folder_paths
+
+        sampler = comfy.samplers.sampler_object("euler")
+        def recorded(model, x, sigmas, extra_args=None, callback=None, disable=None, **options):
+            steps = []
+            def observed(data):
+                steps.append({"index": int(data["i"]), "sigma": float(data["sigma"])})
+                if callback is not None:
+                    callback(data)
+            result = sample_quanhaol_dmd(model, x, sigmas, extra_args, observed, disable, **options)
+            directory = Path(folder_paths.get_output_directory()) / "diagnostic"
+            directory.mkdir(parents=True, exist_ok=True)
+            path = directory / "fastwan22-dmd-steps.json"
+            if path.exists():
+                raise FileExistsError(path)
+            path.write_text(json.dumps({"steps": steps, "seed": int(extra_args["seed"])}, indent=2) + "\n")
+            return result
+        sampler.sampler_function = recorded
+        return (sampler,)
+
+
 class FastWan22DMDSampler:
     @classmethod
     def INPUT_TYPES(cls):
@@ -300,5 +373,6 @@ class FastWan22CaptureTextEncode:
 
 
 NODE_CLASS_MAPPINGS = {"FastWan22DMDSampler": FastWan22DMDSampler,
+                       "QuanhaolWan22DMDSampler": QuanhaolWan22DMDSampler,
                        "FastWan22CaptureVAE": FastWan22CaptureVAE,
                        "FastWan22CaptureTextEncode": FastWan22CaptureTextEncode}

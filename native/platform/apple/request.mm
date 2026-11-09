@@ -1,6 +1,7 @@
 #include "bridge.hpp"
 #include "../../core/json_keys.hpp"
 #include "../../models/qwen21/native_route.hpp"
+#include "../../models/wan22/identifiers.hpp"
 #include <cmath>
 namespace tc {
 std::string json(id object) {
@@ -114,7 +115,7 @@ static void parse_tiny_vae(NSDictionary *d, Request &r) {
     dictionary(d, "tiny_vae");
     keys(d, @[@"path", @"encoder", @"decoder", @"preview", @"interval"]);
     require(r.model == "qwen-image-2.1" || r.model == "z-image-turbo" ||
-                r.model == "z-image-turbo-gguf" || r.model == "wan2.2-ti2v-5b-fastwan",
+                r.model == "z-image-turbo-gguf" || wan22::is_model(r.model),
             "tiny_vae is not supported for this model");
     TinyVAEConfig c;
     c.path = string_value(d, @"path");
@@ -124,7 +125,7 @@ static void parse_tiny_vae(NSDictionary *d, Request &r) {
     c.interval = number(d, @"interval", 2);
     require(c.encoder == "original" || c.encoder == "tiny", "tiny_vae.encoder must be original or tiny");
     require(c.decoder == "original" || c.decoder == "tiny", "tiny_vae.decoder must be original or tiny");
-    if (r.model == "wan2.2-ti2v-5b-fastwan")
+    if (wan22::is_model(r.model))
         require(c.encoder == "original" && !c.preview,
                 "Wan2.2 TAEW2.2-Super supports final video decoding only; first-frame encoding stays full VAE");
     require(c.interval >= 1 && c.interval <= 50, "tiny_vae.interval must be 1...50");

@@ -7,7 +7,7 @@ struct TinyVAEControls: View {
     var locked = false
     var body: some View {
         if draft.supportsTinyVAE {
-            DisclosureGroup(draft.modelID == "wan2.2-ti2v-5b-fastwan" ? "视频 VAE 解码" : "Tiny VAE 与实时预览") {
+            DisclosureGroup(draft.isWan22Video ? "视频 VAE 解码" : "Tiny VAE 与实时预览") {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
                         Text(
@@ -28,7 +28,7 @@ struct TinyVAEControls: View {
                             }
                         }.accessibilityIdentifier("tinyVAEChooseModel")
                     }
-                    if draft.modelID == "wan2.2-ti2v-5b-fastwan" {
+                    if draft.isWan22Video {
                         Picker("最终视频解码", selection: $draft.wan22TinyVAEDecoder) {
                             Text("完整 Wan2.2 VAE（质量优先）").tag("original")
                             Text("TAEW2.2-Super（默认，近似、速度优先）").tag("tiny")

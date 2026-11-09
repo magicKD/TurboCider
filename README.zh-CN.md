@@ -108,6 +108,7 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 | LTX 2.5 Distilled | 文生视频、图生视频及可选音频输出；受后端与配置限制 |
 | [LTX-Video 0.9.8 2B Distilled](docs/public/LTX_VIDEO_098.zh-CN.md) | 实验性纯 GPU 图生视频；8 步单阶段或 7+3 步双阶段，24 fps、最多 121 帧；暂不支持音频、LoRA、流式加载或 ANE |
 | Wan 2.2 TI2V 5B FastWan | 实验性纯 GPU 图生视频；固定三步 DMD，最大 768×768、24 fps 最多 97 帧；超过 512 需 64 GiB 统一内存；可选 Super 或完整视频 VAE |
+| Wan 2.2 TI2V 5B quanhaol Turbo | 实验性纯 GPU 图生视频；独立的四步 shift-8 调度和 Kijai FP16 转换权重；画布、帧数和 VAE 限制同 FastWan；请先确认模型权重许可 |
 | Wan 2.1 1.3B QAD | 原生三步视频生成；需离线转换产物及已验证预合并 LoRA |
 
 具体可用操作以 `turbocider models` 和请求 `plan` 为准。不同模型的 LoRA、输入和加速选项不能互换。参阅[模型与请求参考](docs/public/USAGE.md#model-capabilities)、[Qwen 指南](docs/public/QWEN_IMAGE_21.md)和[GPU/ANE 加速状态](docs/status/acceleration.md)。

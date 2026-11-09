@@ -235,6 +235,12 @@ private struct InstallationProbe {
             weights("vae/wan2.2_vae.safetensors")
             json("tokenizer/tokenizer.json")
             report.notes.append("实验性 GPU 图生视频：FastVideo 全权重三步 DMD；首帧强度 1、最多 768×768、97 帧；超过 512 需至少 64 GiB 统一内存。文件检查不等于画质或性能验收。")
+        case "wan2.2-ti2v-5b-quanhaol":
+            weights("diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors")
+            weights("text_encoders/umt5_xxl_fp16.safetensors")
+            weights("vae/wan2.2_vae.safetensors")
+            json("tokenizer/tokenizer.json")
+            report.notes.append("实验性 GPU 图生视频：quanhaol 四步 Turbo 的 Kijai FP16 转换版；首帧强度 1、最多 768×768、97 帧。模型卡未明确权重许可；文件检查不等于画质或性能验收。")
         case "minimax-h3-turbo":
             json("FL2VA/tokenizer/tokenizer.json"); json("FL2VA/transformer/config.json")
             json("FL2VA/transformer/model.safetensors.index.json")

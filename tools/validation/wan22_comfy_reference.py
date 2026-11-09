@@ -24,6 +24,7 @@ from z_comfy_framework_screen import launch_command
 
 
 MODEL = "fastwan2.2_ti2v_5b_fullattn.comfy.safetensors"
+QUANHAOL_MODEL = "quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors"
 TEXT = "umt5_xxl_fp16.safetensors"
 VAE = "wan2.2_vae.safetensors"
 PROMPT = ("A red fox walks slowly toward the camera through a snowy field. "
@@ -32,12 +33,14 @@ PROMPT = ("A red fox walks slowly toward the camera through a snowy field. "
 
 
 def workflow(prompt, seed, width, height, frames, fps, diagnostic=False, capture_block=False,
-             capture_vae=False, capture_transformer=False, capture_text=False):
+             capture_vae=False, capture_transformer=False, capture_text=False, variant="fastwan"):
     def node(kind, **inputs):
         return {"class_type": kind, "inputs": inputs}
-    sigmas = warped_sigmas()
+    if variant not in ("fastwan", "quanhaol"):
+        raise ValueError("unsupported Wan2.2 variant")
+    sigmas = warped_sigmas() if variant == "fastwan" else warped_sigmas((1000, 750, 500, 250), shift=8)
     graph = {
-        "1": node("UNETLoader", unet_name=MODEL, weight_dtype="default"),
+        "1": node("UNETLoader", unet_name=MODEL if variant == "fastwan" else QUANHAOL_MODEL, weight_dtype="default"),
         "2": node("CLIPLoader", clip_name=TEXT, type="wan", device="default"),
         "3": node("CLIPTextEncode", clip=["2", 0], text=prompt),
         "4": node("VAELoader", vae_name=VAE),
@@ -46,7 +49,7 @@ def workflow(prompt, seed, width, height, frames, fps, diagnostic=False, capture
                   width=width, height=height, length=frames, batch_size=1),
         "7": node("RandomNoise", noise_seed=seed),
         "8": node("BasicGuider", model=["1", 0], conditioning=["3", 0]),
-        "9": node("FastWan22DMDSampler"),
+        "9": node("FastWan22DMDSampler" if variant == "fastwan" else "QuanhaolWan22DMDSampler"),
         "10": node("ManualSigmas", sigmas=", ".join(map(str, [*sigmas, 0.0]))),
         "11": node("SamplerCustomAdvanced", noise=["7", 0], guider=["8", 0], sampler=["9", 0],
                    sigmas=["10", 0], latent_image=["6", 0]),
@@ -61,8 +64,10 @@ def workflow(prompt, seed, width, height, frames, fps, diagnostic=False, capture
         graph["17"] = node("SaveImage", images=["12", 0], filename_prefix="diagnostic/frame")
         graph["18"] = node("SaveConditioning", conditioning=["3", 0], filename_prefix="diagnostic/text")
     if capture_block:
+        if variant != "fastwan": raise ValueError("block capture is only implemented for FastWan")
         graph["9"]["inputs"]["capture_first_block"] = True
     if capture_transformer:
+        if variant != "fastwan": raise ValueError("transformer capture is only implemented for FastWan")
         graph["9"]["inputs"]["capture_transformer"] = True
     if capture_text:
         graph["3"]["class_type"] = "FastWan22CaptureTextEncode"
@@ -142,9 +147,10 @@ async def run_request(server, port, graph, output):
                     if event["type"] == "progress" and event["data"].get("node") == "11"]
         evidence_path = output / "instance/output/diagnostic/fastwan22-dmd-steps.json"
         evidence = json.loads(evidence_path.read_text())
-        if [step["index"] for step in evidence["steps"]] != [0, 1, 2] or evidence["seed"] != graph["7"]["inputs"]["noise_seed"]:
-            raise RuntimeError(f"reference did not execute three sampler steps: {evidence}")
-        if not progress or progress[-1] != 3 or any(value not in (1, 2, 3) for value in progress):
+        steps = 3 if graph["9"]["class_type"] == "FastWan22DMDSampler" else 4
+        if [step["index"] for step in evidence["steps"]] != list(range(steps)) or evidence["seed"] != graph["7"]["inputs"]["noise_seed"]:
+            raise RuntimeError(f"reference did not execute {steps} sampler steps: {evidence}")
+        if not progress or progress[-1] != steps or any(value not in range(1, steps + 1) for value in progress):
             raise RuntimeError(f"reference final sampler progress is missing: {progress}")
         executed = [event["data"].get("node") for event in events if event["type"] == "executing"]
         if any(node not in executed for node in ("11", "12", "14")):
@@ -162,7 +168,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", type=Path, required=True)
     parser.add_argument("--comfy", type=Path, required=True)
-    parser.add_argument("--extra", type=Path, required=True)
+    parser.add_argument("--extra", type=Path, action="append", required=True,
+                        help="extra Python module directory; may be supplied more than once")
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -179,6 +186,7 @@ def main():
     parser.add_argument("--capture-vae", action="store_true", help="capture the real first-frame VAE encoding for parity")
     parser.add_argument("--capture-transformer", action="store_true", help="capture the first full transformer call for parity")
     parser.add_argument("--capture-text", action="store_true", help="capture UMT5 IDs and output for parity")
+    parser.add_argument("--variant", choices=("fastwan", "quanhaol"), default="fastwan")
     args = parser.parse_args()
     import yaml
     if args.prompt_job:
@@ -190,8 +198,9 @@ def main():
         parser.error("output directory must be new")
     if not args.prompt or args.seed < 0 or args.seed >= 2**64 or args.width % 32 or args.height % 32 or args.frames < 5 or args.frames % 4 != 1 or args.fps <= 0:
         parser.error("invalid prompt, seed, dimensions, frames or fps")
-    model, comfy, extra, source = (path.resolve(strict=True) for path in (args.model, args.comfy, args.extra, args.input))
-    components = {"transformer": model / "diffusion_models" / MODEL,
+    model, comfy, source = (path.resolve(strict=True) for path in (args.model, args.comfy, args.input))
+    extras = [path.resolve(strict=True) for path in args.extra]
+    components = {"transformer": model / "diffusion_models" / (MODEL if args.variant == "fastwan" else QUANHAOL_MODEL),
                   "text_encoder": model / "text_encoders" / TEXT, "vae": model / "vae" / VAE}
     identities = {name: sha256(path.resolve(strict=True)) for name, path in components.items()}
     output = args.output.absolute()
@@ -206,7 +215,8 @@ def main():
     (output / "models.yaml").write_text(yaml.safe_dump({"wan22": {"base_path": str(model),
         "diffusion_models": "diffusion_models", "text_encoders": "text_encoders", "vae": "vae"}}))
     graph = workflow(args.prompt, args.seed, args.width, args.height, args.frames, args.fps,
-                     args.diagnostic, args.capture_block, args.capture_vae, args.capture_transformer, args.capture_text)
+                     args.diagnostic, args.capture_block, args.capture_vae, args.capture_transformer, args.capture_text,
+                     args.variant)
     (output / "workflow.json").write_text(json.dumps(graph, indent=2) + "\n")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -214,7 +224,7 @@ def main():
     command = launch_command(comfy, args.python.absolute(), output, "comfy-sdpa-gpu", port)
     command.remove("--disable-all-custom-nodes")
     environment = os.environ.copy()
-    environment.update(PYTHONPATH=str(extra), PYTHONDONTWRITEBYTECODE="1", HF_HUB_OFFLINE="1",
+    environment.update(PYTHONPATH=os.pathsep.join(map(str, extras)), PYTHONDONTWRITEBYTECODE="1", HF_HUB_OFFLINE="1",
                        TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
     environment.pop("PYTORCH_ENABLE_MPS_FALLBACK", None)
     report = {"schema": "fastwan22-comfy-reference-v1", "status": "running",
@@ -223,11 +233,14 @@ def main():
               "capture_first_frame_vae": args.capture_vae,
               "capture_first_transformer": args.capture_transformer,
               "capture_text": args.capture_text,
-              "source_model": "FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers",
+              "source_model": ("FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers" if args.variant == "fastwan" else
+                               "quanhaol/Wan2.2-TI2V-5B-Turbo (Kijai FP16 conversion)"),
               "comfy_commit": subprocess.check_output(["git", "-C", str(comfy), "rev-parse", "HEAD"], text=True).strip(),
               "component_sha256": identities, "input_sha256": sha256(source), "prompt": args.prompt,
               "seed": args.seed, "width": args.width, "height": args.height, "frames": args.frames,
-              "fps": args.fps, "sigmas": warped_sigmas(), "scheduler": "DMD-renoise-shift5-warped"}
+              "fps": args.fps,
+              "sigmas": warped_sigmas() if args.variant == "fastwan" else warped_sigmas((1000, 750, 500, 250), shift=8),
+              "scheduler": "DMD-renoise-shift5-warped" if args.variant == "fastwan" else "DMD-renoise-shift8-bf16"}
     try:
         with (output / "server.stdout.txt").open("x") as stdout, (output / "server.stderr.txt").open("x") as stderr:
             server = subprocess.Popen(command, cwd=comfy, env=environment, stdout=stdout, stderr=stderr)
