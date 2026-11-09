@@ -304,6 +304,9 @@ struct StudioDraft: Codable, Sendable {
     var tinyVAEPaths: [String: String] = [:]
     var tinyVAEEncoder = "original"
     var tinyVAEDecoder = "original"
+    // Wan2.2 defaults to Super independently of other models' Tiny settings.
+    // Users can explicitly restore the full VAE for quality comparisons.
+    var wan22TinyVAEDecoder = "tiny"
     var tinyPreview = false
     var tinyPreviewInterval = 2
     var residency = "resident"
@@ -323,7 +326,7 @@ struct StudioDraft: Codable, Sendable {
         case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21DiTW8A8, qwen21DiTSmoothQuantConvRot, qwen21ReferenceSize
         case qwen21WeightCacheBudget, qwen21WeightCacheCustomMiB, qwen21Sampler
-        case tinyVAEPaths, tinyVAEEncoder, tinyVAEDecoder, tinyPreview, tinyPreviewInterval
+        case tinyVAEPaths, tinyVAEEncoder, tinyVAEDecoder, wan22TinyVAEDecoder, tinyPreview, tinyPreviewInterval
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -371,6 +374,7 @@ struct StudioDraft: Codable, Sendable {
         tinyVAEPaths = try c.decodeIfPresent([String: String].self, forKey: .tinyVAEPaths) ?? [:]
         tinyVAEEncoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEEncoder) ?? "original"
         tinyVAEDecoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEDecoder) ?? "original"
+        wan22TinyVAEDecoder = try c.decodeIfPresent(String.self, forKey: .wan22TinyVAEDecoder) ?? "tiny"
         tinyPreview = try c.decodeIfPresent(Bool.self, forKey: .tinyPreview) ?? false
         tinyPreviewInterval = try c.decodeIfPresent(Int.self, forKey: .tinyPreviewInterval) ?? 2
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
@@ -840,6 +844,20 @@ struct StudioDraft: Codable, Sendable {
                 guard FileManager.default.fileExists(atPath: upscaler.path) else {
                     throw NativeFailure(message: "7+3 步双阶段缺少 0.9.8 潜空间放大器；请在模型中心补齐，或选择 8 步单阶段。")
                 }
+            }
+        }
+        if modelID == "wan2.2-ti2v-5b-fastwan" {
+            guard width >= 128, height >= 128, width <= 768, height <= 768,
+                  width % 32 == 0, height % 32 == 0, (5...97).contains(frames), frames % 4 == 1,
+                  fps == 24, steps == 3, strength == 1 else {
+                throw NativeFailure(message: "Wan2.2 实验版使用 128–768 的 32 倍数画布、5–97 帧（4n+1）、24 fps、固定三步和首帧强度 1。")
+            }
+            guard (width <= 512 && height <= 512) || ProcessInfo.processInfo.physicalMemory >= (64 * 1024 * 1024 * 1024) else {
+                throw NativeFailure(message: "Wan2.2 超过 512 的画布目前仅在 64 GiB 或更大统一内存设备上开放；完整 VAE 更占内存。")
+            }
+            guard (acceleration?.policy ?? "gpu") == "gpu", residency == "resident", profilePath.isEmpty,
+                  activeLoRAs.isEmpty, !audio else {
+                throw NativeFailure(message: "Wan2.2 当前仅支持常驻纯 GPU、无 LoRA 和无音轨；ANE 与流式加载尚未验证。")
             }
         }
         if modelID == "qwen-image-2.1", width * height > 8_388_608 {
@@ -1899,6 +1917,7 @@ final class StudioState: ObservableObject {
         draft.steps = model.default_steps; draft.frames = model.default_frames
         draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
         draft.audio = model.default_audio ?? false
+        if id == "wan2.2-ti2v-5b-fastwan" { draft.strength = 1 }
         draft.ltxBackend = "auto"; draft.ltxFastAV = true
         draft.ltxVideoAttentionBatch = false
         draft.ltxAccelerationMode = "quality"
@@ -2414,10 +2433,14 @@ final class StudioState: ObservableObject {
         }
         draft.qwen21DiTW8A8 = request.qwen21_dit_w8a8 ?? false
         draft.qwen21DiTSmoothQuantConvRot = request.qwen21_dit_smoothquant_convrot ?? false
-        draft.tinyVAEEncoder = request.tiny_vae?.encoder ?? "original"
-        draft.tinyVAEDecoder = request.tiny_vae?.decoder ?? "original"
-        draft.tinyPreview = request.tiny_vae?.preview ?? false
-        draft.tinyPreviewInterval = request.tiny_vae?.interval ?? 2
+        if request.model == "wan2.2-ti2v-5b-fastwan" {
+            draft.wan22TinyVAEDecoder = request.tiny_vae?.decoder ?? "original"
+        } else {
+            draft.tinyVAEEncoder = request.tiny_vae?.encoder ?? "original"
+            draft.tinyVAEDecoder = request.tiny_vae?.decoder ?? "original"
+            draft.tinyPreview = request.tiny_vae?.preview ?? false
+            draft.tinyPreviewInterval = request.tiny_vae?.interval ?? 2
+        }
         if let tiny = request.tiny_vae { draft.tinyVAEPaths[draft.tinyArchitecture] = tiny.path }
         // A generated image's standard request does not describe the user's
         // editing preference. Restore that field only for editing histories.

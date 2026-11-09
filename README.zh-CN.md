@@ -77,6 +77,11 @@ open dist/TurboCider.app
 
 `make setup` 会安装 `.venv` 和独立的离线 Core ML 工具环境，不会下载 Python、模型权重或 ANE 产物。模型下载、检查及 ANE 导出／编译／登记的完整命令见 [FLUX.2 Klein 4B 准备指南（英文）](docs/public/FLUX_PREPARATION.md)。配置、文件检查和请求规划通过，仅表示准备步骤通过，真实生成和性能复现需要另行验证。
 
+Wan 2.2 桌面端默认使用 Super 视频解码器。打包时可通过
+`TURBOCIDER_TAEW22_SUPER_PATH=/绝对路径/taew2_2_super.safetensors TURBOCIDER_REQUIRE_TAEW22_SUPER=1 make package`
+将官方权重校验后放入 App。若未打包该文件，需选择本地 Super 权重或手动切回完整 VAE；不会静默回退。Wan 主模型、文本编码器、词表和完整 VAE 仍需单独准备。
+Wan2.2 提示词最多支持 1023 个内容 token 加 EOS；超过 511 时使用 App 的扩展上下文，与 FastVideo 默认的 512-token 文本输入不同。
+
 在 App 先选择图片或视频创作，自动匹配兼容执行器，再登记所需模型文件夹。已有权重可以继续放在原来的目录；Z-Image 可关联 FLUX.2 Klein 4B 的兼容文本组件。首次先使用 GPU，成功生成后再按设备配置 ANE。发行目录中的 App 当前为本机 ad-hoc 签名，尚未完成 Developer ID 公证。
 
 任务页支持勾选、全选后批量删除，也可一键清空任务历史；正在进行的任务会保留，最近一次删除可整批撤销。删除任务记录保留结果文件。素材库和创作结果缩略图支持 Ctrl/Command 点击增减选择、Shift 点击连续选择，再统一移到废纸篓；素材库双击图片可查看结果。
@@ -102,6 +107,7 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 | MiniMax H3 Turbo | 视频生成、关键帧与参考素材；需要媒体工具 |
 | LTX 2.5 Distilled | 文生视频、图生视频及可选音频输出；受后端与配置限制 |
 | [LTX-Video 0.9.8 2B Distilled](docs/public/LTX_VIDEO_098.zh-CN.md) | 实验性纯 GPU 图生视频；8 步单阶段或 7+3 步双阶段，24 fps、最多 121 帧；暂不支持音频、LoRA、流式加载或 ANE |
+| Wan 2.2 TI2V 5B FastWan | 实验性纯 GPU 图生视频；固定三步 DMD，最大 768×768、24 fps 最多 97 帧；超过 512 需 64 GiB 统一内存；可选 Super 或完整视频 VAE |
 | Wan 2.1 1.3B QAD | 原生三步视频生成；需离线转换产物及已验证预合并 LoRA |
 
 具体可用操作以 `turbocider models` 和请求 `plan` 为准。不同模型的 LoRA、输入和加速选项不能互换。参阅[模型与请求参考](docs/public/USAGE.md#model-capabilities)、[Qwen 指南](docs/public/QWEN_IMAGE_21.md)和[GPU/ANE 加速状态](docs/status/acceleration.md)。

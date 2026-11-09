@@ -144,7 +144,7 @@ SOURCES=(
  native/platform/apple/streaming_catalog_test.mm
  native/platform/apple/unigram_tokenizer.mm
  native/platform/apple/device.mm native/platform/apple/results.mm native/platform/apple/memory_probe.mm
- native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm native/platform/apple/ltx098_session.mm
+ native/platform/apple/wan_session.mm native/platform/apple/wan22_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm native/platform/apple/ltx098_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
  native/workflows/image_workflows.mm
@@ -158,10 +158,11 @@ SOURCES=(
  native/backends/metal_graph/native_attention.mm native/backends/metal_graph/native_qwen_ops.mm
  native/backends/metal_graph/native_step_ops.mm
  native/backends/metal_graph/memory_bridge.cpp
- native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/ltx098_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
+ native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/wan22_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/ltx098_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/ltx098/block.cpp native/models/ltx098/vae.cpp native/models/ltx098/transformer.cpp native/models/ltx098/scheduler.cpp native/models/ltx098/pipeline.cpp
+ native/models/wan22/block.cpp native/models/wan22/vae.cpp native/models/wan22/tae_super.cpp native/models/wan22/transformer.cpp native/models/wan22/text.cpp native/models/wan22/pipeline.cpp
  native/models/z_image/gguf.cpp
  native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp

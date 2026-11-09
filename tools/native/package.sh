@@ -15,6 +15,22 @@ if [[ "$DIST" != /* ]]; then DIST="$ROOT/$DIST"; fi
 APP="$DIST/TurboCider.app"
 BIN="$APP/Contents/MacOS"
 RES="$APP/Contents/Resources"
+TINY_VAE_DIR="${TURBOCIDER_TINY_VAE_DIR:-$ROOT/models/tiny-vae}"
+TAEW22_SUPER="${TURBOCIDER_TAEW22_SUPER_PATH:-$TINY_VAE_DIR/taew2_2_super.safetensors}"
+TAEW22_REQUIRED="${TURBOCIDER_REQUIRE_TAEW22_SUPER:-0}"
+case "$TAEW22_REQUIRED" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_REQUIRE_TAEW22_SUPER must be 0 or 1\n' >&2; exit 2 ;;
+esac
+if [[ -f "$TAEW22_SUPER" ]]; then
+ read -r taew22_hash _ < <(shasum -a 256 "$TAEW22_SUPER")
+ [[ "$taew22_hash" == 06503c1f388993e5314e2d1c7ab1276af57b4adab2f467196ceff100d3a216c4 ]] || {
+  echo 'TAEW2.2-Super does not match the pinned official checkpoint' >&2; exit 1;
+ }
+elif [[ "$TAEW22_REQUIRED" == "1" || -n "${TURBOCIDER_TAEW22_SUPER_PATH:-}" ]]; then
+ echo "TAEW2.2-Super checkpoint is required but missing: $TAEW22_SUPER" >&2
+ exit 1
+fi
 MLX_LICENSE_PATH="${MLX_LICENSE_PATH:-}"
 if [[ -z "$MLX_LICENSE_PATH" ]]; then
  shopt -s nullglob
@@ -39,16 +55,19 @@ cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
 mkdir -p "$RES/ModelBrands"
 cp assets/branding/model-brands/* "$RES/ModelBrands/"
 cp assets/config/local-streaming-profile.json "$RES/"
-# Optional native-only image autoencoders. Never package conversion scripts,
+# Optional native-only image/video autoencoders. Never package conversion scripts,
 # .pth/pickle checkpoints, or a Python runtime. Users may also select their own
 # converted safetensors through the App without rebuilding it.
-TINY_VAE_DIR="${TURBOCIDER_TINY_VAE_DIR:-$ROOT/models/tiny-vae}"
 for architecture in taef1 taeqi2_1; do
  if [[ -f "$TINY_VAE_DIR/$architecture.safetensors" ]]; then
   mkdir -p "$RES/tiny-vae"
   cp "$TINY_VAE_DIR/$architecture.safetensors" "$RES/tiny-vae/"
  fi
 done
+if [[ -f "$TAEW22_SUPER" ]]; then
+ mkdir -p "$RES/tiny-vae"
+ cp "$TAEW22_SUPER" "$RES/tiny-vae/taew2_2_super.safetensors"
+fi
 cp "$OUT"/turbocider "$BIN/"
 for folder in "$BIN" "$DIST/cli"; do
  cp "$OUT"/turbocider-library "$folder/"

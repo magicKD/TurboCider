@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #include "../../core/unigram_tokenizer.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -34,6 +35,8 @@ struct UnigramTokenizer::Impl {
     double unknown_score = 0;
     int unknown = 3;
     bool t5 = false;
+    bool umt5_sentencepiece_compat = false;
+    std::array<int, 256> byte_tokens{};
     std::vector<uint32_t> normalizer_trie;
     std::string normalizer_replacements;
     void encode_piece(const std::string &, std::vector<int> &) const;
@@ -117,8 +120,15 @@ UnigramTokenizer::UnigramTokenizer(const std::filesystem::path &root, UnigramFla
         NSDictionary *normalizer = @{@"type":@"Sequence", @"normalizers":@[
             @{@"type":@"Replace", @"pattern":@{@"Regex":@" {2,}"}, @"content":@" "}]};
         NSDictionary *metaspace = @{@"type":@"Metaspace", @"replacement":@"▁", @"prepend_scheme":@"always", @"split":@YES};
-        require([config[@"normalizer"] isEqual:normalizer] && [config[@"pre_tokenizer"] isEqual:metaspace],
+        // google/umt5-xxl publishes the equivalent older Metaspace schema.
+        NSDictionary *legacy_metaspace = @{@"type":@"Metaspace", @"replacement":@"▁", @"add_prefix_space":@YES};
+        require([config[@"normalizer"] isEqual:normalizer] &&
+                    ([config[@"pre_tokenizer"] isEqual:metaspace] || [config[@"pre_tokenizer"] isEqual:legacy_metaspace]),
                 "unsupported Unigram normalization/pre-tokenization");
+        // The old public UMT5 JSON shares the exact vocabulary with the
+        // embedded SentencePiece model, but its HF normalizer collapses spaces
+        // and omits byte fallback. ComfyUI uses SentencePiece itself instead.
+        impl_->umt5_sentencepiece_compat = [config[@"pre_tokenizer"] isEqual:legacy_metaspace];
     }
     NSDictionary *post = config[@"post_processor"];
     require([post isKindOfClass:NSDictionary.class] && [post[@"type"] isEqual:@"TemplateProcessing"] &&
@@ -129,6 +139,11 @@ UnigramTokenizer::UnigramTokenizer(const std::filesystem::path &root, UnigramFla
     NSArray *vocab = model[@"vocab"];
     require([vocab isKindOfClass:NSArray.class] && vocab.count > 4 && vocab.count <= 1000000,
             "invalid Unigram vocabulary");
+    impl_->byte_tokens.fill(-1);
+    if (impl_->umt5_sentencepiece_compat)
+        require(vocab.count == 256300 && [vocab[17][0] isEqual:@"<0x00>"] &&
+                    [vocab[272][0] isEqual:@"<0xFF>"] && [vocab[273][0] isEqual:@"▁"],
+                "unsupported legacy UMT5 SentencePiece vocabulary");
     double minimum = 0;
     int vocabulary_index = 0;
     for (NSArray *record in vocab) {
@@ -144,6 +159,19 @@ UnigramTokenizer::UnigramTokenizer(const std::filesystem::path &root, UnigramFla
         require(!token.empty() && std::isfinite(score),
                 "invalid Unigram token/score at index " + std::to_string(vocabulary_index) +
                 " utf16=" + std::to_string([record[0] length]) + " score=" + std::to_string(score));
+        if (impl_->umt5_sentencepiece_compat && vocabulary_index >= 17 && vocabulary_index <= 272) {
+            impl_->byte_tokens[vocabulary_index - 17] = vocabulary_index;
+        }
+        // Control/unknown tokens, byte fallback tokens and the 300 HF-only
+        // added tokens are not ordinary SentencePiece segmentation entries.
+        const bool reserved = impl_->umt5_sentencepiece_compat &&
+            (vocabulary_index < 4 || (vocabulary_index >= 17 && vocabulary_index <= 272) || vocabulary_index >= 256000);
+        if (reserved) {
+            impl_->scores.push_back(score);
+            minimum = std::min(minimum, score);
+            ++vocabulary_index;
+            continue;
+        }
         size_t node = 0;
         for (unsigned char byte : token) {
             auto found = impl_->trie[node].next.find(byte);
@@ -172,7 +200,7 @@ UnigramTokenizer::UnigramTokenizer(const std::filesystem::path &root, UnigramFla
         std::string token([entry[@"content"] UTF8String]);
         int id = [entry[@"id"] intValue];
         require(!token.empty() && id >= 0 && id < int(vocab.count), "invalid added token");
-        impl_->special.emplace_back(token, id);
+        if (!impl_->umt5_sentencepiece_compat) impl_->special.emplace_back(token, id);
     }
 }
 
@@ -207,7 +235,13 @@ void UnigramTokenizer::Impl::encode_piece(const std::string &piece, std::vector<
     std::vector<int> reversed;
     for (size_t at = piece.size(); at > 0; at = best[at].previous) {
         require(best[at].token >= 0 && best[at].previous < at, "Unigram segmentation failed");
-        reversed.push_back(best[at].token);
+        if (umt5_sentencepiece_compat && best[at].token == unknown) {
+            for (size_t pos = at; pos > best[at].previous; --pos) {
+                const int byte = static_cast<unsigned char>(piece[pos - 1]);
+                require(byte_tokens[byte] >= 0, "UMT5 byte fallback token is missing");
+                reversed.push_back(byte_tokens[byte]);
+            }
+        } else reversed.push_back(best[at].token);
     }
     int previous = -1;
     for (auto it = reversed.rbegin(); it != reversed.rend(); ++it) {
@@ -223,10 +257,17 @@ void UnigramTokenizer::Impl::ordinary(const std::string &raw, std::vector<int> &
     for (size_t i = 0; i < raw.size(); ++i) {
         if (raw[i] == ' ') {
             normalized += marker;
-            while (i + 1 < raw.size() && raw[i + 1] == ' ') ++i;
+            if (!umt5_sentencepiece_compat)
+                while (i + 1 < raw.size() && raw[i + 1] == ' ') ++i;
         } else normalized += raw[i];
     }
-    if (!normalized.starts_with(marker)) normalized = marker + normalized;
+    if (umt5_sentencepiece_compat || !normalized.starts_with(marker)) normalized = marker + normalized;
+    if (umt5_sentencepiece_compat) {
+        // SentencePiece may merge runs of multiple whitespace markers into
+        // one vocabulary entry; splitting at each marker changes token IDs.
+        encode_piece(normalized, output);
+        return;
+    }
     size_t start = 0;
     while (start < normalized.size()) {
         auto end = normalized.find(marker, start + marker.size());
@@ -316,8 +357,17 @@ void UnigramTokenizer::Impl::t5_ordinary(const std::string &raw, bool prepend, s
 }
 
 Tokens UnigramTokenizer::prompt(const std::string &raw, int limit) const {
+    return prompt_impl(raw, limit, limit, true);
+}
+
+Tokens UnigramTokenizer::prompt_extended(const std::string &raw, int min_tokens, int max_tokens) const {
+    return prompt_impl(raw, min_tokens, max_tokens, false);
+}
+
+Tokens UnigramTokenizer::prompt_impl(const std::string &raw, int min_tokens, int max_tokens, bool truncate) const {
     require(!impl_->t5, "T5 tokenizer must use t5_prompt");
-    require(raw.size() <= 32768 && limit >= 1 && limit <= 512, "Unigram prompt/limit exceeds supported bounds");
+    require(raw.size() <= 32768 && min_tokens >= 1 && min_tokens <= max_tokens && max_tokens <= 1024 &&
+                (!truncate || max_tokens <= 512), "Unigram prompt/limit exceeds supported bounds");
     NSString *utf8 = [[NSString alloc] initWithBytes:raw.data() length:raw.size() encoding:NSUTF8StringEncoding];
     require(utf8 != nil, "Unigram prompt must be valid UTF-8");
     std::vector<int> ids;
@@ -336,10 +386,13 @@ Tokens UnigramTokenizer::prompt(const std::string &raw, int limit) const {
         ids.push_back(selected->second);
         start = next + selected->first.size();
     }
-    if (ids.size() > size_t(limit - 1)) ids.resize(limit - 1);
+    if (ids.size() > size_t(max_tokens - 1)) {
+        require(truncate, "Wan2.2 prompt exceeds 1023 content tokens; shorten the prompt rather than silently truncating it");
+        ids.resize(max_tokens - 1);
+    }
     ids.push_back(1);
     int valid = int(ids.size());
-    ids.resize(limit, 0);
+    ids.resize(std::max<size_t>(min_tokens, ids.size()), 0);
     return {std::move(ids), valid};
 }
 

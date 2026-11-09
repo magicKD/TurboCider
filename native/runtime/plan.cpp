@@ -268,6 +268,10 @@ static ExecutionPlan make_plan_impl(
         // this remains a heuristic, not an allocator-enforced limit.
         plan.memory_estimate_bytes = (12ull << 30) +
             uint64_t(r.width) * r.height * r.frames * (hybrid ? 1024 : 1408);
+    else if (r.model == "wan2.2-ti2v-5b-fastwan")
+        // Conservative heuristic only. The 512x512x97 native component run
+        // peaked around 44 GiB process footprint without text encoding.
+        plan.memory_estimate_bytes = (38ull << 30) + uint64_t(r.width) * r.height * r.frames * 384;
     else if (r.model == "seedvr2-3b")
         // Resident checkpoint bank, causal histories, sliced VAE activations
         // and whole-clip DiT. A conservative heuristic, not an enforced cap.

@@ -46,6 +46,38 @@ import ImageIO
         try check(
             restored.tinyVAEPaths == draft.tinyVAEPaths && restored.tinyPreview
                 && restored.tinyVAEDecoder == "tiny", "draft persistence dropped settings")
+        var wan = StudioDraft()
+        wan.modelID = "wan2.2-ti2v-5b-fastwan"
+        wan.modelPaths[wan.modelID] = temporary.path
+        try check(wan.wan22TinyVAEDecoder == "tiny", "Wan must default to Super decoding")
+        let migratedWan = try JSONDecoder().decode(StudioDraft.self, from: Data("{}".utf8))
+        try check(migratedWan.wan22TinyVAEDecoder == "tiny", "older drafts must default to Super")
+        do {
+            _ = try wan.tinyVAEConfiguration()
+            throw NativeFailure(message: "Wan accepted missing Super weights")
+        } catch let failure as NativeFailure {
+            try check(failure.message.contains("不会自动回退"), "Wan missing-weight error must be explicit")
+        }
+        let wanVAE = temporary.appendingPathComponent("vae")
+        try FileManager.default.createDirectory(at: wanVAE, withIntermediateDirectories: false)
+        let superWeights = wanVAE.appendingPathComponent("taew2_2_super.safetensors")
+        try Data([0]).write(to: superWeights)
+        let wanConfig = try wan.tinyVAEConfiguration()
+        try check(wanConfig?.path == superWeights.path && wanConfig?.encoder == "original" &&
+                  wanConfig?.decoder == "tiny" && wanConfig?.preview == false,
+                  "Wan Super must replace only final video decoding")
+        let resources = temporary.appendingPathComponent("resources/tiny-vae")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let bundledSuper = resources.appendingPathComponent("taew2_2_super.safetensors")
+        try Data([1]).write(to: bundledSuper)
+        try check(wan.resolveTinyVAEPath(resources: resources.deletingLastPathComponent()) == bundledSuper.path,
+                  "Wan did not discover the packaged Super weights")
+        wan.wan22TinyVAEDecoder = "original"
+        let wanFull = try wan.tinyVAEConfiguration()
+        try check(wanFull == nil, "Wan must allow explicitly selecting the full VAE")
+        wan.wan22TinyVAEDecoder = "tiny"
+        let restoredWan = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(wan))
+        try check(restoredWan.wan22TinyVAEDecoder == "tiny", "Wan decoder preference did not persist")
         draft.streaming.selection = .tier12
         do {
             _ = try draft.tinyVAEConfiguration()

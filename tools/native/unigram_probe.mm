@@ -18,8 +18,10 @@ int main(int argc, char **argv) {
                 NSString *prompt = record[@"prompt"];
                 NSData *bytes = [prompt dataUsingEncoding:NSUTF8StringEncoding];
                 auto raw = std::string((const char *)bytes.bytes, bytes.length);
-                auto tokens = t5 ? tokenizer.t5_prompt(raw, [record[@"limit"] intValue])
-                                 : tokenizer.prompt(raw, [record[@"limit"] intValue]);
+                tc::Tokens tokens;
+                if (t5) tokens = tokenizer.t5_prompt(raw, [record[@"limit"] intValue]);
+                else if ([record[@"extended"] boolValue]) tokens = tokenizer.prompt_extended(raw);
+                else tokens = tokenizer.prompt(raw, [record[@"limit"] intValue]);
                 NSMutableArray *ids = [NSMutableArray array];
                 for (int id : tokens.ids) [ids addObject:@(id)];
                 [results addObject:@{@"ids":ids, @"valid":@(tokens.valid)}];

@@ -152,6 +152,21 @@ private final class ProgressProbe: @unchecked Sendable {
         let ltx098Encoder = try ltx098.downloadVariants[0].request(modelID: ltx098.modelID, provider: .huggingface, componentKind: "encoder")
         try check(Set(ltx098Encoder.include) == Set(["t5xxl_fp16.safetensors", "tokenizer.json"]) && ltx098Encoder.supplements.count == 2,
                   "LTX 0.9.8 encoder subset lost its tokenizer or added the checkpoint")
+        guard let wan22 = LibraryRecipe.all.first(where: { $0.modelID == "wan2.2-ti2v-5b-fastwan" }) else {
+            throw LibraryFailure(message: "Wan2.2 recipe missing")
+        }
+        let wan22Request = try wan22.downloadVariants[0].request(modelID: wan22.modelID, provider: .huggingface)
+        try check(wan22Request.repository == "FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers" &&
+                  wan22Request.destinations["transformer/diffusion_pytorch_model.safetensors"] ==
+                    "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors" &&
+                  wan22Request.supplements.contains { $0.destinations?["split_files/vae/wan2.2_vae.safetensors"] == "vae/wan2.2_vae.safetensors" } &&
+                  wan22Request.supplements.contains { $0.destinations?["split_files/text_encoders/umt5_xxl_fp16.safetensors"] == "text_encoders/umt5_xxl_fp16.safetensors" } &&
+                  wan22Request.supplements.contains { $0.destinations?["tokenizer.json"] == "tokenizer/tokenizer.json" },
+                  "Wan2.2 recipe lost a source or destination mapping")
+        let wan22Encoder = try wan22.downloadVariants[0].request(modelID: wan22.modelID, provider: .huggingface, componentKind: "encoder")
+        try check(Set(wan22Encoder.include) == Set(["split_files/text_encoders/umt5_xxl_fp16.safetensors", "tokenizer.json"]) &&
+                  wan22Encoder.supplements.count == 2 && wan22Encoder.destinations.isEmpty,
+                  "Wan2.2 encoder subset lost its tokenizer or included the Transformer")
         guard let zImage = LibraryRecipe.all.first(where: { $0.modelID == "z-image-turbo" }) else {
             throw LibraryFailure(message: "Z-Image recipe missing")
         }

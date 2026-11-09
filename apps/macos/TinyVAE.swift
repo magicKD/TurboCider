@@ -13,16 +13,29 @@ extension TinyVAEAsset {
 
 extension StudioDraft {
     var supportsTinyVAE: Bool {
-        ["qwen-image-2.1", "z-image-turbo", "z-image-turbo-gguf"].contains(modelID)
+        ["qwen-image-2.1", "z-image-turbo", "z-image-turbo-gguf", "wan2.2-ti2v-5b-fastwan"].contains(modelID)
     }
-    var tinyArchitecture: String { modelID == "qwen-image-2.1" ? "taeqi2_1" : "taef1" }
-    var resolvedTinyVAEPath: String? {
+    var tinyArchitecture: String {
+        if modelID == "wan2.2-ti2v-5b-fastwan" { return "taew2_2_super" }
+        return modelID == "qwen-image-2.1" ? "taeqi2_1" : "taef1"
+    }
+    var resolvedTinyVAEPath: String? { resolveTinyVAEPath(resources: Bundle.main.resourceURL) }
+    func resolveTinyVAEPath(resources: URL?) -> String? {
         if let explicit = tinyVAEPaths[tinyArchitecture], !explicit.isEmpty { return explicit }
+        if modelID == "wan2.2-ti2v-5b-fastwan",
+           let bundled = resources?.appendingPathComponent("tiny-vae").appendingPathComponent("taew2_2_super.safetensors"),
+           (try? bundled.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+            return bundled.path
+        }
         if let asset = TinyVAEAsset.all.first(where: { $0.id == tinyArchitecture }),
-           let bundled = asset.bundledPath() { return bundled }
+           let bundled = asset.bundledPath(in: resources) { return bundled }
         guard !modelPath.isEmpty else { return nil }
         let name = tinyArchitecture + ".safetensors"
         let model = URL(fileURLWithPath: modelPath)
+        if modelID == "wan2.2-ti2v-5b-fastwan" {
+            let candidate = model.appendingPathComponent("vae").appendingPathComponent(name).path
+            if FileManager.default.fileExists(atPath: candidate) { return candidate }
+        }
         return [model, model.deletingLastPathComponent()].map {
             $0.appendingPathComponent("tiny-vae").appendingPathComponent(name).path
         }.first {
@@ -31,6 +44,20 @@ extension StudioDraft {
     }
     func tinyVAEConfiguration() throws -> NativeTinyVAEConfig? {
         guard supportsTinyVAE else { return nil }
+        if modelID == "wan2.2-ti2v-5b-fastwan" {
+            guard ["original", "tiny"].contains(wan22TinyVAEDecoder) else {
+                throw NativeFailure(message: "Wan2.2 视频解码设置无效。")
+            }
+            guard wan22TinyVAEDecoder == "tiny" else { return nil }
+            guard streaming.selection == .off else {
+                throw NativeFailure(message: "TAEW2.2-Super 尚未标定流式内存档位，请先关闭内存档位。")
+            }
+            guard let path = resolvedTinyVAEPath, path.hasPrefix("/"),
+                  FileManager.default.fileExists(atPath: path) else {
+                throw NativeFailure(message: "请先选择 taew2_2_super.safetensors；不会自动回退为完整 VAE。")
+            }
+            return NativeTinyVAEConfig(path: path, encoder: "original", decoder: "tiny", preview: false, interval: 2)
+        }
         guard ["original", "tiny"].contains(tinyVAEEncoder),
             ["original", "tiny"].contains(tinyVAEDecoder),
             (1...50).contains(tinyPreviewInterval)

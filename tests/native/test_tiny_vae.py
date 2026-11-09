@@ -1,12 +1,13 @@
 """CPU request contracts; real Metal parity/acceptance are explicit targets."""
 import ctypes as C
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-LIBRARY = ROOT / "build/native/libturbocider.dylib"
+LIBRARY = Path(os.environ.get("TURBOCIDER_NATIVE_LIBRARY", ROOT / "build/native/libturbocider.dylib"))
 
 
 @unittest.skipUnless(LIBRARY.is_file(), "native build required")
@@ -74,6 +75,45 @@ class TinyVAEContracts(unittest.TestCase):
         self.assertNotEqual(self.call(request)[0], 0)
         request["execution"]["allow_approximation"] = True
         self.assertEqual(self.call(request)[0], 0)
+
+    def test_wan22_super_is_final_decode_only_and_requires_permission(self):
+        request = dict(model="wan2.2-ti2v-5b-fastwan", operation="video.image", prompt="test",
+                       width=512, height=512, steps=3, frames=97, fps=24, audio=False,
+                       output=str(self.path.parent / "out.mp4"), execution="gpu", residency="resident",
+                       inputs=[dict(kind="image", role="first_frame", path=str(self.path), strength=1)],
+                       tiny_vae=dict(path=str(self.path), encoder="original", decoder="tiny", preview=False))
+        self.assertNotEqual(self.call(request)[0], 0)
+        request["allow_approximation"] = True
+        code, result, error = self.call(request)
+        self.assertEqual(code, 0, error)
+        self.assertIn("tiny_vae_final_decoding", json.loads(result)["algorithm_approximations"])
+        request["tiny_vae"]["preview"] = True
+        self.assertNotEqual(self.call(request)[0], 0)
+        request["tiny_vae"]["preview"] = False
+        request["tiny_vae"]["encoder"] = "tiny"
+        self.assertNotEqual(self.call(request)[0], 0)
+
+    def test_wan22_extended_resolution_has_geometry_and_memory_guards(self):
+        request = dict(model="wan2.2-ti2v-5b-fastwan", operation="video.image", prompt="test",
+                       width=768, height=768, steps=3, frames=97, fps=24, audio=False,
+                       output=str(self.path.parent / "out.mp4"), execution="gpu", residency="resident",
+                       inputs=[dict(kind="image", role="first_frame", path=str(self.path), strength=1)])
+        self.lib.tc_system_json.restype = C.c_void_p
+        pointer = C.c_void_p(self.lib.tc_system_json())
+        try:
+            system = json.loads(C.string_at(pointer).decode())
+        finally:
+            self.lib.tc_string_free(pointer)
+        code, _, error = self.call(request)
+        if system["physical_memory_bytes"] >= (64 << 30):
+            self.assertEqual(code, 0, error)
+        else:
+            self.assertNotEqual(code, 0)
+            self.assertIn("64 GiB", error)
+        request["width"] = 800
+        self.assertNotEqual(self.call(request)[0], 0)
+        request["width"], request["height"] = 736, 510
+        self.assertNotEqual(self.call(request)[0], 0)
 
 
 if __name__ == "__main__":

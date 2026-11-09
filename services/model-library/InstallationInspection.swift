@@ -229,6 +229,12 @@ private struct InstallationProbe {
                 report.notes.append("未安装 0.9.8 潜空间放大器：8 步单阶段仍可使用；7+3 步双阶段需要在模型中心补齐放大器。")
             }
             report.notes.append("原生 GPU 候选；ANE 与更广泛画质验证尚未完成。请确认 LTX 权重许可。")
+        case "wan2.2-ti2v-5b-fastwan":
+            weights("diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors")
+            weights("text_encoders/umt5_xxl_fp16.safetensors")
+            weights("vae/wan2.2_vae.safetensors")
+            json("tokenizer/tokenizer.json")
+            report.notes.append("实验性 GPU 图生视频：FastVideo 全权重三步 DMD；首帧强度 1、最多 768×768、97 帧；超过 512 需至少 64 GiB 统一内存。文件检查不等于画质或性能验收。")
         case "minimax-h3-turbo":
             json("FL2VA/tokenizer/tokenizer.json"); json("FL2VA/transformer/config.json")
             json("FL2VA/transformer/model.safetensors.index.json")

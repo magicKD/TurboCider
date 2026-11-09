@@ -7,7 +7,7 @@ struct TinyVAEControls: View {
     var locked = false
     var body: some View {
         if draft.supportsTinyVAE {
-            DisclosureGroup("Tiny VAE 与实时预览") {
+            DisclosureGroup(draft.modelID == "wan2.2-ti2v-5b-fastwan" ? "视频 VAE 解码" : "Tiny VAE 与实时预览") {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
                         Text(
@@ -28,29 +28,38 @@ struct TinyVAEControls: View {
                             }
                         }.accessibilityIdentifier("tinyVAEChooseModel")
                     }
-                    if draft.modelID == "qwen-image-2.1" && draft.operation == "image.edit" {
-                        Picker("参考图编码", selection: $draft.tinyVAEEncoder) {
+                    if draft.modelID == "wan2.2-ti2v-5b-fastwan" {
+                        Picker("最终视频解码", selection: $draft.wan22TinyVAEDecoder) {
+                            Text("完整 Wan2.2 VAE（质量优先）").tag("original")
+                            Text("TAEW2.2-Super（默认，近似、速度优先）").tag("tiny")
+                        }.accessibilityIdentifier("wan22VideoDecoder")
+                        Text("仅替换最终视频解码；首帧仍使用完整 VAE 编码。Super 可能改变细节和色彩，建议对照后选择。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        if draft.modelID == "qwen-image-2.1" && draft.operation == "image.edit" {
+                            Picker("参考图编码", selection: $draft.tinyVAEEncoder) {
+                                Text("原始 VAE（质量优先）").tag("original")
+                                Text("Tiny（近似、速度优先）").tag("tiny")
+                            }.accessibilityIdentifier("tinyVAEEncoder")
+                        }
+                        Picker("最终图解码", selection: $draft.tinyVAEDecoder) {
                             Text("原始 VAE（质量优先）").tag("original")
                             Text("Tiny（近似、速度优先）").tag("tiny")
-                        }.accessibilityIdentifier("tinyVAEEncoder")
-                    }
-                    Picker("最终图解码", selection: $draft.tinyVAEDecoder) {
-                        Text("原始 VAE（质量优先）").tag("original")
-                        Text("Tiny（近似、速度优先）").tag("tiny")
-                    }.accessibilityIdentifier("tinyVAEDecoder")
-                    Toggle("实时采样预览", isOn: $draft.tinyPreview).accessibilityIdentifier(
-                        "tinyPreviewEnabled")
-                    if draft.tinyPreview {
-                        Stepper(
-                            "每 \(draft.tinyPreviewInterval) 步预览", value: $draft.tinyPreviewInterval,
-                            in: 1...50
+                        }.accessibilityIdentifier("tinyVAEDecoder")
+                        Toggle("实时采样预览", isOn: $draft.tinyPreview).accessibilityIdentifier(
+                            "tinyPreviewEnabled")
+                        if draft.tinyPreview {
+                            Stepper(
+                                "每 \(draft.tinyPreviewInterval) 步预览", value: $draft.tinyPreviewInterval,
+                                in: 1...50
+                            )
+                            .accessibilityIdentifier("tinyPreviewInterval")
+                        }
+                        Text(
+                            "预览显示当前去噪估计，尺寸与最终图一致，默认每 2 步更新，并显示最后一步。预览不会改变采样结果；Tiny 编码／最终解码会损失细节。Z-Image 文生图不调用参考图编码器。"
                         )
-                        .accessibilityIdentifier("tinyPreviewInterval")
+                        .font(.caption2).foregroundStyle(.secondary)
                     }
-                    Text(
-                        "预览显示当前去噪估计，尺寸与最终图一致，默认每 2 步更新，并显示最后一步。预览不会改变采样结果；Tiny 编码／最终解码会损失细节。Z-Image 文生图不调用参考图编码器。"
-                    )
-                    .font(.caption2).foregroundStyle(.secondary)
                     if draft.streaming.selection != .off {
                         Text("使用 Tiny VAE 或预览前，请关闭未标定的流式内存档位。")
                             .font(.caption2).foregroundStyle(.orange)

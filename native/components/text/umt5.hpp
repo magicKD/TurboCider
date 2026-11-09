@@ -13,6 +13,7 @@ struct UMT5Config {
     int intermediate = 10240;
     int buckets = 32;
     int max_distance = 128;
+    int max_tokens = 512;
     float epsilon = 1e-6f;
     // UMT5 owns a position-bias table per layer. Standard T5 v1.1, used
     // by LTX-Video 0.9.8, computes the table once from the first layer and
@@ -24,8 +25,7 @@ struct UMT5Config {
     // LTX 0.9.8's ComfyUI reference uses PyTorch SDPA for standard T5.
     // Wan's existing UMT5 path retains its explicit BF16 score boundaries.
     bool comfy_t5_sdpa = false;
-    // The ComfyUI text encoder upcasts BF16 weights and keeps T5 activations
-    // in FP32. This is only enabled for the LTX 0.9.8 compatibility path.
+    // ComfyUI can upcast BF16 weights and keep T5/UMT5 activations in FP32.
     bool comfy_t5_fp32 = false;
 };
 

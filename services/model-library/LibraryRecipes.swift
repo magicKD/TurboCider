@@ -116,6 +116,34 @@ struct LibraryRecipe: Codable, Sendable {
     }
 
     private static let qwenRepository = "Comfy-Org/Qwen-Image-2.1"
+    private static let wan22Variant: LibraryVariant = {
+        let transformer = "transformer/diffusion_pytorch_model.safetensors"
+        let text = "split_files/text_encoders/umt5_xxl_fp16.safetensors"
+        let vae = "split_files/vae/wan2.2_vae.safetensors"
+        let tokenizer = "tokenizer.json"
+        let repo = "FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers"
+        let comfy = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+        let supplements: [LibrarySupplement] = [
+            .init(repository: comfy, include: [text, vae], destinations: [
+                text: "text_encoders/umt5_xxl_fp16.safetensors", vae: "vae/wan2.2_vae.safetensors"]),
+            .init(repository: "google/umt5-xxl", include: [tokenizer],
+                  destinations: [tokenizer: "tokenizer/tokenizer.json"])
+        ]
+        let preparation = "实验性原生 GPU 图生视频：FastVideo 全权重三步 DMD、首帧强度固定 1、24 fps、最多 97 帧，画布上限 768×768；超过 512 需至少 64 GiB 统一内存。请确认模型许可；质量仍需更多验证。"
+        return LibraryVariant(id: "fastwan-fp16", title: "FastWan 全权重 · 3 步 · 实验版", repository: repo,
+            include: [transformer, text, vae, tokenizer], supplements: supplements,
+            destinations: [transformer: "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors"],
+            components: [
+                .init(kind: "dit", title: "FastWan 5B Transformer", format: "safetensors", precision: "原始 FP16/BF16",
+                      repository: repo, include: [transformer], note: "完整蒸馏权重，不是 LoRA。"),
+                .init(kind: "text_encoder", title: "UMT5-XXL", format: "safetensors", precision: "FP16",
+                      repository: comfy, include: [text], note: "与 Wan2.2 VAE 配套。"),
+                .init(kind: "vae", title: "Wan2.2 VAE", format: "safetensors", precision: "原始精度",
+                      repository: comfy, include: [vae], note: "48-channel 完整视频 VAE。"),
+                .init(kind: "tokenizer", title: "UMT5 Tokenizer", format: "JSON", precision: "原始词表",
+                      repository: "google/umt5-xxl", include: [tokenizer], note: "与检查点中的 SentencePiece 词表对应。")
+            ], runnable: true, preparation: preparation)
+    }()
     private static let qwenTokenizer = "processor/tokenizer.json"
     private static let qwenEncoder = "text_encoders/qwen3vl_8b_bf16.safetensors"
     private static let qwenVAE = "vae/qwen_image_2.1_vae_bf16.safetensors"
@@ -218,6 +246,9 @@ struct LibraryRecipe: Codable, Sendable {
                   .init(repository: "google-t5/t5-base", revision: "a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1",
                         include: ["tokenizer.json"], destinations: ["tokenizer.json": "tokenizer/tokenizer.json"])
               ]),
+        .init(modelID: "wan2.2-ti2v-5b-fastwan", repository: wan22Variant.repository,
+              include: wan22Variant.include, preparation: wan22Variant.preparation,
+              supplements: wan22Variant.supplements, variants: [wan22Variant]),
         .init(modelID: "minimax-h3-turbo", repository: "MiniMaxAI/MiniMax-H3", include: ["FL2VA/"],
               preparation: "默认仅下载 FL2VA（文生视频、首尾帧）。基础权重还需配套 LightX2V Turbo LoRA，并通过离线 prepare-lora 工具生成预融合模型；参考视频另需 Ref2VA 的独立模型与 Turbo 来源记录。"),
         .init(modelID: "wan2.1-1.3b-qad", repository: "FastVideo/FastMetal-1.3B-QAD", include: ["model_index.json", "mlx_dit.json", "mlx_dit.safetensors", "scheduler/", "text_encoder/", "tokenizer/", "vae/"],

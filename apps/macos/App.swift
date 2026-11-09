@@ -919,6 +919,13 @@ struct StudioView: View {
                     Text("关闭时保留放大后尺寸；开启时用双线性缩放回基准画布。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
+            } else if studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" {
+                LabeledContent("采样步数", value: "3 步（FastWan DMD 固定）")
+                    .accessibilityIdentifier("wan22FixedSteps")
+                Text("实验性全注意力蒸馏模型；使用重新加噪调度，不是普通三步 Euler。")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Text("提示词最多 1023 个内容 token；超过 511 时使用扩展上下文，与 FastVideo 默认的 512 token 有差异。")
+                    .font(.caption2).foregroundStyle(.secondary)
             } else if studio.draft.hasQwen21TurboCheckpoint {
                 LabeledContent("采样步数", value: "8 步（Turbo 固定）")
                     .accessibilityIdentifier("qwenTurboFixedSteps")
@@ -982,11 +989,20 @@ struct StudioView: View {
                 Text("LTX 会使用 64 的倍数；480/720 高度分别向下对齐为 448/704。121 帧约 5.04 秒。")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
-                HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in
+                HStack { ForEach(studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" ? [256, 512, 640, 768] : [256, 512, 768, 1024], id: \.self) { size in
                     Button("\(size)") { studio.draft.width = size; studio.draft.height = size }
                         .font(.caption).disabled((qwenCanvasLocked && size != 512) ||
-                            (studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" && size > 512))
+                            (studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" && size > 512) ||
+                            (studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" && size > 512 && ProcessInfo.processInfo.physicalMemory < (64 * 1024 * 1024 * 1024)))
                 } }
+                if studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" {
+                    Text("支持宽高分别输入 128–768 的 32 倍数；超过 512 需要至少 64 GiB 统一内存。高分辨率不保证人物一致性。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    if (studio.draft.width > 512 || studio.draft.height > 512) && studio.draft.wan22TinyVAEDecoder == "original" {
+                        Text("高分辨率完整 VAE 可能占用大量内存；请关闭其他重负载应用，或使用默认 Super 解码。")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
+                }
                 if studio.draft.modelID == "qwen-image-2.1" {
                     if studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" {
                         Text("流式加载的宽高上限均为 512，可手动输入 32 的倍数。")
@@ -1024,7 +1040,11 @@ struct StudioView: View {
                     Toggle("生成音频", isOn: $studio.draft.audio).controlSize(.small)
                 } else { Text("当前执行器输出无音轨视频。").font(.caption).foregroundStyle(.secondary) }
             }
-            if ["image.transform", "video.image"].contains(studio.draft.operation) {
+            if studio.draft.modelID == "wan2.2-ti2v-5b-fastwan" && studio.draft.operation == "video.image" {
+                Divider()
+                Text("首帧条件固定为 1；后续帧会正常生成。")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else if ["image.transform", "video.image"].contains(studio.draft.operation) {
                 Divider()
                 HStack { Text(studio.draft.operation == "video.image" ? "首帧保留强度" : "原图保留强度"); Spacer(); Text(studio.draft.strength, format: .number.precision(.fractionLength(2))).monospacedDigit() }.font(.caption)
                 Slider(value: $studio.draft.strength, in: 0...1, step: 0.05).accessibilityLabel("原图保留强度")

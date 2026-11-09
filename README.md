@@ -74,6 +74,17 @@ open dist/TurboCider.app
 
 `make setup` installs the pinned packages into `.venv` and a separate offline Core ML environment. Model weights and ANE artifacts require additional preparation; see the [FLUX.2 Klein 4B walkthrough](docs/public/FLUX_PREPARATION.md).
 
+For the Wan 2.2 App's default Super video decoder, supply the official
+`taew2_2_super.safetensors` when packaging, for example
+`TURBOCIDER_TAEW22_SUPER_PATH=/absolute/path/to/taew2_2_super.safetensors TURBOCIDER_REQUIRE_TAEW22_SUPER=1 make package`.
+The file is checksum-verified before being bundled. Without it, select a
+local Super checkpoint or explicitly choose the full VAE; the App will not
+silently fall back. The main Wan, text encoder, tokenizer and full VAE files
+remain separate model assets.
+Wan2.2 prompts may use up to 1023 content tokens plus EOS; prompts over 511
+use the App's bounded extended context, which differs from FastVideo's default
+512-token text input.
+
 Choose image or video creation in the App; a compatible executor is selected automatically. Register its model folder and generate with GPU first. Compatible Z-Image text components can be linked from a local FLUX.2 Klein 4B installation. Configure ANE only after preparing artifacts for the actual model, shape and LoRA identity. Current packages are locally ad-hoc signed, not notarized releases.
 
 For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`. `batch` reuses a session; `serve` exposes the local job API. See [getting started](docs/public/GETTING_STARTED.md) and the [request / SDK / API reference](docs/public/USAGE.md).
@@ -88,6 +99,7 @@ For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`.
 | MiniMax H3 Turbo | Video generation, keyframes and references; media tools required |
 | LTX 2.5 Distilled | Text-to-video, image-to-video and optional audio output; backend/configuration limits apply |
 | [LTX-Video 0.9.8 2B Distilled](docs/public/LTX_VIDEO_098.md) | Experimental GPU-only image-to-video; 8-step single-scale or 7+3-step multiscale, 24 fps, up to 121 frames; no audio, LoRA, streaming or ANE yet |
+| Wan 2.2 TI2V 5B FastWan | Experimental GPU-only image-to-video; fixed three-step DMD, up to 768×768 and 97 frames at 24 fps; above 512 requires 64 GiB unified memory; Super or full video VAE |
 | Wan 2.1 1.3B QAD | Native three-step video generation; offline-converted assets and verified premerged LoRA required |
 
 `turbocider models` and request `plan` report the executable capabilities. LoRA, input and acceleration options vary by model. See the [model and request reference](docs/public/USAGE.md#model-capabilities), [Qwen guide](docs/public/QWEN_IMAGE_21.md) and [GPU/ANE acceleration status](docs/status/acceleration.md).

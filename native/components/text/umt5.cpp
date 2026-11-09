@@ -11,10 +11,11 @@ UMT5Encoder::UMT5Encoder(const Weights &weights, UMT5Config config)
     require(config_.layers > 0 && config_.hidden > 0 && config_.heads > 0 &&
                 config_.head_dim > 0 && config_.intermediate > 0 &&
                 config_.buckets >= 4 && config_.buckets % 4 == 0 &&
-                config_.max_distance > config_.buckets / 4 && config_.epsilon > 0,
+                config_.max_distance > config_.buckets / 4 && config_.epsilon > 0 &&
+                config_.max_tokens > 0 && config_.max_tokens <= 1024,
             "invalid UMT5 encoder geometry");
-    require(!config_.comfy_t5_fp32 || (config_.comfy_t5_sdpa && config_.shared_relative_attention_bias),
-            "FP32 T5 compatibility requires standard T5 and SDPA");
+    require(!config_.comfy_t5_fp32 || config_.comfy_t5_sdpa,
+            "FP32 T5 compatibility requires SDPA");
 }
 
 Tensor UMT5Encoder::weight(const std::string &name) const {
@@ -37,7 +38,7 @@ Tensor UMT5Encoder::normalize(const Tensor &x, const std::string &name) const {
 }
 
 Tensor UMT5Encoder::embed(const Tokens &tokens) const {
-    require(!tokens.ids.empty() && tokens.ids.size() <= 512 && tokens.valid > 0 &&
+    require(!tokens.ids.empty() && tokens.ids.size() <= size_t(config_.max_tokens) && tokens.valid > 0 &&
                 size_t(tokens.valid) <= tokens.ids.size(), "invalid UMT5 token sequence");
     const auto &embedding = weights_.at("shared.weight");
     require(embedding.ndim() == 2 && embedding.shape(1) == config_.hidden, "invalid UMT5 embedding");
@@ -50,7 +51,7 @@ Tensor UMT5Encoder::embed(const Tokens &tokens) const {
 }
 
 Tensor UMT5Encoder::relative_buckets(int count) const {
-    require(count > 0 && count <= 512, "invalid UMT5 sequence length");
+    require(count > 0 && count <= config_.max_tokens, "invalid UMT5 sequence length");
     const int half = config_.buckets / 2, exact = half / 2;
     std::vector<int> buckets(size_t(count) * count);
     for (int query = 0; query < count; ++query) {

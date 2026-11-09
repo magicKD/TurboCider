@@ -95,6 +95,16 @@ import Foundation
         try fm.removeItem(at: root.appendingPathComponent("ltx098/tokenizer/tokenizer.json"))
         try check(inspect("ltx-video-0.9.8-distilled", at: "ltx098").status == "incomplete",
                   "LTX 0.9.8 without its tokenizer was accepted")
+        try tensor("wan22/diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors")
+        try tensor("wan22/text_encoders/umt5_xxl_fp16.safetensors")
+        try tensor("wan22/vae/wan2.2_vae.safetensors")
+        try json("wan22/tokenizer/tokenizer.json", ["model": ["type": "Unigram"]])
+        let wan22 = inspect("wan2.2-ti2v-5b-fastwan", at: "wan22")
+        try check(wan22.status == "files_present" && wan22.checkedWeightFiles == 3,
+                  "Wan2.2 installation layout was rejected")
+        try fm.removeItem(at: root.appendingPathComponent("wan22/vae/wan2.2_vae.safetensors"))
+        try check(inspect("wan2.2-ti2v-5b-fastwan", at: "wan22").status == "incomplete",
+                  "Wan2.2 without its full VAE was accepted")
         try json("h3/FL2VA/tokenizer/tokenizer.json", ["model": ["type": "BPE"]])
         try json("h3/FL2VA/transformer/config.json", ["model_type": "fixture"])
         try json("h3/FL2VA/transformer/model.safetensors.index.json", ["weight_map": ["weight": "model.safetensors"]])
