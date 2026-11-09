@@ -12,6 +12,8 @@ SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 MIN_MACOS="$(turbocider_mlx_min_macos)"
 xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
  tools/native/wan22_schedule_probe.cpp -o "$OUT/wan22-schedule-probe"
+xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
+ tools/native/wan22_text_policy_probe.cpp -o "$OUT/wan22-text-policy-probe"
 xcrun clang++ -std=c++20 -O2 -fobjc-arc -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
  -I native/core -I bindings/c/include -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp" \
  tools/native/unigram_probe.mm -L "$NATIVE" -lturbocider -framework Foundation \
@@ -21,6 +23,11 @@ xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER
  tools/native/wan22_block_probe.cpp native/models/wan22/block.cpp \
  -L "$NATIVE" -lturbocider -L "$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal \
  -Wl,-rpath,"$NATIVE" -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/wan22-block-probe"
+xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
+ -I native/core -I bindings/c/include -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp" \
+ tools/native/wan22_block_profile.cpp native/models/wan22/block.cpp \
+ -L "$NATIVE" -lturbocider -L "$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal \
+ -Wl,-rpath,"$NATIVE" -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/wan22-block-profile"
 xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
  -I native/core -I bindings/c/include -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp" \
  tools/native/wan22_transformer_probe.cpp native/models/wan22/block.cpp native/models/wan22/transformer.cpp \

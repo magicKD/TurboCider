@@ -12,7 +12,7 @@ class TextEncoder {
   public:
     TextEncoder(std::filesystem::path checkpoint, std::filesystem::path tokenizer_root);
     Tokens tokenize(const std::string &) const;
-    Tensor encode(const Tokens &, const Event &, std::atomic<bool> &) const;
+    Tensor encode(const Tokens &, const Event &, std::atomic<bool> &, int padding_alignment = 0) const;
 };
 
 } // namespace tc::wan22

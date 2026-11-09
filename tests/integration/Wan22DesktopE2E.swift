@@ -108,15 +108,49 @@ import Foundation
             try check(result["valid_text_tokens"] as? Int == expected,
                       "Desktop job did not preserve the extended prompt")
         }
+        if let expected = ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_EXPECT_TEXT_ALIGNMENT"].flatMap(Int.init) {
+            try check(result["text_padding_alignment"] as? Int == expected,
+                      "Desktop job used an unexpected text alignment")
+        }
+        if let expected = ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_EXPECT_ENCODER_TOKENS"].flatMap(Int.init) {
+            try check(result["text_encoder_sequence_tokens"] as? Int == expected,
+                      "Desktop job used an unexpected text encoder length")
+        }
         let reloaded = NativeJobStore(directory: root)
         try check(reloaded.jobs.first?.id == job.id && reloaded.jobs.first?.state == "succeeded",
                   "Desktop video job was not persisted")
+        var repeatReport: [String: Any]?
+        if ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_REPEAT_PROMPT"] == "1" {
+            let repeatMovie = root.appendingPathComponent("outputs/wan22-app-repeat.mp4")
+            let repeatPair = try resolved.publicStreamingRequest(output: repeatMovie)
+            let repeatStart = ContinuousClock.now
+            let repeated = try await store.generate(modelURL: model, request: repeatPair.legacy,
+                streamingRequest: repeatPair.v2, runtimeOptions: options, inputAssets: resolved.activeAssets)
+            let repeatDuration = repeatStart.duration(to: .now).components
+            guard let repeatJSON = repeated.resultJSON, let repeatData = repeatJSON.data(using: .utf8),
+                  let repeatResult = try JSONSerialization.jsonObject(with: repeatData) as? [String: Any] else {
+                throw NativeFailure(message: "Repeated desktop job did not provide a result receipt")
+            }
+            try check(repeated.state == "succeeded" && repeatResult["prompt_cache_hit"] as? Bool == true &&
+                      repeatResult["text_encoder_sequence_tokens"] as? Int == 0 &&
+                      repeatResult["text_padding_alignment"] as? Int == result["text_padding_alignment"] as? Int &&
+                      files.fileExists(atPath: repeatMovie.path),
+                      "Repeated desktop job did not reuse its text conditioning")
+            let repeatedVideo = try await StudioAssetImporter(directory: root.appendingPathComponent("validated-media")).importVideoFile(repeatMovie)
+            try check(repeatedVideo.width == width && repeatedVideo.height == height &&
+                      repeatedVideo.frames == 97 && repeatedVideo.fps == 24,
+                      "Repeated desktop MP4 has unexpected geometry or duration")
+            repeatReport = ["output": repeatMovie.path,
+                "wall_seconds": Double(repeatDuration.seconds) + Double(repeatDuration.attoseconds) / 1e18,
+                "result": repeatResult]
+        }
         try await store.unload()
-        let report: [String: Any] = ["schema": "wan22-desktop-e2e-v1", "status": "complete",
+        var report: [String: Any] = ["schema": "wan22-desktop-e2e-v1", "status": "complete",
             "scope": "Desktop StudioState, image importer and embedded NativeJobStore; no GUI window automation",
             "output": movie.path, "seed": request.seed, "width": video.width, "height": video.height,
             "frames": video.frames ?? 0, "fps": video.fps ?? 0, "decoder": decoder, "variant": variant,
             "wall_seconds": elapsed, "result": result]
+        if let repeatReport { report["repeated_job"] = repeatReport }
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             .write(to: root.appendingPathComponent("report.json"), options: .atomic)
         print(String(decoding: try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))

@@ -14,15 +14,18 @@
 int main(int argc, char **argv) {
     @autoreleasepool {
         try {
-            tc::require(argc >= 7 && argc <= 9, "usage: wan22-resolution-probe MODEL_ROOT JOBS_JSON OUTPUT_DIR WIDTH HEIGHT super|full [fastwan|quanhaol] [cross-kv]");
+            tc::require(argc >= 7 && argc <= 10, "usage: wan22-resolution-probe MODEL_ROOT JOBS_JSON OUTPUT_DIR WIDTH HEIGHT super|full [fastwan|quanhaol] [cross-kv] [compact-text|align256]");
             const auto root = std::filesystem::absolute(argv[1]);
             const auto output = std::filesystem::absolute(argv[3]);
             const int width = std::stoi(argv[4]), height = std::stoi(argv[5]);
             const std::string decoder(argv[6]);
             const std::string variant = argc >= 8 ? argv[7] : "fastwan";
             bool cache_cross = false;
+            int text_alignment = 0;
             for (int i = 8; i < argc; ++i) {
                 if (std::string(argv[i]) == "cross-kv") cache_cross = true;
+                else if (std::string(argv[i]) == "compact-text") text_alignment = 64;
+                else if (std::string(argv[i]) == "align256") text_alignment = 256;
                 else tc::require(false, "invalid experimental probe option");
             }
             tc::require(width >= 128 && height >= 128 && width <= 768 && height <= 768 &&
@@ -63,9 +66,11 @@ int main(int argc, char **argv) {
             };
             tc::UnigramTokenizer tokenizer(root / "tokenizer");
             auto tokens = tokenizer.prompt_extended([request[@"prompt"] UTF8String]);
+            const auto text_started = tc::Clock::now();
             tc::wan22::TextEncoder text(root / "text_encoders/umt5_xxl_fp16.safetensors", root / "tokenizer");
-            auto context = text.encode(tokens, event, cancelled);
+            auto context = text.encode(tokens, event, cancelled, text_alignment);
             tc::mx::eval(context);
+            const double text_seconds = std::chrono::duration<double>(tc::Clock::now() - text_started).count();
             tc::mx::clear_cache();
             auto image = tc::load_image_center_crop_tensor(image_path.UTF8String, width, height);
             image = tc::mx::astype(tc::mx::expand_dims(tc::mx::transpose(image, {0, 3, 1, 2}), 2), tc::mx::bfloat16);
@@ -109,6 +114,8 @@ int main(int argc, char **argv) {
             NSDictionary *report = @{@"width":@(width), @"height":@(height), @"frames":@(frames), @"fps":@(fps),
                 @"seed":@(options.seed), @"decoder":@(decoder.c_str()), @"variant":@(variant.c_str()),
                 @"cross_attention_cache":@(cache_cross),
+                @"text_alignment":@(text_alignment),
+                @"text_encode_seconds":@(text_seconds),
                 @"valid_text_tokens":@(tokens.valid),
                 @"wall_seconds":@(elapsed), @"first_frame_vae_seconds":@(result.first_frame_vae_seconds),
                 @"transformer_and_denoise_seconds":@(result.transformer_and_denoise_seconds),

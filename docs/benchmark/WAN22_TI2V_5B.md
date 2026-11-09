@@ -360,3 +360,64 @@ retain the previous execution path. The plan adds 384 MiB of conservative
 headroom, and the result receipt identifies whether reuse ran. A separate
 two-block evaluation grouping experiment produced no material speedup on
 the tested 512 sample and was not enabled.
+
+## Short-prompt text alignment and rejected experiments
+
+Wan's UMT5 output masks padded rows to zero. On the tested M4 Max, macOS
+26.6.2 and MLX 0.32.0, encoding a short padded prompt using 256 rows and
+restoring the remaining zero rows reduced the median text-encoding time from
+**0.6925 s to 0.5544 s** across 36 fresh-process cases using the real UMT5
+weights. Cases used captured and random vocabulary IDs with 1–256 valid
+tokens; all 36 produced bit-identical 512-row BF16 outputs. Four additional
+cases with 257–526 valid tokens retained their original shape and output.
+
+For one 50-token portrait and seed, full 512×512/97-frame FastWan and
+quanhaol trajectories produced bit-identical final latent tensors with and
+without 256-row text encoding; the FastWan MP4s also had compressed YUV
+SSIM 1.0. These results do not prove equivalence for every prompt, weight
+file, driver, or device. Automatic use is therefore limited to the tested
+M4 Max/64-GiB-or-larger, macOS 26.6.2, MLX 0.32.0 combination and only when
+the 512-row context has at most 256 valid tokens. Other configurations use
+the previous full-length path. Receipts report the actual encoder length and
+alignment; a prompt-cache hit performs no text encoding. Long prompts such
+as the 526-token portrait above do not benefit.
+
+For the same 50-token portrait, two paired fresh-process FastWan 512×512
+probe runs took **18.456 / 18.274 s** without alignment and **18.147 /
+18.156 s** with it, including text, model loads, denoising, decoding and
+diagnostic exports. Their corresponding text-encoder phases were **0.704 /
+0.706 s** versus **0.571 / 0.568 s**. These are single-device probes with
+normal run-to-run variation, not guaranteed App or repeated-session speedups.
+The packaged desktop job path then completed the same short FastWan request
+in **18.168 s** and a repeated-prompt job in **17.121 s**; the second job
+reported a prompt-cache hit and zero text-encoder tokens. A packaged
+quanhaol job with the same prompt took **23.684 s**. The two FastWan MP4s
+and the quanhaol App/probe comparison each had compressed YUV SSIM 1.0.
+These are individual embedded desktop jobs, not GUI click-throughs.
+A separate 526-token FastWan desktop job completed in **18.347 s** and
+reported alignment 0 and all 526 encoder rows, confirming the long-prompt
+fallback on this example.
+
+More aggressive 64- and 128-row encodings were rejected: one 53-token text
+fixture differed by relative L2 **0.000346**, and a 50-token FastWan portrait
+then differed by **0.09375** relative L2 in final latents (compressed-video
+SSIM **0.9700**). These are agreement statistics, not perceptual quality
+scores, but the amplification makes that route inappropriate as a default.
+
+At 512×512/97 frames, a synchronized first-block profile with real FastWan
+weights and tiled small-fixture activations measured an untraced block median
+of **0.181 s**. Individual traced phases included about **0.0375 s** for the
+FFN up projection, **0.0380 s** for FFN down, and **0.0442 s** for self
+attention including RoPE. Trace points synchronize the GPU and disable
+cross-KV reuse, so those phase values are diagnostic rather than an exact
+end-to-end breakdown. Fusing Q/K/V weights gave identical tested latents but
+did not improve the four-step load-plus-denoise time (about **22.11 s**
+versus **22.05 s**); it was not enabled.
+
+In separate warm isolated GPU matrix tests at 6,400 rows, the real BF16 FFN
+up projection took a median **37.5 ms**, versus **49.0 ms** for MLX affine
+W8 and **48.7 ms** for W4. W8 and W4 output relative L2 were approximately
+**0.0059** and **0.0952**, respectively. At 14,400 rows the same BF16/W8/W4
+projection took **84.2/110.0/109.3 ms**. Quantization was excluded from
+timing, input activations were synthetic, and none of these is an end-to-end
+video-quality test. These W8/W4 routes were not enabled.

@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <cstring>
 #include <stdio.h>
+#include <mlx/version.h>
 
 namespace tc {
 namespace {
@@ -57,10 +58,15 @@ class Wan22Session final : public ModelSession {
         try {
             if (!tokenizer_) tokenizer_ = std::make_unique<UnigramTokenizer>(root_ / "tokenizer");
             auto tokens = tokenizer_->prompt_extended(request.prompt);
+            const auto device = device_info();
+            const auto os = NSProcessInfo.processInfo.operatingSystemVersion;
+            const int text_alignment = wan22::text_padding_alignment(device.gpu, device.physical_memory,
+                int(os.majorVersion), int(os.minorVersion), int(os.patchVersion), mx::version(), tokens.valid, tokens.ids.size());
+            const auto text_started = Clock::now();
             const bool text_cache_hit = cached_text_ && cached_ids_ == tokens.ids && cached_valid_ == tokens.valid;
             if (!text_cache_hit) {
                 wan22::TextEncoder encoder(root_ / "text_encoders/umt5_xxl_fp16.safetensors", root_ / "tokenizer");
-                auto text = encoder.encode(tokens, event, cancelled);
+                auto text = encoder.encode(tokens, event, cancelled, text_alignment);
                 mx::eval(text);
                 checkpoint(cancelled);
                 cached_text_ = std::move(text);
@@ -68,6 +74,7 @@ class Wan22Session final : public ModelSession {
                 cached_valid_ = tokens.valid;
                 mx::clear_cache();
             } else event("umt5_prompt_cache", 1, 1);
+            const double text_seconds = std::chrono::duration<double>(Clock::now() - text_started).count();
             auto image = load_image_center_crop_tensor(request.inputs[0].path, request.width, request.height);
             image = mx::astype(mx::expand_dims(mx::transpose(image, {0, 3, 1, 2}), 2), mx::bfloat16);
             mx::eval(image);
@@ -80,7 +87,7 @@ class Wan22Session final : public ModelSession {
             options.seed = request.seed;
             if (quanhaol_) options.distillation = wan22::Distillation::quanhaol_4;
             // Keep the previous low-memory path on smaller systems.
-            options.cache_cross_attention = device_info().physical_memory >= (64ull << 30);
+            options.cache_cross_attention = device.physical_memory >= (64ull << 30);
             const bool tiny_decoder = request.tiny_vae && request.tiny_vae->decoder == "tiny";
             if (tiny_decoder) options.tiny_decoder_checkpoint = request.tiny_vae->path;
             auto result = pipeline.generate(image, *cached_text_, options, event, cancelled);
@@ -116,6 +123,9 @@ class Wan22Session final : public ModelSession {
                                     @"video_vae_load_and_decode":@(result.video_vae_seconds)},
                 @"persistent_model":@NO, @"prompt_cache_hit":@(text_cache_hit), @"valid_text_tokens":@(tokens.valid),
                 @"cross_attention_cache":@(options.cache_cross_attention),
+                @"text_padding_alignment":@(text_alignment),
+                @"text_encoder_sequence_tokens":@(text_cache_hit ? 0 : (text_alignment ? 256 : tokens.ids.size())),
+                @"text_encode_seconds":@(text_seconds),
                 @"text_sequence_tokens":@(tokens.ids.size()), @"text_context_limit":@1024,
                 @"seconds":@(seconds), @"mlx_active_bytes":@(mx::get_active_memory()), @"mlx_peak_bytes":@(mx::get_peak_memory())
             };
