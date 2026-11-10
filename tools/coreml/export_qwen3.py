@@ -19,7 +19,6 @@ import json
 import mmap
 import os
 import re
-import shutil
 import signal
 import struct
 import tempfile

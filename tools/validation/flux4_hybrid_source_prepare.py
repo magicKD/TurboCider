@@ -10,7 +10,6 @@ from importlib.metadata import version
 import json
 from pathlib import Path
 import shutil
-import sys
 
 from flux9_bf16_framework_screen import check_generations, generation, registered_hashes, write_json
 from mflux_original_layout import read_header

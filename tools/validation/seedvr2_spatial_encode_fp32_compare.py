@@ -3,7 +3,7 @@
 import argparse
 import json
 from pathlib import Path
-from seedvr2_framework_screen import sha256,write_json
+from seedvr2_evidence import sha256,write_json
 from seedvr2_vae_coreml_conv_screen import quality
 
 def validate_reference(screen,reference):

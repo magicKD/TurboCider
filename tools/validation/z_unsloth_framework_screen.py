@@ -7,7 +7,6 @@ from pathlib import Path
 import socket
 import statistics
 import subprocess
-import sys
 
 from flux9_bf16_framework_screen import generation,check_generations,registered_hashes,write_json
 from mflux_original_layout import validate_layout

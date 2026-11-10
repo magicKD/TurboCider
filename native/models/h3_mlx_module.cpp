@@ -13,11 +13,11 @@ constexpr const char *dense_id = "minimax-h3-fasth3-mlx-int6";
 constexpr const char *vsa_id = "minimax-h3-fasth3-mlx-int6-vsa";
 constexpr const char *vdn_id = "minimax-h3-vdn";
 
-Recipe recipe(const char *model) {
+Recipe recipe(const char *model, int steps) {
     return Recipe{
         model,
         {{"text_encode", {}},
-         {"av_denoise", {"text_encode"}, 4},
+         {"av_denoise", {"text_encode"}, steps},
          {"video_decode", {"av_denoise"}},
          {"audio_decode", {"av_denoise"}},
          {"mux", {"video_decode", "audio_decode"}}},
@@ -26,19 +26,10 @@ Recipe recipe(const char *model) {
 }
 
 Recipe vdn_recipe() {
-    return Recipe{
-        vdn_id,
-        {{"text_encode", {}},
-         // TurboCider's public `steps` field reports actual model
-         // evaluations.  Keep the validated VDN profile at six evaluations;
-         // vpipe must be invoked with the matching evaluation count when
-         // collecting comparative performance evidence.
-         {"av_denoise", {"text_encode"}, 6},
-         {"video_decode", {"av_denoise"}},
-         {"audio_decode", {"av_denoise"}},
-         {"mux", {"video_decode", "audio_decode"}}},
-        true,
-    };
+    // TurboCider's public `steps` field reports actual model
+    // evaluations. Keep the validated VDN profile at six evaluations;
+    // vpipe must use the same count for comparative performance evidence.
+    return recipe(vdn_id, 6);
 }
 
 void validate_common(const Request &r, const char *model) {
@@ -205,7 +196,7 @@ ModelDescriptor vdn_descriptor() {
 ModelModule h3_mlx_module() {
     return {
         dense_id,
-        [] { return recipe(dense_id); },
+        [] { return recipe(dense_id, 4); },
         [](const Request &r) {
             validate_common(r, dense_id);
             require(!r.vsa, "use minimax-h3-fasth3-mlx-int6-vsa for VSA");
@@ -223,7 +214,7 @@ ModelModule h3_mlx_module() {
 ModelModule h3_mlx_vsa_module() {
     return {
         vsa_id,
-        [] { return recipe(vsa_id); },
+        [] { return recipe(vsa_id, 4); },
         [](const Request &r) {
             validate_common(r, vsa_id);
             validate_vsa(r);

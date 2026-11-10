@@ -13,7 +13,7 @@
 | 受限内存、权重驻留与调度 | [驻留调度器](memory-constrained-residency-scheduler-20260915.md) · [Streaming 设计目录](streaming/README.md) |
 | GGUF、量化执行与有限解码 | [量化执行设计](quantized-execution/README.md) · [实施与实验账本](../experiments/quantized-execution/README.md) · [量化与 streaming 对照](quantized-streaming-vpipe-comparison.md) |
 | Qwen Native Metal / GPU+ANE command graph | [专项设计目录](qwen-image-gpu-ane-command-graph/README.md) |
-| Apple 芯片与 kernel 优化 | [Mac kernel 优化](mac-kernel-opt.md) · [M5 ANE 适配](m5-ane-adaptation.md) |
+| Apple 芯片与 kernel 优化 | [Mac kernel 优化](mac-kernel-opt.md) · [M5 ANE 适配](../experiments/m5/m5-ane-adaptation.md) |
 | H3 C++/MLX INT6 | [加速方案与验收计划](h3-mlx-int6-fastvideo-parity-plan.md) |
 | LTX 2.5 与 VDN H3 | [实施与验收方案](ltx25-vdn-h3-ane-implementation-plan.md) · [ltx-mac 对齐方案](ltx25-ltx-mac-acceleration-parity-plan.md) |
 | LTX Video VAE 生命周期 | [生命周期与职责整理](ltx25-vae-lifecycle-and-code-cleanup-20260913.md) |
@@ -43,7 +43,7 @@
 - [Native Metal 编辑 encoder](qwen-image-gpu-ane-command-graph/22-native-edit-encoder.md)
 - [Native encoder 与编辑首步 ANE](qwen-image-gpu-ane-command-graph/23-native-encoder-prefill-ane.md)
 
-对应的[Base E2E](../status/2026-10-08-native-register-w1-base-e2e.md)、
+对应的[Base E2E](../experiments/native-graph/2026-10-08-native-register-w1-base-e2e.md)、
 [LoRA 基础实现](../experiments/native-lora/2026-10-08-native-lora-foundation.md)、
 [SGMMA 组件筛选](../experiments/native-lora/2026-10-08-native-lora-sgmma-screen.md)和
 [整图配对](../experiments/native-lora/2026-10-08-native-lora-sgmma-e2e.md)保留其各自结论。

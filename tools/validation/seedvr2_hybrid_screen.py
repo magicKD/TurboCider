@@ -6,7 +6,6 @@ the stable runtime, downloads weights, touches a user's server, or promotes
 experimental source. One GPU job runs at a time. Failed raw runs are retained.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,23 +14,11 @@ import subprocess
 import sys
 import time
 
+from seedvr2_evidence import sha256, write_json
+
 # The native restoration probe accepts explicit CSV indices, not the
 # exporter's range syntax. Keep the two command-line ABIs separate.
 ALL_BLOCKS_CSV = ",".join(map(str, range(32)))
-
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(4 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def write_json(path, value):
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2) + "\n")
-    temporary.replace(path)
 
 
 def terminal_cohort(path, library_sha):

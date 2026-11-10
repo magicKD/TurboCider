@@ -1,4 +1,5 @@
 #include "../runtime/session.hpp"
+#include "image_recipe.hpp"
 #include "z_image/runtime_bucket_config.hpp"
 
 namespace tc {
@@ -9,12 +10,7 @@ ModelModule z_image_gguf_module() {
     return {
         "z-image-turbo-gguf",
         [] {
-            return Recipe{"z-image-turbo-gguf",
-                          {{"text_encode", {}},
-                           {"denoise", {"text_encode"}, 9},
-                           {"vae_decode", {"denoise"}},
-                           {"export", {"vae_decode"}}},
-                          true};
+            return model_detail::image_recipe("z-image-turbo-gguf", 9);
         },
         [](const Request &r) {
             (void)z_image::configured_runtime_match_rows(r);

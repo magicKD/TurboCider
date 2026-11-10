@@ -1,10 +1,14 @@
 # TurboCider GPU / ANE 并行化方案
 
+> 2026-11-07 阅读说明：本文保留原日期的实现与测量记录；机器策略、自动默认和“当前”均属于历史构建。
+> 当前运行方式见[用户指南](../public/README.md)，加速维护入口见[加速状态](../status/acceleration.md)。
+> 下文缺失的历史图示、设计或机器记录已单独[列出](validation/README.md#本次检出中缺失的历史材料)；原数值、结论与命令保留，未补造证据或重新验证。
+
 更新时间：2026-09-08
 
 这份文档描述当前 `dev` 合并版已经实现或验证过的异构执行方式。它把“能调用 ANE”与“端到端值得自动启用”分开：只有同一请求的 GPU 基线、输出质量和完整 request wall 都有证据时，才会进入自动策略；否则只能显式选择并保持 fail-closed。
 
-并行执行总览见 [parallel-acceleration.svg](parallel-acceleration.svg)。图中的 `fork → join` 是真实的依赖边界，不代表把整个模型复制到两套设备；权重、临时 buffer 和 Core ML session 仍由同一个 TurboCider Session 管理。
+并行执行总览见 [parallel-acceleration.svg（缺失说明）](validation/README.md#本次检出中缺失的历史材料)。图中的 `fork → join` 是真实的依赖边界，不代表把整个模型复制到两套设备；权重、临时 buffer 和 Core ML session 仍由同一个 TurboCider Session 管理。
 
 ## 机器策略
 

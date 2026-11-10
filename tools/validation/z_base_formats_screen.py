@@ -5,7 +5,6 @@ import json
 import math
 from pathlib import Path
 import statistics
-import sys
 
 from flux9_bf16_framework_screen import generation, check_generations
 from runtime_ane_common import benchmark_environment, sha256_file
