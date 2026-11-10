@@ -10,6 +10,7 @@ struct BlockConfig {
     int intermediate = 14336;
     float epsilon = 1e-6f;
     CheckpointLayout layout = CheckpointLayout::diffusers;
+    bool fused_rope = false;
 };
 
 struct CrossAttentionKV {

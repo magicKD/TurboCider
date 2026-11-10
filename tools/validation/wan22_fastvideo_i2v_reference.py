@@ -16,7 +16,7 @@ import types
 
 import numpy as np
 
-from wan22_schedule import warped_sigmas
+from wan22_schedule import cuda_raw_sigmas, warped_sigmas
 
 
 def rotary(frames, height, width, head_dim):
@@ -37,6 +37,22 @@ def main():
     for name in ("fastvideo", "checkpoint", "config", "conditioning", "job", "comfy", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--dtype", choices=("bf16", "fp16"), default="bf16")
+    parser.add_argument("--schedule", choices=("mlx-warped", "cuda-raw"), default="mlx-warped",
+                        help="choose the MLX reference or dense CUDA DMD timestep convention")
+    parser.add_argument("--width", type=int, help="override the saved request's width")
+    parser.add_argument("--height", type=int, help="override the saved request's height")
+    parser.add_argument(
+        "--allow-extended-context", action="store_true",
+        help="allow captured text beyond FastVideo's usual 512-token encoder limit",
+    )
+    parser.add_argument(
+        "--trace-first-step", action="store_true",
+        help="save the first DiT input and prediction for a same-input parity check",
+    )
+    parser.add_argument("--cross-padding-copies", type=int, default=0,
+                        help="diagnostic only: approximate repeated padded cross-attention rows")
+    parser.add_argument("--valid-text-rows", type=int,
+                        help="number of valid rows before zero-padded text embeddings")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("output directory must be new")
@@ -63,10 +79,16 @@ def main():
     request = json.loads(job.read_text())[0]["request"]
     inputs = mx.load(str(conditioning))
     text, first = inputs["text"], inputs["first_latent"]
-    frames, width, height = request["frames"], request["width"], request["height"]
+    frames = request["frames"]
+    width = args.width if args.width is not None else request["width"]
+    height = args.height if args.height is not None else request["height"]
+    text_length = text.shape[1] if text.ndim == 3 else 0
+    max_text_length = 1024 if args.allow_extended_context else 512
     if (request["model"] != "wan2.2-ti2v-5b-fastwan" or
+            width < 128 or height < 128 or width % 32 or height % 32 or
             first.shape != (1, 48, 1, height // 16, width // 16) or
-            text.shape != (1, 512, 4096) or frames % 4 != 1):
+            text.shape != (1, text_length, 4096) or
+            not 1 <= text_length <= max_text_length or frames % 4 != 1):
         raise ValueError("captured conditioning does not match the saved Wan2.2 request")
     model_config = json.loads(config.read_text())
     if (model_config["num_layers"], model_config["num_attention_heads"], model_config["in_channels"]) != (30, 24, 48):
@@ -77,13 +99,61 @@ def main():
     model = mlx_wan22_dit_from_diffusers_safetensors(checkpoint, config, dtype=args.dtype, compile=False)
     load_seconds = time.perf_counter() - started
     text = text.astype(dtype)
+    padding_report = None
+    if args.cross_padding_copies:
+        from fastvideo.mlx_runtime.fastwan import linear, rms_norm
+        from wan22_cross_padding import padding_biases
+
+        valid = args.valid_text_rows
+        if (args.dtype != "bf16" or not 1 <= args.cross_padding_copies <= 64 or valid is None or
+                valid <= 0 or valid >= text_length or args.cross_padding_copies > text_length - valid):
+            raise ValueError("invalid experimental cross-attention padding configuration")
+        tail_is_zero = mx.all(text[:, valid:, :] == 0)
+        mx.eval(tail_is_zero)
+        if not tail_is_zero.item():
+            raise ValueError("cross-attention experiment requires an all-zero text padding tail")
+        biases, mass_error = padding_biases(text_length - valid, args.cross_padding_copies)
+        mask = mx.array([0.] * valid + biases, dtype=mx.bfloat16)
+        mx.eval(mask)
+
+        class CollapsedCrossAttention:
+            def __init__(self, original):
+                self.original = original
+
+            def __call__(self, x, context):
+                original = self.original
+                weights = original.weights
+                batch, heads, dim = x.shape[0], original.num_heads, original.head_dim
+                q = linear(x, weights["attn2.to_q.weight"], weights.get("attn2.to_q.bias"))
+                q = rms_norm(q, weights["attn2.norm_q.weight"], eps=original.eps)
+                k = linear(context, weights["attn2.to_k.weight"], weights.get("attn2.to_k.bias"))
+                k = rms_norm(k, weights["attn2.norm_k.weight"], eps=original.eps)
+                v = linear(context, weights["attn2.to_v.weight"], weights.get("attn2.to_v.bias"))
+                def split(value):
+                    return value.reshape(batch, -1, heads, dim).transpose(0, 2, 1, 3)
+                q, k, v = split(q), split(k), split(v)
+                keep = valid + args.cross_padding_copies
+                attended = mx.fast.scaled_dot_product_attention(
+                    q, k[:, :, :keep, :], v[:, :, :keep, :], scale=dim ** -.5, mask=mask)
+                attended = attended.transpose(0, 2, 1, 3).reshape(batch, -1, original.dim)
+                return linear(attended, weights["attn2.to_out.weight"], weights.get("attn2.to_out.bias"))
+
+        for block in model.blocks:
+            block.attn2 = CollapsedCrossAttention(block.attn2)
+        padding_report = {"valid_rows": valid, "original_padding_rows": text_length - valid,
+                          "retained_padding_rows": args.cross_padding_copies,
+                          "theoretical_relative_mass_error": mass_error}
+    elif args.valid_text_rows is not None:
+        raise ValueError("valid text rows require the cross-attention padding experiment")
     shape = (1, 48, (frames - 1) // 4 + 1, height // 16, width // 16)
     generator = torch.Generator(device="cpu").manual_seed(request["seed"])
     noise = lambda: mx.array(torch.randn(shape, generator=generator, dtype=torch.float32).numpy())
     latents = noise()
     grid = (shape[2], shape[3] // 2, shape[4] // 2)
     cos, sin = (mx.array(value) for value in rotary(*grid, 128))
-    sigmas = warped_sigmas()
+    steps = (1000, 757, 522)
+    sigmas = warped_sigmas(steps) if args.schedule == "mlx-warped" else cuda_raw_sigmas(steps)
+    model_timesteps = [sigma * 1000.0 for sigma in sigmas] if args.schedule == "mlx-warped" else list(steps)
     first_tokens = grid[1] * grid[2]
     total_tokens = grid[0] * first_tokens
     elapsed = []
@@ -91,16 +161,29 @@ def main():
         start = time.perf_counter()
         model_input = mx.concatenate([first, latents[:, :, 1:]], axis=2)
         times = mx.concatenate([mx.zeros((1, first_tokens)),
-                                mx.full((1, total_tokens - first_tokens), sigma * 1000.0)], axis=1)
+                                mx.full((1, total_tokens - first_tokens), model_timesteps[step])], axis=1)
         hidden = model._patch_embed(model_input.astype(dtype))
         temb, modulation, encoded_text = model._condition(times, text)
         mx.eval(hidden, temb, modulation, encoded_text)
+        if step == 0 and padding_report is not None:
+            valid = args.valid_text_rows
+            identical = mx.all(encoded_text[:, valid:, :] == encoded_text[:, valid:valid + 1, :])
+            mx.eval(identical)
+            if not identical.item():
+                raise ValueError("projected padding rows are not identical")
         for index, block in enumerate(model.blocks):
             hidden = block(hidden, encoded_text, modulation, cos, sin)
             mx.eval(hidden)
             if index % 5 == 0:
                 print(f"step={step + 1}/3 block={index + 1}/30 mlx_active={mx.get_active_memory()}", flush=True)
         prediction = model._output(hidden, temb, batch=1, frames=shape[2], height=shape[3], width=shape[4])
+        if step == 0 and args.trace_first_step:
+            model_input_bf = model_input.astype(dtype)
+            mx.eval(model_input_bf, prediction)
+            mx.save_safetensors(str(args.output / "first-step-input.safetensors"),
+                                {"latents": model_input_bf, "text": text})
+            mx.save_safetensors(str(args.output / "first-step-prediction.safetensors"),
+                                {"output": prediction})
         clean = pred_noise_to_pred_video(prediction.astype(mx.float32), model_input.astype(mx.float32), sigma)
         clean = mx.concatenate([first, clean[:, :, 1:]], axis=2)
         latents = add_noise(clean, noise(), sigmas[step + 1]) if step < 2 else clean
@@ -113,6 +196,14 @@ def main():
               "scope": "FastVideo MLX DiT, custom I2V/DMD wrapper and native captured conditioning; no decoder",
               "fastvideo_commit": subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip(),
               "shape": list(shape), "seed": request["seed"], "sigmas": sigmas,
+              "schedule": args.schedule, "model_timesteps": model_timesteps,
+              "schedule_scope": ("CUDA raw model timesteps and training-table sigmas only; "
+                                 "MLX I2V wrapper, FP32 updates and CPU FP32 noise remain unchanged"
+                                 if args.schedule == "cuda-raw" else "FastVideo MLX warped DMD schedule"),
+              "text_sequence_length": text_length,
+              "extended_context": text_length > 512,
+              "traced_first_step": args.trace_first_step,
+              "cross_padding_experiment": padding_report,
               "load_seconds": load_seconds, "denoise_seconds": elapsed,
               "mlx_peak_bytes": mx.get_peak_memory()}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n")

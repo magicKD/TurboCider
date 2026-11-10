@@ -88,6 +88,9 @@ class Wan22Session final : public ModelSession {
             if (quanhaol_) options.distillation = wan22::Distillation::quanhaol_4;
             // Keep the previous low-memory path on smaller systems.
             options.cache_cross_attention = device.physical_memory >= (64ull << 30);
+            options.fused_rope = wan22::fused_rope_eligible(device.gpu, device.physical_memory,
+                int(os.majorVersion), int(os.minorVersion), int(os.patchVersion), mx::version(),
+                request.width, request.height, request.frames);
             const bool tiny_decoder = request.tiny_vae && request.tiny_vae->decoder == "tiny";
             if (tiny_decoder) options.tiny_decoder_checkpoint = request.tiny_vae->path;
             auto result = pipeline.generate(image, *cached_text_, options, event, cancelled);
@@ -120,9 +123,13 @@ class Wan22Session final : public ModelSession {
                 @"video_decoder":tiny_decoder ? @"taew2_2_super" : @"wan2.2_vae",
                 @"stage_seconds":@{@"first_frame_vae_load_and_encode":@(result.first_frame_vae_seconds),
                                     @"transformer_load_and_denoise":@(result.transformer_and_denoise_seconds),
+                                    @"transformer_weight_load":@(result.transformer_load_seconds),
+                                    @"transformer_context_prepare":@(result.context_prepare_seconds),
+                                    @"denoise_sampling":@(result.sampling_seconds),
                                     @"video_vae_load_and_decode":@(result.video_vae_seconds)},
                 @"persistent_model":@NO, @"prompt_cache_hit":@(text_cache_hit), @"valid_text_tokens":@(tokens.valid),
                 @"cross_attention_cache":@(options.cache_cross_attention),
+                @"fused_self_attention_rope":@(options.fused_rope),
                 @"text_padding_alignment":@(text_alignment),
                 @"text_encoder_sequence_tokens":@(text_cache_hit ? 0 : (text_alignment ? 256 : tokens.ids.size())),
                 @"text_encode_seconds":@(text_seconds),

@@ -1,7 +1,9 @@
 #include "block.hpp"
 #include "linear.hpp"
+#include "fused_rope.hpp"
 
 #include <cmath>
+#include <tuple>
 
 namespace tc::wan22 {
 namespace {
@@ -124,14 +126,21 @@ Tensor Block::forward(const Tensor &hidden, const Tensor &context, const Tensor 
         q = mx::fast::rms_norm(q, weights_.at(prefix + ".norm_q.weight"), config_.epsilon);
         if (!reuse) k = mx::fast::rms_norm(k, weights_.at(prefix + ".norm_k.weight"), config_.epsilon);
         if (trace) { trace(label + "_q_norm", q); trace(label + "_k_norm", k); }
-        if (rope) {
-            q = rotate(q, cosine, sine, heads);
-            k = rotate(k, cosine, sine, heads);
-        }
         auto split_heads = [&](const Tensor &value) {
             return mx::transpose(mx::reshape(value, {1, value.shape(1), heads, head_dim}), {0, 2, 1, 3});
         };
-        auto output = mx::fast::scaled_dot_product_attention(split_heads(q), split_heads(k), split_heads(v),
+        auto [q_heads, k_heads, v_heads] = [&]() -> std::tuple<Tensor, Tensor, Tensor> {
+            if (rope && config_.fused_rope) {
+                auto fused = fused_rope_heads(q, k, v, cosine, sine, heads);
+                return {fused[0], fused[1], fused[2]};
+            }
+            if (rope) {
+                q = rotate(q, cosine, sine, heads);
+                k = rotate(k, cosine, sine, heads);
+            }
+            return {split_heads(q), split_heads(k), split_heads(v)};
+        }();
+        auto output = mx::fast::scaled_dot_product_attention(q_heads, k_heads, v_heads,
                                                              1.f / std::sqrt(float(head_dim)));
         output = mx::reshape(mx::transpose(output, {0, 2, 1, 3}), {1, query_input.shape(1), dim});
         if (trace) trace(label + "_attended", output);

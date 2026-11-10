@@ -4,7 +4,7 @@
 
 int main(int argc, char **argv) {
     try {
-        tc::require(argc >= 12 && argc <= 15, "usage: wan22-transformer-probe WEIGHTS INPUT OUTPUT CHANNELS HIDDEN HEADS INTERMEDIATE LAYERS TEXT_DIM FREQ_DIM TIMESTEP [TRACE] [--comfy] [--cache-cross]");
+        tc::require(argc >= 12 && argc <= 16, "usage: wan22-transformer-probe WEIGHTS INPUT OUTPUT CHANNELS HIDDEN HEADS INTERMEDIATE LAYERS TEXT_DIM FREQ_DIM TIMESTEP [TRACE] [--comfy] [--cache-cross] [--fused-rope]");
         auto input = tc::mx::load_safetensors(argv[2]).first;
         tc::wan22::TransformerConfig config;
         config.channels = std::stoi(argv[4]); config.hidden = std::stoi(argv[5]); config.heads = std::stoi(argv[6]);
@@ -15,6 +15,7 @@ int main(int argc, char **argv) {
         for (int i = 12; i < argc; ++i) {
             if (std::string(argv[i]) == "--comfy") config.layout = tc::wan22::CheckpointLayout::comfy;
             else if (std::string(argv[i]) == "--cache-cross") cache_cross = true;
+            else if (std::string(argv[i]) == "--fused-rope") config.fused_rope = true;
             else { tc::require(trace_path.empty(), "only one trace path is allowed"); trace_path = argv[i]; }
         }
         tc::wan22::Transformer model;

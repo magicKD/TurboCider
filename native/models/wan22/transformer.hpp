@@ -14,6 +14,7 @@ struct TransformerConfig {
     int frequency_dim = 256;
     float epsilon = 1e-6f;
     CheckpointLayout layout = CheckpointLayout::diffusers;
+    bool fused_rope = false;
 };
 
 // Resident dense BF16 TI2V transformer. A separate session/pipeline owns

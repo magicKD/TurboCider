@@ -11,6 +11,7 @@ struct GenerateOptions {
     uint64_t seed = 42;
     Distillation distillation = Distillation::fastvideo_3;
     bool cache_cross_attention = false;
+    bool fused_rope = false;
     // Empty keeps the full VAE. Super is an explicit, approximate decoder;
     // first-frame conditioning always uses the full VAE encoder.
     std::filesystem::path tiny_decoder_checkpoint;
@@ -22,6 +23,9 @@ struct GenerateResult {
     double first_frame_vae_seconds = 0;
     double transformer_and_denoise_seconds = 0;
     double video_vae_seconds = 0;
+    double transformer_load_seconds = 0;
+    double context_prepare_seconds = 0;
+    double sampling_seconds = 0;
 };
 
 // Native, image-conditioned distilled paths. Text is the already encoded

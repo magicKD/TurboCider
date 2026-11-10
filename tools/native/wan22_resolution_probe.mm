@@ -14,7 +14,7 @@
 int main(int argc, char **argv) {
     @autoreleasepool {
         try {
-            tc::require(argc >= 7 && argc <= 10, "usage: wan22-resolution-probe MODEL_ROOT JOBS_JSON OUTPUT_DIR WIDTH HEIGHT super|full [fastwan|quanhaol] [cross-kv] [compact-text|align256]");
+            tc::require(argc >= 7 && argc <= 11, "usage: wan22-resolution-probe MODEL_ROOT JOBS_JSON OUTPUT_DIR WIDTH HEIGHT super|full [fastwan|quanhaol] [cross-kv] [compact-text|align256] [fused-rope]");
             const auto root = std::filesystem::absolute(argv[1]);
             const auto output = std::filesystem::absolute(argv[3]);
             const int width = std::stoi(argv[4]), height = std::stoi(argv[5]);
@@ -22,10 +22,12 @@ int main(int argc, char **argv) {
             const std::string variant = argc >= 8 ? argv[7] : "fastwan";
             bool cache_cross = false;
             int text_alignment = 0;
+            bool fused_rope = false;
             for (int i = 8; i < argc; ++i) {
                 if (std::string(argv[i]) == "cross-kv") cache_cross = true;
                 else if (std::string(argv[i]) == "compact-text") text_alignment = 64;
                 else if (std::string(argv[i]) == "align256") text_alignment = 256;
+                else if (std::string(argv[i]) == "fused-rope") fused_rope = true;
                 else tc::require(false, "invalid experimental probe option");
             }
             tc::require(width >= 128 && height >= 128 && width <= 768 && height <= 768 &&
@@ -84,6 +86,7 @@ int main(int argc, char **argv) {
             options.seed = [request[@"seed"] unsignedLongLongValue];
             if (variant == "quanhaol") options.distillation = tc::wan22::Distillation::quanhaol_4;
             options.cache_cross_attention = cache_cross;
+            options.fused_rope = fused_rope;
             if (decoder == "super") options.tiny_decoder_checkpoint = root / "vae/taew2_2_super.safetensors";
             std::optional<tc::Tensor> first_latent;
             tc::wan22::Pipeline::Trace trace = [&](const std::string &name, const tc::Tensor &value) {
@@ -115,10 +118,14 @@ int main(int argc, char **argv) {
                 @"seed":@(options.seed), @"decoder":@(decoder.c_str()), @"variant":@(variant.c_str()),
                 @"cross_attention_cache":@(cache_cross),
                 @"text_alignment":@(text_alignment),
+                @"fused_rope":@(fused_rope),
                 @"text_encode_seconds":@(text_seconds),
                 @"valid_text_tokens":@(tokens.valid),
                 @"wall_seconds":@(elapsed), @"first_frame_vae_seconds":@(result.first_frame_vae_seconds),
                 @"transformer_and_denoise_seconds":@(result.transformer_and_denoise_seconds),
+                @"transformer_load_seconds":@(result.transformer_load_seconds),
+                @"context_prepare_seconds":@(result.context_prepare_seconds),
+                @"sampling_seconds":@(result.sampling_seconds),
                 @"video_vae_seconds":@(result.video_vae_seconds), @"sampled_peak_footprint_bytes":@(peak_footprint),
                 @"scope":@"isolated native resolution probe; footprint is sampled between phases and blocks"};
             NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];

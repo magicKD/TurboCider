@@ -73,6 +73,9 @@ class Wan22ComfyLayoutParityTests(unittest.TestCase):
             cached = run(root / "comfy.safetensors", root / "cached-output.safetensors", "--comfy", "--cache-cross")
             self.assertEqual(cached.returncode, 0, cached.stderr)
             self.assertTrue(torch.equal(load_file(str(root / "cached-output.safetensors"))["output"], expected))
+            fused = run(root / "comfy.safetensors", root / "fused-output.safetensors", "--comfy", "--cache-cross", "--fused-rope")
+            self.assertEqual(fused.returncode, 0, fused.stderr)
+            self.assertTrue(torch.equal(load_file(str(root / "fused-output.safetensors"))["output"], expected))
 
             comfy["unknown.weight"] = torch.ones(1)
             save_file(comfy, str(root / "unknown.safetensors"))

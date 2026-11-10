@@ -74,7 +74,8 @@ void Transformer::load(const std::filesystem::path &path, TransformerConfig conf
     blocks_.reserve(config.layers);
     for (int index = 0; index < config.layers; ++index) {
         auto block = std::make_unique<Block>();
-        block->load(path, index, {config.hidden, config.heads, config.intermediate, config.epsilon, config.layout});
+        block->load(path, index, {config.hidden, config.heads, config.intermediate, config.epsilon, config.layout,
+                                  config.fused_rope});
         blocks_.push_back(std::move(block));
     }
 }

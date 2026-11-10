@@ -29,6 +29,21 @@ fresh-noise update, with FastVideo's MLX reference training indices
 other pipeline versions and four-step community checkpoints can use different
 schedules; do not treat these results as universal.
 
+### Upstream I2V qualification
+
+In [FastVideo issue #711](https://github.com/hao-ai-lab/FastVideo/issues/711),
+a project collaborator stated on August 5, 2025 that FastWan-5B had been
+trained on T2V data and might only support T2V. This is historical context,
+not proof that every current FastVideo pipeline rejects image conditioning.
+The current [FastVideo support matrix](https://github.com/hao-ai-lab/FastVideo/blob/main/docs/inference/support_matrix.md)
+lists both T2V and I2V for FastWan2.2 TI2V-5B and separately notes I2V
+quality issues for Wan2.2 TI2V-5B. The 512 and 768 portrait experiments
+below demonstrate that this integration does follow the initial image, but
+they do not establish robust identity preservation or the cause of its drift.
+The author of [quanhaol/Wan2.2-TI2V-5B-Turbo](https://huggingface.co/quanhaol/Wan2.2-TI2V-5B-Turbo)
+describes that separate four-step checkpoint as an I2V-distilled version;
+that description does not prove it performs better on any particular image.
+
 ## First ComfyUI MPS baseline
 
 On November 9, 2026, an M4 Max with 64 GiB unified memory ran an isolated
@@ -282,6 +297,101 @@ FastWan training geometry. The official Wan2.2 TI2V-5B example uses 1280×704
 or 704×1280, and the FastWan model card specifies 121×704×1280 training;
 neither geometry has been validated on this Mac in this implementation.
 
+## Matched FastVideo MLX DiT follow-up
+
+A further comparison used the same portrait, seed 201748011, 97 frames,
+24 fps, FastWan checkpoint, three warped DMD steps and Super decoder at
+512×512 and 768×768. The FastVideo side executes the unchanged MLX DiT at
+commit `a943220c115228ade5d57b3bab9a6a87fd600a10`, but supplies the native
+captured text and first-frame latents and a custom I2V/DMD wrapper. Both
+sides used the same CPU random-number draws at each resolution; all three
+draws were checked bit-identical against PyTorch for these two tensor shapes
+and this seed. The 526-row
+text conditioning exceeds the FastVideo MLX example's usual 512-token
+limit; this is an explicit diagnostic extension, not an official end-to-end
+FastVideo I2V run or an independent test of image/text encoding.
+
+At 512, FastVideo's three DiT steps took **18.054 s** in total; at 768,
+they took **49.942 s**. These timings exclude text and image encoding,
+weight loading, video decoding and export, so they must not be compared as
+complete App job times. The checked native-versus-FastVideo raw latents had
+relative L2 errors **0.1706 / 0.2152** at 512 / 768 (using the native raw
+latents as the denominator); the first latent frame was equal and the other
+frames differed. After Super decode and MP4 export, FFmpeg's full-frame YUV
+SSIM All was **0.939537 / 0.942964**, respectively. This is numerical and
+compressed-video agreement, not an identity or perceptual quality score,
+and does not establish exact parity or rule out native implementation errors.
+To isolate the first call, the 512×512 FastVideo input and BF16 prediction
+were captured and fed unchanged to the native Transformer at timestep 1000.
+Its prediction had relative L2 **0.02563**, mean absolute error **0.02005**
+and cosine similarity **0.999553** against FastVideo. With and without
+cross-attention reuse and fused RoPE, the native prediction was bit-identical
+on this input. This isolates a same-input Transformer difference before the
+later three-step trajectory divergence; it does not identify the particular
+operation responsible, establish which result is correct, or prove that the
+differences do or do not affect perceived faces.
+
+In the earlier 128×128/9-frame ComfyUI capture, the native prepared text
+context differed from the captured ComfyUI context by relative L2
+**0.002457**. Re-running the two BF16 text projections and tanh GELU on
+PyTorch **2.14.0 MPS**, using the saved text and original checkpoint, produced
+a context bit-identical to the native capture; the captured ComfyUI process
+reported PyTorch **2.12.1**. This rules out a difference between those two
+tested projection results, but it does not establish why the older ComfyUI
+capture differed or which result is more faithful. Differences in version,
+kernel behavior or capture path remain hypotheses, not diagnoses.
+
+Face crops sampled every six frames showed that the 512 result had rapid
+changes in the eyes, mouth and facial proportions from about frame 6; both
+the native and FastVideo DiT outputs showed related changes. The 768 result
+had clearer features and a steadier-looking face, but the face still moved
+away from the first-frame identity, and hands, clothing and the sword were
+not consistently preserved. A second native seed, 201748012, produced the
+same qualitative tradeoff: improved definition at 768 but noticeable
+identity drift at both sizes. It took **18.116 s** at 512 and **47.657 s**
+at 768 in isolated probes including text, model loads, inference, decoding
+and diagnostic output; neither number is a GUI job time or a median. The
+512 source image was enlarged before the 768 run, and the change in canvas
+also changes the shape and realization of the noise. Two seeds of one image
+are not enough to establish a general quality advantage or a sole cause.
+
+The local comparison videos and face sheets are under
+`outputs/wan22-fastvideo-extended-{512,768}x97-20261110-v1/` and
+`outputs/wan22-portrait-second-seed-{512,768}x97-20261110-v1/`. Face
+detection is only a crop aid and may choose an incorrect region; inspect the
+corresponding full video when interpreting a crop.
+
+## FastVideo MLX versus dense-CUDA timestep conventions
+
+The inspected FastVideo commit's MLX example maps indices 1000, 757, 522
+through a shift-5 table, producing model timesteps approximately
+**1000, 939.672, 845.207**. Its non-causal dense CUDA DMD stage instead
+passes **1000, 757, 522** directly to the model and looks up the nearest
+sigma in a separate shift-8 training table: **1, 0.7567567, 0.5217391**.
+The repository's published data-free 5B training script omits the optional
+`warp_denoising_step` flag, whose inspected training-argument default is
+false. These observations concern the pinned source snapshot; they do not
+prove which exact code or configuration produced a particular checkpoint.
+
+The diagnostic FastVideo MLX I2V wrapper was extended to test the CUDA
+*timestep and sigma values* while holding its input, checkpoint, CPU FP32
+noise, FP32 update and Super decoder fixed. It is still not the official
+end-to-end CUDA I2V path: CUDA BF16 noise and intermediate rounding, image
+preprocessing and other pipeline components were not reproduced. Two seeds
+of the same portrait were paired at 512×512, and one seed at 768×768, each
+with 97 frames. Both schedules produced identity and geometry changes. The
+raw-timestep samples had stronger contrast and different motion, with some
+overbright areas; subjective inspection did not establish a consistent
+identity improvement. The current App default was therefore not changed.
+
+For seed 201748011, the three FastVideo DiT steps took **18.054 / 17.882 s**
+at 512 and **49.942 / 49.974 s** at 768 for MLX-warped / CUDA-timestep
+respectively. These are single GPU DiT-only runs, not end-to-end App timings.
+Artifacts are under `outputs/wan22-fastvideo-cudaraw-portrait-*`; each
+side-by-side MP4 has the MLX-warped result on the left. More inputs and an
+independent supported I2V reference are needed before treating either
+schedule as a general quality improvement.
+
 ## Quanhaol four-step candidate
 
 `quanhaol/Wan2.2-TI2V-5B-Turbo` is a separate full-model checkpoint, not
@@ -361,6 +471,32 @@ headroom, and the result receipt identifies whether reuse ran. A separate
 two-block evaluation grouping experiment produced no material speedup on
 the tested 512 sample and was not enabled.
 
+### Rejected padded cross-attention compression
+
+Short prompts contain many identical zero-padding rows before text projection.
+An isolated experiment kept all 53 valid rows but replaced 459 identical
+projected padding K/V rows with 16 copies and BF16 additive biases chosen to
+approximate their total softmax mass. Float32 additive masks were rejected by
+the MLX BF16 SDPA implementation. On captured block-0 K/V and repeated
+queries at 6,400 tokens, the 16-copy masked attention had relative L2 error
+**0.000201**, with **33,629** BF16 output values changed; warm isolated
+attention was roughly **0.75 ms** rather than **3.26 ms** on the sampled
+steady iterations. The pre-rounding theoretical mass error was only
+**0.00000236**, illustrating that softmax reduction and output rounding still
+matter. These are synthetic-query operator results, not production timings.
+
+A complete 512×512, 97-frame FastVideo MLX DiT experiment then used the same
+portrait, seed and 50-valid-token conditioning, with 462 padding rows reduced
+to 16. Three denoising calls took **17.866 s** without compression and
+**17.635 s** with it in single fresh processes, excluding model load, text
+encoding, VAE and MP4 export. Despite a theoretical mass error of only
+**0.00000137**, the final raw latents had relative L2 difference **0.08554**;
+their Super-decoded MP4s had FFmpeg YUV SSIM All **0.97173**, with local
+facial differences on inspection. SSIM is not an identity or quality score.
+This approximate route was **not enabled** in the native executor or App.
+The reference is an MLX DiT/custom-I2V wrapper, not an official end-to-end
+FastVideo job; one image and seed do not establish general behavior.
+
 ## Short-prompt text alignment and rejected experiments
 
 Wan's UMT5 output masks padded rows to zero. On the tested M4 Max, macOS
@@ -421,3 +557,62 @@ W8 and **48.7 ms** for W4. W8 and W4 output relative L2 were approximately
 projection took **84.2/110.0/109.3 ms**. Quantization was excluded from
 timing, input activations were synthetic, and none of these is an end-to-end
 video-quality test. These W8/W4 routes were not enabled.
+An isolated FP16 version of the same 6,400-row projection was also about
+**37.6 ms**, versus **37.5 ms** BF16, with relative L2 **0.00168** against
+the BF16 result; a precision switch was not enabled.
+
+## Dense attention / fused interleaved RoPE
+
+On a 512×512/97-frame portrait probe, the three-step Transformer phase broke
+down into **0.233 s** weight loading, **0.074 s** text/KV preparation, and
+**16.293 s** sampling; the four-step path took **0.336 / 0.057 / 21.661 s**.
+The combined phase also includes object cleanup. These are single warm-file
+cache observations, not cold-start guarantees. Retaining roughly 10 GB of
+Transformer weights between jobs was not enabled for this small loading cost.
+Isolated RoPE-frequency construction took about **0.32 ms** at 512 and
+**0.38 ms** at 768, so caching those frequency tables was not pursued.
+
+The native GPU candidate combines interleaved Q/K RoPE and Q/K/V head-major
+packing into one Metal kernel, retaining dense attention and FP32 arithmetic
+boundaries. In synthetic warm tests, RoPE plus SDPA took approximately
+**44.2 ms → 38.2 ms** at 6,400 tokens and **207.7 ms → 191.3 ms** at
+14,400 tokens, with identical BF16 outputs on those fixtures. These are
+operator timings, not end-to-end speedups.
+
+Two four-step 768×768/97-frame portrait probe pairs measured sampling at
+**61.861 / 61.853 s** without the kernel and **59.902 / 59.915 s** with it.
+The corresponding final latent tensors were bit-identical in both pairs. A
+four-step 512×768 pair measured **35.984 → 34.848 s**, also with identical
+latents; a four-step 512×512 pair measured **21.661 → 20.983 s**, with
+identical latents. One three-step 512×512 pair measured **16.239 → 15.730 s**, with
+identical latents. One three-step 768×768 pair measured **46.380 → 44.939 s**,
+also with identical latents. A 544×544 pair (7,225 tokens, including an SDPA
+tail) measured **18.998 → 18.444 s**, with identical latents. One small
+160×224/9-frame pair was slower (**0.457 →
+0.502 s** sampling), even though its latents matched. These measurements
+use a single device, portrait/fox inputs, and limited seeds; they do not prove
+identity across all inputs, drivers or hardware.
+
+Automatic use is restricted to the tested M4 Max with at least 64 GiB,
+macOS 26.6.2 and MLX 0.32.0, for 97-frame canvases with both dimensions
+between 512 and 768 and divisible by 32. All other routes use the prior RoPE
+path. The session receipt identifies the selected path and breaks down
+Transformer loading, context preparation and sampling time.
+
+The packaged desktop task path completed the long-prompt three-step
+512×512 job in **17.911 s** and a repeated-prompt job in **16.629 s**; the
+four-step 512×512 job took **23.215 s** with Super, and the four-step 768×768
+job took **62.680 s**. A packaged 160×224/9-frame job
+reported the original RoPE path and completed successfully. These were
+individual embedded desktop jobs, not graphical-window click-throughs.
+Against their previous non-fused App outputs, the three-step 512 and
+four-step 768 compressed videos both had YUV SSIM 1.0 on these samples.
+The four-step short-prompt 512 App output also had YUV SSIM 1.0 against
+the non-fused App output for the checked seed and input.
+The packaged four-step 512×512 job with the full VAE took **60.328 s**;
+the earlier isolated ComfyUI full-VAE request took **151.35 s**. Their
+compressed-video YUV SSIM All was **0.9213**. The implementations, sampler
+wrappers, MP4 encoders and measurement scopes differ, so these figures are
+not a same-kernel benchmark or a general quality score.
+Both model variants also passed cancellation during the large Transformer
+route and existing-output protection checks without publishing a partial MP4.

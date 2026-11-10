@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import types
 import unittest
-from tools.validation.wan22_schedule import warped_sigmas
+from tools.validation.wan22_schedule import cuda_raw_sigmas, warped_sigmas
 
 
 class Wan22DMDReferenceTests(unittest.TestCase):
@@ -19,6 +19,25 @@ class Wan22DMDReferenceTests(unittest.TestCase):
         for invalid in ((1000, 1000, 522), (1001, 757, 522), (1000, 0, 1)):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 warped_sigmas(invalid)
+
+    def test_fastwan_dense_cuda_raw_schedule(self):
+        import torch
+
+        steps = torch.tensor([1000., 757., 522.])
+        raw = torch.arange(1000, 0, -1, dtype=torch.float32) / 1000
+        table = 8 * raw / (1 + 7 * raw)
+        indices = (table[:, None] * 1000 - steps[None, :]).abs().argmin(dim=0)
+        expected = table[indices].tolist()
+        self.assertEqual(cuda_raw_sigmas(), expected)
+        self.assertAlmostEqual(expected[1], 0.7567567229270935)
+        self.assertAlmostEqual(expected[2], 0.52173912525177)
+        self.assertNotEqual(cuda_raw_sigmas(), warped_sigmas())
+        for invalid in ((1000, 1000, 522), (1001, 757, 522), (1000, 0, 1)):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                cuda_raw_sigmas(invalid)
+        for invalid_shift in (0., -1., float("inf"), 1e300):
+            with self.subTest(shift=invalid_shift), self.assertRaises(ValueError):
+                cuda_raw_sigmas(shift=invalid_shift)
 
     def test_comfy_sampler_matches_explicit_renoising(self):
         import torch

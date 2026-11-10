@@ -35,6 +35,7 @@ def main():
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--group-size", type=int, default=64, choices=(32, 64, 128))
+    parser.add_argument("--include-fp16", action="store_true", help="also compare an isolated FP16 projection")
     args = parser.parse_args()
     if args.output.exists() or not args.output.parent.is_dir():
         parser.error("output must be a new file in an existing directory")
@@ -56,6 +57,17 @@ def main():
               "scope": "warm isolated GPU projection; excludes loading, quantization and video generation",
               "dense_seconds": dense_times, "dense_weight_bytes": weight.nbytes,
               "quantized": {}}
+    if args.include_fp16:
+        x16, weight16, bias16 = x.astype(mx.float16), weight.astype(mx.float16), bias.astype(mx.float16)
+        mx.eval(x16, weight16, bias16)
+        output16, samples16 = timed(lambda: mx.addmm(bias16, x16, weight16.T), args.warmup, args.repeats)
+        difference16 = output16.astype(mx.float32) - reference.astype(mx.float32)
+        relative16 = mx.sqrt(mx.sum(difference16 * difference16) /
+                             mx.maximum(mx.sum(reference.astype(mx.float32) ** 2), 1e-30))
+        maximum16 = mx.max(mx.abs(difference16))
+        mx.eval(relative16, maximum16)
+        report["fp16"] = {"seconds": samples16, "relative_l2": relative16.item(), "max_abs": maximum16.item(),
+                          "scope": "inputs and weights first rounded to BF16, then cast to FP16"}
     for bits in (8, 4):
         started = time.perf_counter()
         packed = mx.quantize(weight.astype(mx.float16), group_size=args.group_size, bits=bits, mode="affine")

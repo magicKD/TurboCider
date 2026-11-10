@@ -55,15 +55,22 @@ GenerateResult Pipeline::generate(const Tensor &pixels, const Tensor &text, cons
     const auto sigmas = denoising_sigmas(options.distillation);
     const int steps = int(sigmas.size());
     const auto denoise_started = Clock::now();
+    double transformer_load_seconds = 0, context_prepare_seconds = 0, sampling_seconds = 0;
     {
         Transformer transformer;
         TransformerConfig config;
         if (quanhaol) config.layout = CheckpointLayout::comfy;
+        config.fused_rope = options.fused_rope;
+        const auto transformer_load_started = Clock::now();
         transformer.load(transformer_checkpoint_, config);
+        transformer_load_seconds = std::chrono::duration<double>(Clock::now() - transformer_load_started).count();
+        const auto context_started = Clock::now();
         auto context = transformer.prepare_text(text);
         mx::eval(context);
         std::vector<CrossAttentionKV> cross;
         if (options.cache_cross_attention) cross = transformer.prepare_cross_attention(context, cancelled);
+        context_prepare_seconds = std::chrono::duration<double>(Clock::now() - context_started).count();
+        const auto sampling_started = Clock::now();
         for (int step = 0; step < steps; ++step) {
             checkpoint(cancelled);
             event("wan22_denoise", step, steps);
@@ -91,6 +98,7 @@ GenerateResult Pipeline::generate(const Tensor &pixels, const Tensor &text, cons
             mx::eval(latents);
             if (trace) trace("step_" + std::to_string(step), latents);
         }
+        sampling_seconds = std::chrono::duration<double>(Clock::now() - sampling_started).count();
     }
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - denoise_started).count();
     mx::clear_cache();
@@ -116,7 +124,8 @@ GenerateResult Pipeline::generate(const Tensor &pixels, const Tensor &text, cons
     const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_started).count();
     checkpoint(cancelled);
     event("wan22_denoise", steps, steps);
-    return {raw_latents, decoded, encode_seconds, denoise_seconds, decode_seconds};
+    return {raw_latents, decoded, encode_seconds, denoise_seconds, decode_seconds,
+            transformer_load_seconds, context_prepare_seconds, sampling_seconds};
 }
 
 } // namespace tc::wan22

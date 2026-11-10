@@ -54,9 +54,11 @@ import Foundation
         }
         let width = Int(ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_E2E_WIDTH"] ?? "512") ?? 0
         let height = Int(ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_E2E_HEIGHT"] ?? "512") ?? 0
+        let frames = Int(ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_E2E_FRAMES"] ?? "97") ?? 0
         guard let expectedSeed = Int(studio.draft.seedText) else { throw NativeFailure(message: "Invalid E2E seed") }
         studio.draft.width = width
         studio.draft.height = height
+        studio.draft.frames = frames
         if decoder == "full" { studio.draft.wan22TinyVAEDecoder = "original" }
         if decoder == "super" { studio.draft.wan22TinyVAEDecoder = "tiny" }
         await studio.addFiles([image])
@@ -72,7 +74,7 @@ import Foundation
         let request = pair.legacy
         try check(request.model == modelID && request.operation == "video.image" && request.execution == "gpu" &&
                   request.residency == "resident" && request.width == width && request.height == height &&
-                  request.frames == 97 && request.fps == 24 && request.steps == expectedSteps && request.audio == false &&
+                  request.frames == frames && request.fps == 24 && request.steps == expectedSteps && request.audio == false &&
                   request.seed == expectedSeed && request.inputs?.count == 1 && request.inputs?.first?.role == "first_frame" &&
                   request.inputs?.first?.strength == 1 && pair.v2 == nil && options == nil &&
                   (useSuper ? (request.tiny_vae?.encoder == "original" &&
@@ -101,8 +103,17 @@ import Foundation
                   result["video_decoder"] as? String == (useSuper ? "taew2_2_super" : "wan2.2_vae") &&
                   result["model"] as? String == modelID && result["operation"] as? String == "video.image",
                   "Desktop embedded Wan2.2 generation did not succeed")
+        guard let stages = result["stage_seconds"] as? [String: Any],
+              let combined = stages["transformer_load_and_denoise"] as? Double,
+              let load = stages["transformer_weight_load"] as? Double,
+              let context = stages["transformer_context_prepare"] as? Double,
+              let sampling = stages["denoise_sampling"] as? Double else {
+            throw NativeFailure(message: "Desktop job omitted Transformer timing details")
+        }
+        try check(load > 0 && context > 0 && sampling > 0 && combined >= load + context + sampling,
+                  "Desktop Transformer timing details are inconsistent")
         let video = try await StudioAssetImporter(directory: root.appendingPathComponent("validated-media")).importVideoFile(movie)
-        try check(video.width == width && video.height == height && video.frames == 97 && video.fps == 24,
+        try check(video.width == width && video.height == height && video.frames == frames && video.fps == 24,
                   "Desktop-generated MP4 has unexpected geometry or duration")
         if let expected = ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_EXPECT_TEXT_TOKENS"].flatMap(Int.init) {
             try check(result["valid_text_tokens"] as? Int == expected,
@@ -115,6 +126,10 @@ import Foundation
         if let expected = ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_EXPECT_ENCODER_TOKENS"].flatMap(Int.init) {
             try check(result["text_encoder_sequence_tokens"] as? Int == expected,
                       "Desktop job used an unexpected text encoder length")
+        }
+        if let expected = ProcessInfo.processInfo.environment["TURBOCIDER_WAN22_EXPECT_FUSED_ROPE"] {
+            try check(["0", "1"].contains(expected) && result["fused_self_attention_rope"] as? Bool == (expected == "1"),
+                      "Desktop job used an unexpected RoPE path")
         }
         let reloaded = NativeJobStore(directory: root)
         try check(reloaded.jobs.first?.id == job.id && reloaded.jobs.first?.state == "succeeded",
@@ -138,7 +153,7 @@ import Foundation
                       "Repeated desktop job did not reuse its text conditioning")
             let repeatedVideo = try await StudioAssetImporter(directory: root.appendingPathComponent("validated-media")).importVideoFile(repeatMovie)
             try check(repeatedVideo.width == width && repeatedVideo.height == height &&
-                      repeatedVideo.frames == 97 && repeatedVideo.fps == 24,
+                      repeatedVideo.frames == frames && repeatedVideo.fps == 24,
                       "Repeated desktop MP4 has unexpected geometry or duration")
             repeatReport = ["output": repeatMovie.path,
                 "wall_seconds": Double(repeatDuration.seconds) + Double(repeatDuration.attoseconds) / 1e18,

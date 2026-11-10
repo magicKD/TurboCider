@@ -14,6 +14,12 @@ xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER
  tools/native/wan22_schedule_probe.cpp -o "$OUT/wan22-schedule-probe"
 xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
  tools/native/wan22_text_policy_probe.cpp -o "$OUT/wan22-text-policy-probe"
+xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
+ tools/native/wan22_rope_policy_probe.cpp -o "$OUT/wan22-rope-policy-probe"
+xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
+ -I native/core -I bindings/c/include -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp" \
+ tools/native/wan22_rope_heads_probe.cpp -L "$NATIVE" -lturbocider -L "$MLX_ROOT/lib" -lmlx -ljaccl -licucore \
+ -framework Foundation -framework Metal -Wl,-rpath,"$NATIVE" -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/wan22-rope-heads-probe"
 xcrun clang++ -std=c++20 -O2 -fobjc-arc -isysroot "$SDK" -mmacosx-version-min="${TURBOCIDER_DEPLOYMENT_TARGET:-${MIN_MACOS:-15.0}}" \
  -I native/core -I bindings/c/include -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp" \
  tools/native/unigram_probe.mm -L "$NATIVE" -lturbocider -framework Foundation \

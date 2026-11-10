@@ -84,6 +84,25 @@ class Wan22SessionSafetyTests(unittest.TestCase):
         self.assertFalse(destination.exists())
         self.assertEqual(list(self.root.glob("cancelled.mp4.tmp.*")), [])
 
+    def test_cancel_during_large_transformer_does_not_publish_video(self):
+        destination = self.root / "cancelled-transformer.mp4"
+        seen = []
+
+        @CALLBACK
+        def callback(raw, _context):
+            event = json.loads(raw.decode())
+            if event.get("phase") == "wan22_dit_block" and not seen:
+                seen.append(event["phase"])
+                self.lib.tc_engine_cancel(self.engine)
+
+        request = self.request(destination)
+        request.update(width=512, height=512, frames=97)
+        code, _, error = self.generate(request, callback)
+        self.assertTrue(seen, "transformer callback never fired")
+        self.assertEqual(code, 2, error)
+        self.assertFalse(destination.exists())
+        self.assertEqual(list(self.root.glob("cancelled-transformer.mp4.tmp.*")), [])
+
 
 if __name__ == "__main__":
     unittest.main()
