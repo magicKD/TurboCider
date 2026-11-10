@@ -27,11 +27,13 @@ uint64_t float_layer_capacity(const streaming::BlockSpec &block) {
     return capacity;
 }
 
-Tensor allocate_float_backing(const mx::Shape &shape, mx::Dtype type, uint64_t bytes) {
+Tensor allocate_float_backing(const mx::Shape &shape, mx::Dtype type, uint64_t bytes,
+                              ane::StreamingAllocationAdmission admission) {
     const auto capacity = capacity_upper(bytes);
     ane::require_streaming_memory_headroom(mx::get_active_memory(), capacity,
-        "Qwen ConvRot coefficient-bank admission declined");
+        "Qwen ConvRot coefficient-bank admission declined", admission);
     Tensor array(mx::allocator::malloc(bytes), shape, type);
+    require(array.data_shared_ptr()->buffer.ptr() != nullptr, "Qwen ConvRot coefficient allocation failed");
     const auto actual = mx::allocator::allocator().size(array.data_shared_ptr()->buffer);
     require(actual >= bytes && actual <= capacity, "Qwen ConvRot packing backing exceeds admitted capacity");
     return array;
@@ -83,16 +85,32 @@ Bf16StreamPlan bf16_stream_cache_plan(Bf16StreamPlan base,uint64_t budget,
     if(selected.prefix)selected.minimum_plan=std::make_shared<const Bf16StreamPlan>(std::move(base));
     return selected;
 }
-Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<bool> &cancel)
-    :plan_(std::move(plan)),pager_(plan_.lease,
+Bf16StreamPlan bf16_stream_recheck_cache_plan(Bf16StreamPlan plan,
+        const ane::StreamingMemoryObservation &observation) {
+    if (!plan.minimum_plan) return plan;
+    const auto admission = ane::admit_streaming_memory(observation,
+        {system_reserve, observation.memory.physical_bytes}, bf16_stream_managed_capacity(plan));
+    if (admission.allowed() && observation.pressure == ane::StreamingMemoryPressure::Normal) return plan;
+    auto minimum = *plan.minimum_plan;
+    minimum.cache_budget_prefix = plan.cache_budget_prefix;
+    minimum.cache_limited_by_memory = true;
+    return minimum;
+}
+Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<bool> &cancel,
+        ane::StreamingAllocationAdmission admission)
+    :plan_(bf16_stream_recheck_cache_plan(std::move(plan), ane::observe_streaming_memory(mx::get_active_memory()))),pager_(plan_.lease,
         plan_.minimum_plan ? plan_.minimum_plan->descriptor : plan_.descriptor,
         plan_.minimum_plan ? plan_.minimum_plan->descriptor.stages[0] : plan_.descriptor.stages[0],
-        plan_.minimum_plan ? plan_.minimum_plan->layout.stages[0] : plan_.layout.stages[0]),cancel_(cancel) {
+        plan_.minimum_plan ? plan_.minimum_plan->layout.stages[0] : plan_.layout.stages[0]),cancel_(cancel),
+        allocation_admission_(admission) {
     const auto &layout=plan_.layout.stages[0];
     const auto &stage = plan_.descriptor.stages[0];
     const bool convrot_request = plan_.mode != StreamWeightMode::Bf16;
     const bool convrot = plan_.mode == StreamWeightMode::ConvRotFloat || plan_.mode == StreamWeightMode::ConvRotW8A8;
     const bool tensorops = plan_.mode == StreamWeightMode::ConvRotW8A8;
+    require(allocation_admission_ == ane::StreamingAllocationAdmission::Guarded ||
+        (convrot_request && allocation_admission_ == ane::StreamingAllocationAdmission::SystemManaged),
+        "system-managed Qwen allocation requires a ConvRot streaming request");
     require(!convrot_request || stage.id=="denoiser" || plan_.prefix==0,
         "Qwen ConvRot encoder bank requires zero resident layer prefix");
     const auto capacity = gguf::checked_add(layout.resident_bytes, layout.peak_pool_bytes);
@@ -103,7 +121,7 @@ Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<b
     require(managed <= budget, "Qwen streaming managed weight budget floor");
     if (convrot_request) {
         ane::require_streaming_memory_headroom(mx::get_active_memory(), managed,
-            "Qwen ConvRot streaming physical admission declined");
+            "Qwen ConvRot streaming physical admission declined", allocation_admission_);
     } else {
         uint64_t largest_field=0;
         for(const auto &field : stage.resident_fields)
@@ -114,7 +132,7 @@ Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<b
         const auto admission=ane::admit_memory(observed,{system_reserve,observed.physical_bytes},0,largest_field);
         require(admission.allowed(),"Qwen BF16 streaming physical admission declined: "+ane::memory_denial_reason(admission.denial,observed));
     }
-    pager_.use_exact_allocations(convrot_request);
+    pager_.use_exact_allocations(convrot_request, allocation_admission_);
     pager_.load_resident(resident_,&cancel_);plan_.lease->revalidate_after_drain();
     if (tensorops) resident_.set_convrot_w8a8(true);
     pager_.create_pool(execution_layout().pools[0]);
@@ -131,9 +149,9 @@ Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<b
             const uint64_t plane_bytes = field.bytes / convrot_group * sizeof(float);
             const mx::Shape coefficients{rows, columns / convrot_group};
             float_projections_.push_back({field.name.substr(0, field.name.size() - std::string_view(".weight").size()),
-                allocate_float_backing({rows, columns / 4}, mx::uint32, field.bytes),
-                allocate_float_backing(coefficients, mx::float32, plane_bytes),
-                allocate_float_backing(coefficients, mx::float32, plane_bytes)});
+                allocate_float_backing({rows, columns / 4}, mx::uint32, field.bytes, allocation_admission_),
+                allocate_float_backing(coefficients, mx::float32, plane_bytes, allocation_admission_),
+                allocate_float_backing(coefficients, mx::float32, plane_bytes, allocation_admission_)});
         }
     }
     if(plan_.minimum_plan) {
@@ -171,6 +189,7 @@ Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<b
     metrics_.derived_weight_capacity_bytes=derived;
     metrics_.source_precision=convrot ? "original_i8_convrot" : "original_bf16";
     metrics_.matmul_mode=tensorops ? "int8_tensorops_w8a8" : convrot ? "q8_g128_float_a" : "bf16";
+    metrics_.allocation_policy=allocation_admission_ == ane::StreamingAllocationAdmission::SystemManaged ? "system_managed" : "guarded";
     metrics_.layers=plan_.layers;metrics_.prefix=plan_.prefix;metrics_.slots=2;
     metrics_.cache_budget_prefix=plan_.cache_budget_prefix;
     metrics_.cache_limited_by_memory=plan_.cache_limited_by_memory;
@@ -203,8 +222,8 @@ Tensor Bf16StreamBank::embedding_rows(const Tokens &tokens) {
         gguf::checked_add(metrics_.derived_weight_capacity_bytes,gguf::checked_add(code_capacity,scale_capacity))) <=
         metrics_.managed_weight_budget_bytes, "Qwen sparse embedding exceeds managed weight budget");
     streaming::gguf_storage::ExactCapacityCacheScope exact;
-    auto codes = allocate_float_backing({rows,width},mx::int8,code_bytes);
-    auto scales = allocate_float_backing({rows,1},mx::float32,scale_bytes);
+    auto codes = allocate_float_backing({rows,width},mx::int8,code_bytes,allocation_admission_);
+    auto scales = allocate_float_backing({rows,1},mx::float32,scale_bytes,allocation_admission_);
     plan_.lease->revalidate_after_drain();
     const auto &file = plan_.lease->descriptor().files.at(0);
     auto fd = plan_.lease->duplicate_fd(file.logical_id);
@@ -371,6 +390,30 @@ QwenBf16StreamStageMetrics Bf16StreamBank::metrics() const {
 }
 const streaming::StageLayout &Bf16StreamBank::execution_layout() const {
     return plan_.minimum_plan ? plan_.minimum_plan->layout.stages[0] : plan_.layout.stages[0];
+}
+uint64_t Bf16StreamBank::release_fixed_fields(const std::vector<std::string> &names) {
+    checkpoint(cancel_);
+    require(!finished_ && !pass_live_ && !layer_live_ && !current_ticket_ &&
+        !pending_[0] && !pending_[1] && safety_->quiescent() &&
+        metrics_.reader_fences==metrics_.completed_reader_fences,
+        "Qwen fixed-field release requires a drained pass boundary");
+    const auto &stage=plan_.minimum_plan ? plan_.minimum_plan->descriptor.stages[0] :
+        plan_.descriptor.stages[0];
+    for(const auto &name:names) {
+        require(!name.starts_with("transformer_blocks.") && !name.starts_with("model.layers."),
+            "Qwen fixed-field release cannot retire a layer field");
+        const auto found=std::find_if(stage.resident_fields.begin(),stage.resident_fields.end(),
+            [&](const auto &field) {
+                return field.materialization && field.materialization->reads.size()==1 &&
+                    field.materialization->reads.front().tensor==name;
+            });
+        require(found!=stage.resident_fields.end(),"Qwen fixed-field release requires an original fixed field: "+name);
+    }
+    // The pager drains the last submitted GPU readers and revalidates the
+    // held-fd source before atomically retiring its and resident_'s owners.
+    // Optional-cache eviction never rebuilds resident_, so retired fields
+    // cannot be brought back by later prefix or slot transitions.
+    return pager_.release_resident_fields(resident_,names,&cancel_);
 }
 bool Bf16StreamBank::evict_cached_layers() {
     require(!finished_ && !pass_live_ && !layer_live_ && !current_ticket_ && safety_->quiescent(),

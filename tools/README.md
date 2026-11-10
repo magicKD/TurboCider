@@ -12,7 +12,7 @@ Run commands from the repository root unless a tool says otherwise. Start with
 | `convert/`, `models/` | Model conversion and model metadata helpers |
 | `h3/`, `ltx/` | Model-specific preparation and comparison tools |
 | [profiling/](profiling/README.md) | Opt-in measurement campaigns and evidence collection |
-| `validation/` | Reference comparisons, evidence checks and experimental screens |
+| [validation/](validation/README.md) | Reference comparisons, evidence checks and experimental screens |
 | `experimental/` | External reference-source audits and synthetic research fixtures |
 | `comfyui/` | ComfyUI integration helpers |
 | `branding/`, `metal/` | Branding generation and Metal diagnostics |

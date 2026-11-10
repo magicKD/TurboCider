@@ -6,6 +6,8 @@
 #include "../../runtime/streaming/qwen_bf16_metrics.hpp"
 #include "../../core/tokenizer.hpp"
 
+namespace tc::ane { struct StreamingMemoryObservation; }
+
 namespace tc::qwen21 {
 struct StreamEmbeddingSource {
     streaming::FieldSpec codes, scales;
@@ -35,6 +37,10 @@ uint64_t bf16_stream_managed_capacity(const Bf16StreamPlan &);
 // the caller's physical-headroom policy. Encoder layers are consumed once.
 Bf16StreamPlan bf16_stream_cache_plan(Bf16StreamPlan, uint64_t budget,
     const std::function<bool(uint64_t)> &admit = {});
+// Recheck before any allocation. Optional prefix ownership may be discarded;
+// the minimum bank retains the caller's required-allocation policy.
+Bf16StreamPlan bf16_stream_recheck_cache_plan(Bf16StreamPlan,
+    const ane::StreamingMemoryObservation &);
 
 // Private diagnostic adapter, not a public catalog authority or hard RAM cap.
 // CPU refill jobs never allocate/evaluate MLX arrays. Owner graph arguments are
@@ -53,6 +59,7 @@ class Bf16StreamBank final {
     };
     std::vector<FloatProjection> float_projections_;
     std::atomic<bool> &cancel_;
+    ane::StreamingAllocationAdmission allocation_admission_;
     streaming::CompletionMailbox mailbox_{8};
     std::unique_ptr<streaming::SlotSafetyTracker> safety_;
     std::unique_ptr<streaming::IoExecutor> io_;
@@ -68,7 +75,8 @@ class Bf16StreamBank final {
     void bind_float_layer(uint32_t layer);
     const streaming::StageLayout &execution_layout() const;
   public:
-    Bf16StreamBank(Bf16StreamPlan,uint64_t managed_weight_budget,std::atomic<bool> &);
+    Bf16StreamBank(Bf16StreamPlan,uint64_t managed_weight_budget,std::atomic<bool> &,
+        ane::StreamingAllocationAdmission admission = ane::StreamingAllocationAdmission::Guarded);
     ~Bf16StreamBank();
     Bf16StreamBank(const Bf16StreamBank &)=delete;
     Bf16StreamBank &operator=(const Bf16StreamBank &)=delete;
@@ -85,6 +93,12 @@ class Bf16StreamBank final {
     // At a drained pass boundary, free optional cached raw layers. The
     // original fixed weights and two refill buffers remain allocated.
     bool evict_cached_layers();
+    // Only at a quiescent boundary, including before the first pass. Remove
+    // fixed-field ownership from both the pager and the same resident Weights
+    // object. Return actual retired allocation capacity, not physical bytes
+    // freed: external graph/tensor aliases can retain the buffers. Cached
+    // layers, refill pools, budgets and historical read counts are untouched.
+    uint64_t release_fixed_fields(const std::vector<std::string> &names);
     void finish();
     QwenBf16StreamStageMetrics metrics() const;
 };

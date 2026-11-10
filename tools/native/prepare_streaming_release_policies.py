@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import json
 import sys
 from pathlib import Path
 from typing import Any
+
+from streaming_evidence import canonical_json, sha256_bytes, sha256_file
 
 from build_streaming_catalog import (
     CatalogBuildError,
@@ -37,24 +38,6 @@ KINDS = ("P0", "P1", "P2", "P3")
 
 class PolicyPreparationError(ValueError):
     pass
-
-
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode()
-
-
-def sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _record(path: Path) -> dict[str, Any]:

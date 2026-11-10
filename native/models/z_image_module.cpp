@@ -1,4 +1,5 @@
 #include "../runtime/session.hpp"
+#include "image_recipe.hpp"
 #include "z_image/z_image.hpp"
 #include "z_image/convrot_partial_config.hpp"
 #include "z_image/runtime_bucket_config.hpp"
@@ -10,12 +11,7 @@ ModelModule z_image_module() {
     return {
         "z-image-turbo",
         [] {
-            return Recipe{"z-image-turbo",
-                          {{"text_encode", {}},
-                           {"denoise", {"text_encode"}, 8},
-                           {"vae_decode", {"denoise"}},
-                           {"export", {"vae_decode"}}},
-                          true};
+            return model_detail::image_recipe("z-image-turbo", 8);
         },
         [](const Request &r) {
             (void)z_image::configured_runtime_match_rows(r);

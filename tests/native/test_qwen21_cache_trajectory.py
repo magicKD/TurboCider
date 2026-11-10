@@ -5,6 +5,7 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,11 +29,31 @@ class CacheTrajectoryTests(unittest.TestCase):
                 "-Wl,-rpath," + str(library), "-Wl,-rpath," + str(mlx / "lib"), "-o", str(binary)], check=True)
             environment = {k: v for k, v in os.environ.items() if not k.startswith("TURBOCIDER_")}
             environment.update(MLX_ENABLE_TF32="0", TURBOCIDER_SOURCE_REGISTRATION_CACHE=str(Path(temporary) / "registration"))
-            result = subprocess.run([str(binary), str(model), str(Path(DUMPS).resolve())],
-                text=True, capture_output=True, env=environment, timeout=180)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("1536 W8A8 projections; 253 drained refills", result.stdout)
-            print(result.stdout, end="")
+            compact = os.environ.get("TURBOCIDER_QWEN21_STREAM_COMPACT_KV", "1")
+            self.assertIn(compact, ("0", "1"))
+            environment["TURBOCIDER_QWEN21_STREAM_COMPACT_KV"] = compact
+            configured = os.environ.get("TURBOCIDER_QWEN21_CONVROT_SHARED_A8")
+            self.assertIn(configured, (None, "0", "1"))
+            modes = ((configured, 1088 if configured == "1" else 1536),) if configured is not None else (("0", 1536), ("1", 1088))
+            for shared, dispatches in modes:
+                with self.subTest(shared_a8=shared):
+                    # macOS pressure notifications may outlive the previous
+                    # process's fully drained Metal allocations. Wait outside
+                    # the fixture; its real physical admission still decides.
+                    deadline = time.monotonic() + 15
+                    while time.monotonic() < deadline:
+                        pressure = subprocess.check_output(
+                            ["sysctl", "-n", "kern.memorystatus_vm_pressure_level"], text=True).strip()
+                        if pressure == "1":
+                            break
+                        time.sleep(0.5)
+                    environment["TURBOCIDER_QWEN21_CONVROT_SHARED_A8"] = shared
+                    result = subprocess.run([str(binary), str(model), str(Path(DUMPS).resolve())],
+                        text=True, capture_output=True, env=environment, timeout=180)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("1536 W8A8 projections; 253 drained refills", result.stdout)
+                    self.assertIn(f"physical A8 dispatches={dispatches}", result.stdout)
+                    print(result.stdout, end="")
 
 
 if __name__ == "__main__":

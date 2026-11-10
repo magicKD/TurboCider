@@ -29,6 +29,8 @@ import ImageIO
 @main
 struct StudioBehaviorTests {
     @MainActor static func main() async throws {
+        try verifyMemoryPresentation()
+        if ProcessInfo.processInfo.environment["TURBOCIDER_TEST_MEMORY_PRESENTATION_ONLY"] == "1" { return }
         if ProcessInfo.processInfo.environment["TURBOCIDER_TEST_ACCELERATION_ONLY"] == "1" {
             try await verifyAccelerationRouting()
             return
@@ -1558,5 +1560,57 @@ extension StudioBehaviorTests {
         try check(migrated.activateCreation() && migrated.draft.modelID == "qwen-image-2.1" &&
                   migrated.draft.prompt == "Explicitly selected new creation", "Return overwrote an explicit creation selection")
         print("PASS creation/upscale return: editing draft, restart, imports, registrations, video, new creation and legacy migration")
+    }
+
+    private static func verifyMemoryPresentation() throws {
+        func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+            guard condition() else { throw NativeFailure(message: message) }
+        }
+        try check(Qwen21MemoryPresentation.phaseTitle("memory_wait") == "正在等待可用内存",
+                  "Memory waiting phase was not localized")
+        try check(Qwen21MemoryPresentation.phaseTitle("memory_ready") == "内存余量已恢复，继续生成",
+                  "Recovered memory phase was not localized")
+        try check(Qwen21MemoryPresentation.phaseTitle("qwen21_memory_wait") == nil &&
+                  Qwen21MemoryPresentation.phaseTitle("denoise") == nil,
+                  "Memory presentation captured unrelated phases")
+        try check(Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: 17, total: 120) ==
+                  "已等待 17 秒，最多等待 120 秒 · 可随时取消", "Memory wait lost its deadline or cancellation guidance")
+        try check(Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: -1, total: 120)?.hasPrefix("已等待 0 秒") == true &&
+                  Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: 121, total: 120)?.hasPrefix("已等待 120 秒") == true,
+                  "Out-of-bound telemetry produced an invalid wait duration")
+        try check(Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: 1, total: 0) ==
+                  "正在等待可用内存，可随时取消。" &&
+                  Qwen21MemoryPresentation.progressText(phase: "memory_ready", completed: 0, total: 1) == nil,
+                  "Waiting and recovered progress were conflated")
+        let diagnostic = "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120007; required_growth_mib=512; system_memory_pressure; free_mib=1489; inactive_mib=4290; process_mib=207; non_speculative_file_mib=7385; pressure=elevated"
+        let summary = Qwen21MemoryPresentation.timeoutSummary(diagnostic)
+        try check(summary?.contains("本次生成已停止") == true && summary?.contains("任务记录") == true,
+                  "Memory timeout did not explain recovery or preserved diagnostics")
+        let failure = NativeFailure(message: diagnostic, code: "memory_wait_timeout", retryable: true, action: "retry")
+        try check(Qwen21MemoryPresentation.message(for: failure) == summary && failure.message == diagnostic &&
+                  failure.code == "memory_wait_timeout" && failure.retryable && failure.action == "retry",
+                  "Presentation mutated native failure diagnostics or error metadata")
+        for unrelated in [
+            "Qwen21 ConvRot streaming: system_memory_pressure; free_mib=1489",
+            "Qwen21 ConvRot streaming: memory_wait_timeout_extra; waited_ms=120000; required_growth_mib=512",
+            "Other backend: memory_wait_timeout; waited_ms=120000; required_growth_mib=512",
+            "wrapper: " + diagnostic,
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120000",
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=-1; required_growth_mib=512",
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120000; required_growth_mib=18446744073709551616",
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120000; required_growth_mib=512; waited_ms=120001",
+            "streaming_process_quarantined: " + diagnostic
+        ] {
+            try check(Qwen21MemoryPresentation.timeoutSummary(unrelated) == nil &&
+                      Qwen21MemoryPresentation.message(for: NativeFailure(message: unrelated)) == unrelated,
+                      "Unrelated or malformed failure was relabeled as a recoverable memory timeout")
+        }
+        let cancellation = CancellationError()
+        try check(Qwen21MemoryPresentation.message(for: cancellation) == cancellation.localizedDescription,
+                  "Cancellation was relabeled as a memory timeout")
+        let other = NSError(domain: "fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: diagnostic])
+        try check(Qwen21MemoryPresentation.message(for: other) == diagnostic,
+                  "A non-native error was relabeled by matching its description")
+        print("PASS ConvRot memory presentation: waiting, recovery, cancellation, strict timeout matching and preserved diagnostics")
     }
 }

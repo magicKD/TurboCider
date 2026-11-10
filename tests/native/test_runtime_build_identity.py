@@ -65,7 +65,7 @@ class RuntimeBuildIdentityTests(unittest.TestCase):
         self.assertEqual(original, identity.manifest(args))
 
     def test_source_build_script_and_shader_changes_invalidate(self):
-        for relative in ("native/model.cpp", "tools/native/build.sh", "dependency/lib/mlx.metallib",*identity.EXPERIMENTAL_VAE_SOURCES):
+        for relative in ("native/model.cpp", *identity.BUILD_SCRIPTS, "dependency/lib/mlx.metallib", *identity.EXPERIMENTAL_VAE_SOURCES):
             with self.subTest(relative=relative):
                 before = self.manifest()
                 path = self.root / relative

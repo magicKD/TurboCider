@@ -70,6 +70,14 @@ typed数学调用本身也有边界：某版本BF16 sigmoid中的`exp(abs(T))`�
 
 ## MLX compiled graph 的实战规则
 
+诊断输出也会改变融合体。把 gate、up、sigmoid、SiLU 和 final 全部发布的 kernel，
+即使中间值逐位相同，也不能代替只发布 final 的真实候选；可观察值和活跃区间已经
+不同。将最终产品输出的比较作为独立门槛，诊断只用于定位。一个独立的小型
+cast/multiply 控制通过，也不能证明带大 GEMM 的 epilogue 保留同样的舍入。
+显式整数 BF16 RNE 还要核对原 GPU 的次正规数和 NaN 行为：数学上的 RNE
+不自动等于当前编译配方下的转换。相关本机反例见
+[ConvRot GU 融合实验](../../docs/experiments/qwen21-convrot-gu-fusion-2026-11-08.md)。
+
 - 编译稳定 block / GPU complement / hybrid 交接前后段，避免强同步拆碎图。
 - 按 shape、dtype、precision recipe、source/adapter generation 和路线建立有界 cache；变更 adapter 时不能继续捕获旧 A/B。
 - `eval` / `async_eval` 是执行边界，普通表达式构建不是 device submission；定时前把上游依赖与目标操作区分。

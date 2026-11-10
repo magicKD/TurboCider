@@ -142,6 +142,18 @@ import ImageIO
         let streamedConvrot = cachedConvrot || (args.count == 4 && args[1] == "--gpu-convrot")
         guard streamedConvrot || (args.count == 6 && ["--gpu", "--gpu-base"].contains(args[1])) else { return }
         let authoredBase = args[1] == "--gpu-base"
+        let acceptanceEnvironment = ProcessInfo.processInfo.environment
+        let selectedAcceptanceMode = acceptanceEnvironment["TURBOCIDER_TINY_ACCEPTANCE_MODE"]
+        let acceptancePrompt = acceptanceEnvironment["TURBOCIDER_TINY_ACCEPTANCE_PROMPT"]
+        let acceptanceBaseline = acceptanceEnvironment["TURBOCIDER_TINY_ACCEPTANCE_BASELINE_PNG"]
+        if selectedAcceptanceMode != nil || acceptancePrompt != nil || acceptanceBaseline != nil {
+            try check(streamedConvrot,
+                "Tiny acceptance overrides require explicit --gpu-convrot or --gpu-convrot-cache")
+        }
+        if let acceptancePrompt {
+            try check(!acceptancePrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                "Tiny acceptance prompt override must be nonempty")
+        }
         let modelID = streamedConvrot ? "qwen-image-2.1" : args[2]
         let model = URL(fileURLWithPath: args[streamedConvrot ? 2 : 3]).standardizedFileURL
         let output = URL(fileURLWithPath: args[streamedConvrot ? 3 : 5]).standardizedFileURL
@@ -183,10 +195,23 @@ import ImageIO
         var baseline: Data?
         var modes = authoredBase ? ["tiny-final"] : ["baseline", "preview", "cancel", "tiny-final"]
         if modelID == "qwen-image-2.1" && !authoredBase && !streamedConvrot { modes.append("tiny-edit") }
+        if let selectedAcceptanceMode {
+            try check(modes.contains(selectedAcceptanceMode), "unknown existing Tiny acceptance mode")
+            modes = [selectedAcceptanceMode]
+        }
+        if selectedAcceptanceMode == "preview" {
+            guard let acceptanceBaseline else {
+                throw NativeFailure(message: "preview-only acceptance requires an explicit baseline PNG")
+            }
+            let data = try Data(contentsOf: URL(fileURLWithPath: acceptanceBaseline))
+            try check(TinyPreviewFrame.matches(data, width: 512, height: 512),
+                "preview-only acceptance baseline is not a valid full-size PNG")
+            baseline = data
+        }
         for mode in modes {
             var request = NativeRequest(
                 prompt:
-                    "A red ceramic teapot on a wooden table, warm sunlight, detailed photography.",
+                    acceptancePrompt ?? "A red ceramic teapot on a wooden table, warm sunlight, detailed photography.",
                 output: output.appendingPathComponent("\(mode).png").path)
             request.model = modelID
             request.operation = "image.generate"
@@ -245,26 +270,45 @@ import ImageIO
                 let pair = try resolved.publicStreamingRequest(output: URL(fileURLWithPath: request.output))
                 request = pair.legacy
                 try check(pair.v2 == nil && request.residency == "streamed" && request.execution == "gpu" &&
-                    request.allow_approximation == true && request.steps == 8 &&
+                    request.allow_approximation == true && request.steps == 8 && request.seed == 73 &&
                     request.qwen21_stream_weight_budget_bytes == (cachedConvrot ? UInt64(2) << 30 : nil) &&
                     (mode == "baseline" ? request.tiny_vae == nil : request.tiny_vae?.path == tiny),
                     "Creation request lost its ConvRot streaming or bundled preview settings")
             }
             var previews: [Int] = [], phases = Set<String>(), cancelled = false
+            var phaseTransitions: [String] = [], stateTransitions: [String] = []
+            var invalidPreviewFrame = false
             let progress = store.$jobs.sink { jobs in
                 if let job = jobs.first(where: { $0.request.output == request.output }) {
                     phases.insert(job.phase)
+                    if phaseTransitions.last != job.phase {
+                        phaseTransitions.append(job.phase)
+                        print("PHASE \(mode) \(job.phase)")
+                    }
+                    if stateTransitions.last != job.state {
+                        stateTransitions.append(job.state)
+                        print("STATE \(mode) \(job.state)")
+                    }
                 }
             }
             let observation = store.$livePreview.sink { data in
                 guard let data else { return }
-                if CGImageSourceCreateWithData(data as CFData, nil) != nil {
+                if TinyPreviewFrame.matches(data, width: request.width, height: request.height) {
                     previews.append(store.livePreviewStep)
+                    print("PREVIEW \(mode) \(store.livePreviewStep)")
+                } else {
+                    invalidPreviewFrame = true
                 }
                 if mode == "cancel", !cancelled {
                     cancelled = true
                     store.cancel()
                 }
+            }
+            if streamedConvrot {
+                try JSONEncoder().encode(request).write(to: output.appendingPathComponent("\(mode)-request.json"),
+                    options: .withoutOverwriting)
+                print("RUNTIME \(NativeEngine.runtimeBuildIdentity())")
+                print("BUNDLE_EXECUTABLE \(Bundle.main.executableURL?.path ?? "missing")")
             }
             print("START \(modelID) \(mode)")
             do {
@@ -279,13 +323,15 @@ import ImageIO
                 if mode == "baseline" { baseline = data }
                 if mode == "preview" { try check(data == baseline, "preview changed final image") }
                 if mode != "baseline" {
-                    try check(!previews.isEmpty, "App did not display a live preview")
+                    try check(!previews.isEmpty && !invalidPreviewFrame, "App did not display valid full-size live previews")
                 }
                 if mode == "tiny-edit" {
                     try check(
                         phases.contains("tiny_vae_encode"), "tiny reference encoder not invoked")
                 }
                 if streamedConvrot {
+                    try check(!phases.contains("memory_wait") && !phases.contains("memory_ready"),
+                        "ConvRot GPU generation must start without heuristic memory waiting")
                     try check(job.routeSummary?.contains("ConvRot") == true &&
                         job.routeSummary?.contains("流式加载") == true &&
                         phases.contains("denoise") && (mode != "tiny-final" || phases.contains("tiny_vae_decode")),
@@ -293,6 +339,11 @@ import ImageIO
                     if let receipt = job.resultJSON {
                         try Data(receipt.utf8).write(to: output.appendingPathComponent("\(mode)-native.json"),
                             options: .withoutOverwriting)
+                        let policyResult = try JSONSerialization.jsonObject(with: Data(receipt.utf8)) as? [String: Any]
+                        let policyStreaming = policyResult?["qwen_convrot_streaming"] as? [String: Any]
+                        try check(["encoder", "denoiser"].allSatisfy {
+                            (policyStreaming?[$0] as? [String: Any])?["allocation_policy"] as? String == "system_managed"
+                        }, "ConvRot mandatory weights did not use the system allocator policy")
                         if cachedConvrot {
                             let raw = try JSONSerialization.jsonObject(with: Data(receipt.utf8)) as? [String: Any]
                             let streaming = raw?["qwen_convrot_streaming"] as? [String: Any]
@@ -301,7 +352,14 @@ import ImageIO
                                 (((denoiser?["prefix"] as? NSNumber)?.intValue ?? 0) > 0 ||
                                  (denoiser?["cache_limited_by_memory"] as? Bool) == true),
                                 "Packaged acceptance lost the budget or failed to explain its physical-headroom fallback")
+                        } else {
+                            let raw = try JSONSerialization.jsonObject(with: Data(receipt.utf8)) as? [String: Any]
+                            let streaming = raw?["qwen_convrot_streaming"] as? [String: Any]
+                            try check((streaming?["requested_weight_budget_bytes"] as? NSNumber)?.uint64Value == 0,
+                                "Packaged acceptance unexpectedly retained optional weight cache")
                         }
+                    } else {
+                        throw NativeFailure(message: "ConvRot acceptance is missing its actual native receipt")
                     }
                     let intermediate = previews.filter { $0 < request.steps }
                     let expected = mode == "baseline" ? [] : mode == "tiny-final" ? [3, 6] : [2, 4, 6]
@@ -309,7 +367,11 @@ import ImageIO
                 }
                 reports.append([
                     "mode": mode, "state": job.state, "preview_steps": previews,
-                    "phase_count": phases.count,
+                    "phase_count": phases.count, "phases": phases.sorted(), "phase_transitions": phaseTransitions,
+                    "state_transitions": stateTransitions, "route_summary": job.routeSummary ?? "",
+                    "runtime_build_id": NativeEngine.runtimeBuildIdentity(),
+                    "bundle_executable": Bundle.main.executableURL?.path ?? "",
+                    "baseline_png": acceptanceBaseline ?? "generated-baseline.png",
                     "preview_unchanged": mode == "preview" ? data == baseline : true,
                 ])
             } catch {
@@ -321,7 +383,9 @@ import ImageIO
                     try check(error is CancellationError && store.jobs.first?.state == "cancelled",
                         "Cancelled ConvRot generation did not finish as a cancelled job")
                 }
-                reports.append(["mode": mode, "state": "cancelled", "preview_steps": previews])
+                reports.append(["mode": mode, "state": "cancelled", "preview_steps": previews,
+                    "phases": phases.sorted(), "phase_transitions": phaseTransitions,
+                    "state_transitions": stateTransitions])
             }
             observation.cancel()
             progress.cancel()
@@ -331,8 +395,10 @@ import ImageIO
         }
         if streamedConvrot {
             let restored = NativeJobStore(directory: output)
-            try check(restored.jobs.filter { $0.state == "succeeded" && $0.hasOutput }.count == 3 &&
-                restored.jobs.filter { $0.state == "cancelled" }.count == 1,
+            let expectedSuccesses = modes.filter { $0 != "cancel" }.count
+            let expectedCancellations = modes.filter { $0 == "cancel" }.count
+            try check(restored.jobs.filter { $0.state == "succeeded" && $0.hasOutput }.count == expectedSuccesses &&
+                restored.jobs.filter { $0.state == "cancelled" }.count == expectedCancellations,
                 "Fresh App profile lost ConvRot success or cancellation history")
             try await store.unload()
             try check(store.loadedPath == nil, "ConvRot acceptance did not release the App session")

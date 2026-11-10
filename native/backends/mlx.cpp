@@ -26,6 +26,16 @@ ConvrotW8A8Stats convrot_w8a8_stats() {
     const auto value=cider::convrot_w8a8_stats();
     return {value.projections,value.activation_rows};
 }
+ConvrotW8A8QuantStats convrot_w8a8_quant_stats() {
+    const auto value=cider::convrot_w8a8_quant_stats();
+    return {value.dispatches,value.activation_rows};
+}
+bool convrot_shared_a8_enabled() {
+    const auto *value=std::getenv("TURBOCIDER_QWEN21_CONVROT_SHARED_A8");
+    require(!value || std::string_view(value)=="0" || std::string_view(value)=="1",
+        "ConvRot shared A8 control requires 0 or 1");
+    return value && std::string_view(value)=="1";
+}
 void Weights::set_convrot_w8a8(bool enabled) {
     require(!enabled || convrot_w8a8_available(),
         "ConvRot W8A8 requires M5 Metal TensorOps and macOS 26.4 or later");
@@ -175,14 +185,23 @@ static Tensor convrot_rotate(const Tensor &x, bool metal) {
 }
 
 static Tensor convrot_w8a8_project(const Tensor& rotated,const Tensor& codes,
-                                  const Tensor& row_scales) {
+                                  const Tensor& row_scales,mx::Dtype output_dtype=mx::float32) {
     require(rotated.ndim()>0 && rotated.shape(-1)>0,"invalid ConvRot W8A8 activation geometry");
     const auto rows=rotated.size()/size_t(rotated.shape(-1));
     require(rows>0 && rows<=size_t(std::numeric_limits<int>::max()-128),
         "ConvRot W8A8 activation row count overflows");
     auto shape=rotated.shape();shape.back()=codes.shape(0);
-    return mx::reshape(cider::convrot_linear(mx::reshape(rotated,{int(rows),rotated.shape(-1)}),
-        codes,row_scales),shape);
+    const auto *control=std::getenv("TURBOCIDER_QWEN21_CONVROT_TYPED_OUTPUT");
+    require(!control || std::string_view(control)=="0" || std::string_view(control)=="1",
+        "ConvRot typed output control requires 0 or 1");
+    auto input=mx::reshape(rotated,{int(rows),rotated.shape(-1)});
+    // Preserve the old F32 projection for partial/split consumers. Ordinary
+    // projections retain the same F32 accumulator/scale math and perform
+    // their existing output rounding directly in the GEMM store epilogue.
+    auto projected=control && std::string_view(control)=="0" ?
+        mx::astype(cider::convrot_linear(input,codes,row_scales),output_dtype) :
+        cider::convrot_linear_typed(input,codes,row_scales,output_dtype);
+    return mx::reshape(projected,shape);
 }
 
 }
@@ -625,7 +644,7 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
                 "ConvRot input does not match " + prefix);
         auto rotated = convrot_rotate(x, metal_convrot_);
         if (convrot_w8a8_) {
-            output=mx::astype(convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale")),x.dtype());
+            output=convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale"),x.dtype());
         } else if (packed) {
             const auto &scales = at(prefix + ".scales");
             require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
@@ -723,8 +742,26 @@ std::vector<Tensor> Weights::project_many(
     // Make the ConvRot dependency explicit once so MLX does not build and run
     // two or three equivalent 256-wide Hadamard transforms.
     auto rotated = convrot_rotate(x, metal_convrot_);
+    std::optional<std::vector<Tensor>> shared_outputs;
+    if(convrot_w8a8_ && convrot_shared_a8_enabled()) {
+        require(rotated.ndim()>0 && rotated.shape(-1)>0,"invalid shared ConvRot activation geometry");
+        const auto rows=rotated.size()/size_t(rotated.shape(-1));
+        require(rows>0 && rows<=size_t(std::numeric_limits<int>::max()-128),
+            "shared ConvRot activation row count overflows");
+        std::vector<Tensor> codes,scales;
+        for(const auto& prefix:prefixes) {
+            codes.push_back(at(prefix+".weight"));scales.push_back(at(prefix+".weight_scale"));
+        }
+        const auto *control=std::getenv("TURBOCIDER_QWEN21_CONVROT_TYPED_OUTPUT");
+        require(!control || std::string_view(control)=="0" || std::string_view(control)=="1",
+            "ConvRot typed output control requires 0 or 1");
+        const auto dtype=control && std::string_view(control)=="0" ? mx::float32 : x.dtype();
+        shared_outputs=cider::convrot_linear_many_typed(
+            mx::reshape(rotated,{int(rows),rotated.shape(-1)}),codes,scales,dtype);
+    }
     std::vector<Tensor> outputs;
     outputs.reserve(prefixes.size());
+    size_t projection=0;
     for (const auto &prefix : prefixes) {
         const auto &weight = at(prefix + ".weight");
         const bool packed = weight.dtype() == mx::uint32;
@@ -733,7 +770,10 @@ std::vector<Tensor> Weights::project_many(
                 "shared ConvRot input does not match " + prefix);
         Tensor output = x;
         if (convrot_w8a8_) {
-            output=mx::astype(convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale")),x.dtype());
+            if(shared_outputs) {
+                auto shape=x.shape();shape.back()=weight.shape(0);
+                output=mx::astype(mx::reshape((*shared_outputs)[projection],shape),x.dtype());
+            }else output=convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale"),x.dtype());
         } else if (packed) {
             const auto &scales = at(prefix + ".scales");
             require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
@@ -762,6 +802,7 @@ std::vector<Tensor> Weights::project_many(
         if (has(prefix + ".bias"))
             output = output + mx::astype(at(prefix + ".bias"), output.dtype());
         outputs.push_back(std::move(output));
+        ++projection;
     }
     return outputs;
 }

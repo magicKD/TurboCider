@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from seedvr2_framework_screen import sha256, write_json
+from seedvr2_evidence import sha256, write_json
 
 
 def completed_cohort(path, library_sha):

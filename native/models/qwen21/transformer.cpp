@@ -1,6 +1,7 @@
 #include "transformer.hpp"
 #include "cider_w8a8.hpp"
 #include "diagnostic_options.hpp"
+#include "checkpoint_recipe.hpp"
 #include "metal/qk_norm_rope.hpp"
 #include "metal/qkv_projection.hpp"
 #include "metal/lora_qkv_prepare.hpp"
@@ -11,9 +12,22 @@
 #include <limits>
 #include <algorithm>
 #include <string_view>
+#include <unordered_set>
+#include <bit>
 
 namespace tc::qwen21 {
 namespace {
+Tensor owned_prefix_copy(const Tensor& value) {
+    // A plain copy can alias its source. Preserve all dtype bytes while
+    // forcing separate, compact storage outside the compiled block.
+    return mx::copy(mx::contiguous(mx::astype(value,value.dtype(),std::optional<bool>{true})));
+}
+bool compact_stream_prefix() {
+    const auto* value=std::getenv("TURBOCIDER_QWEN21_STREAM_COMPACT_KV");
+    require(!value || std::string_view(value)=="0" || std::string_view(value)=="1",
+        "streamed prefix compaction control requires 0 or 1");
+    return !value || std::string_view(value)=="1";
+}
 Tensor rotate(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
     auto shape = x.shape();
     auto paired_shape = shape;
@@ -153,6 +167,22 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
     return true;
 }
 
+Transformer::PrefixStorageInfo Transformer::prefix_storage() const {
+    PrefixStorageInfo info;
+    std::unordered_set<const void*> buffers;
+    for(const auto& kv:prefix_)for(const auto* value:{&kv.key,&kv.value}) {
+        ++info.arrays;info.logical_bytes+=value->nbytes();
+        const bool ready=value->is_available();
+        info.evaluated=info.evaluated && ready;
+        info.compact=info.compact && ready && !value->has_primitive() &&
+            value->inputs().empty() && value->siblings().empty() &&
+            value->flags().row_contiguous && value->offset()==0 && value->data_size()==value->size();
+        if(ready && value->data_shared_ptr() && buffers.insert(value->data_shared_ptr().get()).second)
+            info.backing_bytes+=value->buffer_size();
+    }
+    return info;
+}
+
 bool Transformer::graph_geometry_matches(const Tensor &text, int height, int width,
                                          const std::vector<ReferenceLatents> &references) const {
     if (!cosine_ || text.ndim() != 3 || text_length_ != text.shape(1) || height_ != height ||
@@ -211,10 +241,8 @@ Transformer::export_prefix_snapshot(uint64_t max_bytes, bool allow_db_cache, boo
         // AsType(copy=true) outside compile forces a value-preserving copy;
         // the live prefix_ owner prevents allocator donation. Contiguous
         // compacts transposed/sliced head rows instead of retaining targets.
-        snapshot.keys.push_back(mx::copy(mx::contiguous(
-            mx::astype(kv.key, kv.key.dtype(), std::optional<bool>{true}))));
-        snapshot.values.push_back(mx::copy(mx::contiguous(
-            mx::astype(kv.value, kv.value.dtype(), std::optional<bool>{true}))));
+        snapshot.keys.push_back(owned_prefix_copy(kv.key));
+        snapshot.values.push_back(owned_prefix_copy(kv.value));
         completed.push_back(snapshot.keys.back());
         completed.push_back(snapshot.values.back());
     }
@@ -341,6 +369,109 @@ Tensor Transformer::embedding(float timestep, mx::Dtype dtype) const {
                   weights_, "time_text_embed.timestep_embedder.linear_2");
 }
 
+const std::vector<std::string> &Transformer::timestep_condition_weight_names() {
+    static const std::vector<std::string> names{
+        "time_text_embed.timestep_embedder.linear_1.weight",
+        "time_text_embed.timestep_embedder.linear_2.weight",
+        "modulation.1.weight", "norm_out.linear.weight"};
+    return names;
+}
+
+namespace {
+bool timestep_leaf(const Tensor &value) {
+    return value.is_available() && !value.has_primitive() && value.inputs().empty() && value.siblings().empty();
+}
+uint64_t timestep_backing_bytes(const Tensor &value) {
+    return mx::allocator::allocator().size(value.data_shared_ptr()->buffer);
+}
+}
+
+std::vector<Transformer::PreparedTimestepCondition> Transformer::prepare_timestep_conditions(
+        const std::vector<float> &sigmas,mx::Dtype dtype,const std::string &source_sha256) {
+    require(!timestep_condition_owner_,"Qwen timestep conditions require a fresh unprepared Transformer");
+    require(dtype==mx::bfloat16 && !weights_.has_runtime_loras() && !cider_cache_,
+        "Qwen timestep conditions require original BF16 time projections without LoRA or Cider packs");
+    require(source_sha256.size()==64 && source_sha256.find_first_not_of("0123456789abcdef")==std::string::npos,
+        "Qwen timestep conditions require a verified lowercase source SHA256");
+    require(sigmas.size()==8,"Qwen timestep conditions require all eight authored sigmas");
+    for(size_t step=0;step<sigmas.size();++step)
+        require(std::bit_cast<uint32_t>(sigmas[step])==std::bit_cast<uint32_t>(turbo_sigma_nodes[step]),
+            "Qwen timestep conditions require exact authored F32 sigma bits");
+    const int h=config_.hidden();
+    const std::array<mx::Shape,4> shapes{mx::Shape{h,256},mx::Shape{h,h},mx::Shape{4*h,h},mx::Shape{h,h}};
+    std::array<uintptr_t,4> ids{};
+    const auto &names=timestep_condition_weight_names();
+    std::unordered_set<const void *> source_buffers;
+    for(size_t i=0;i<names.size();++i) {
+        const auto &weight=weights_.at(names[i]);
+        require(weight.dtype()==mx::bfloat16 && weight.shape()==shapes[i] && timestep_leaf(weight),
+            "Qwen timestep conditions require evaluated original M2 BF16 source geometry");
+        require(!weights_.has(names[i].substr(0,names[i].size()-7)+".bias"),
+            "Qwen timestep conditions require bias-free original time projections");
+        ids[i]=weight.id();source_buffers.insert(weight.data_shared_ptr()->buffer.ptr());
+    }
+    auto owner=std::make_shared<const uint8_t>(0);
+    std::unordered_set<const void *> output_buffers;
+    std::vector<PreparedTimestepCondition> result;result.reserve(sigmas.size());
+    for(const float sigma:sigmas) {
+        // Keep every original M=2 expression and its BF16 boundaries. In
+        // particular, do not reuse one silu node between the two projections.
+        auto temb=embedding(sigma,dtype);
+        auto modulation=project_dit(silu(temb),weights_,"modulation.1");
+        auto raw_output_scale=project_dit(silu(temb),weights_,"norm_out.linear");
+        mx::eval(modulation,raw_output_scale);mx::synchronize();
+        require(modulation.dtype()==dtype && modulation.shape()==mx::Shape{2,4*h} &&
+            raw_output_scale.dtype()==dtype && raw_output_scale.shape()==mx::Shape{2,h} &&
+            timestep_leaf(modulation) && timestep_leaf(raw_output_scale),
+            "Qwen timestep preparation retained an unfinished graph or changed full M2 output geometry");
+        uint64_t capacity=0;
+        for(const auto *value:{&modulation,&raw_output_scale}) {
+            const void *buffer=value->data_shared_ptr()->buffer.ptr();
+            require(!source_buffers.contains(buffer) && output_buffers.insert(buffer).second,
+                "Qwen timestep preparation must own independent compact output backing");
+            const auto bytes=timestep_backing_bytes(*value);
+            require(bytes>=value->nbytes() && bytes<=((value->nbytes()+16383)/16384)*16384,
+                "Qwen timestep output backing exceeds its compact aligned bound");
+            capacity+=bytes;
+        }
+        result.push_back(PreparedTimestepCondition(owner,source_sha256,std::bit_cast<uint32_t>(sigma),dtype,
+            std::move(modulation),std::move(raw_output_scale),capacity));
+    }
+    // Publication is atomic: failed/unfinished preparation leaves no usable
+    // identity and the caller must not release any original source owner.
+    timestep_condition_source_=source_sha256;
+    timestep_condition_weight_ids_=ids;
+    timestep_condition_owner_=std::move(owner);
+    return result;
+}
+
+void Transformer::validate_timestep_condition(const PreparedTimestepCondition &condition,float sigma,mx::Dtype dtype) const {
+    const auto owner=condition.owner_.lock();
+    require(owner && timestep_condition_owner_ && owner==timestep_condition_owner_,
+        "Qwen timestep condition owner mismatch");
+    require(condition.source_sha256_==timestep_condition_source_ && condition.source_sha256_.size()==64,
+        "Qwen timestep condition source identity mismatch");
+    require(condition.sigma_bits_==std::bit_cast<uint32_t>(sigma),"Qwen timestep condition sigma bits mismatch");
+    require(dtype==mx::bfloat16 && condition.dtype_==dtype && !weights_.has_runtime_loras() && !cider_cache_,
+        "Qwen timestep condition dtype or arithmetic route mismatch");
+    const int h=config_.hidden();
+    require(condition.modulation_.dtype()==dtype && condition.modulation_.shape()==mx::Shape{2,4*h} &&
+        condition.raw_output_scale_.dtype()==dtype && condition.raw_output_scale_.shape()==mx::Shape{2,h} &&
+        timestep_leaf(condition.modulation_) && timestep_leaf(condition.raw_output_scale_),
+        "Qwen timestep condition full M2 leaf geometry mismatch");
+    const auto &names=timestep_condition_weight_names();size_t present=0;
+    for(size_t i=0;i<names.size();++i) {
+        require(!weights_.has(names[i].substr(0,names[i].size()-7)+".bias"),
+            "Qwen timestep condition source binding changed");
+        if(weights_.has(names[i])) {
+            ++present;
+            require(weights_.at(names[i]).id()==timestep_condition_weight_ids_[i],
+                "Qwen timestep condition source binding changed");
+        }
+    }
+    require(present==0 || present==names.size(),"Qwen timestep condition source retirement is incomplete");
+}
+
 void Transformer::geometry(int text_length, int height, int width, const std::vector<ReferenceGeometry> &references) {
     if (cosine_ && text_length == text_length_ && height == height_ && width == width_ && references == reference_geometry_) return;
     auto sequence = make_sequence_geometry(text_length, height, width, references);
@@ -379,7 +510,8 @@ void Transformer::geometry(int text_length, int height, int width, const std::ve
 Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float timestep,
                             int height, int width, bool cache_prefix,
                             std::unordered_map<std::string, Tensor> *trace,
-                            const std::vector<ReferenceLatents> &references) try {
+                            const std::vector<ReferenceLatents> &references,
+                            const PreparedTimestepCondition *prepared_timestep) try {
     require(height > 0 && width > 0 && latents.ndim() == 3 && latents.shape(0) == 1 &&
             latents.shape(1) == height * width && latents.shape(2) == config_.channels,
             "Qwen21 latent shape must be [1,H*W,channels]");
@@ -388,6 +520,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             "Qwen21 text shape/dtype mismatch");
     require(std::isfinite(timestep) && timestep >= 0.f && timestep <= 1.f,
             "Qwen21 timestep must be a normalized sigma in [0,1]");
+    if(prepared_timestep) {
+        require(!trace,"Qwen prepared timestep conditions do not support tracing");
+        validate_timestep_condition(*prepared_timestep,timestep,latents.dtype());
+    }
     std::vector<ReferenceGeometry> reference_geometry;
     bool same_references = references.size() == cached_references_.size();
     for (size_t i = 0; i < references.size(); ++i) {
@@ -474,9 +610,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     if (half_reuse_ffn) previous_ffn = std::move(cached_ffn_);
     if (capture_ffn) cached_ffn_.clear();
     require(!split_mlp || !trace, "Qwen21 MLP split trace is not supported");
-    auto temb = embedding(timestep, latents.dtype());
-    auto modulation = project_dit(silu(temb), weights_, "modulation.1");
-    if (trace) { trace->emplace("temb", slice_axis(temb, 0, 0, 1)); trace->emplace("modulation", slice_axis(modulation, 0, 0, 1)); }
+    // Flag0 keeps the original producer positions: modulation at step start,
+    // norm_out.linear only after all blocks. Only prepared values bypass them.
+    std::optional<Tensor> temb;
+    if(!prepared_timestep)temb.emplace(embedding(timestep,latents.dtype()));
+    auto modulation = prepared_timestep ? prepared_timestep->modulation_ : project_dit(silu(*temb), weights_, "modulation.1");
+    if (trace) { trace->emplace("temb", slice_axis(*temb, 0, 0, 1)); trace->emplace("modulation", slice_axis(modulation, 0, 0, 1)); }
     auto mod_target = mx::split(mx::reshape(slice_axis(modulation, 0, 0, 1), {1, 1, 4 * config_.hidden()}), 4, -1);
     auto mods = mod_target;
     Tensor hidden = project_dit(latents, weights_, "img_in");
@@ -706,6 +845,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                         metal::prepare_corrected_qkv(input,corrected_qkv_->at(i),low,up,scales,
                         weights.at(p+".attn.norm_q.weight"),weights.at(p+".attn.norm_k.weight"),cosine,sine,32);
                     q=all[0];k=all[1];v=all[2];
+                } else if(reuse && !cider_cache_ && weights.convrot_w8a8() && convrot_shared_a8_enabled()) {
+                    // Decode outputs are consumed within this block. Preserve
+                    // independent prefill V storage: its prefix enters the KV
+                    // cache and must not pin a full shared Q/K/V allocation.
+                    const auto all=weights.project_many(input,
+                        {p+".attn.to_q",p+".attn.to_k",p+".attn.to_v"});
+                    q=all[0];k=all[1];v=heads(all[2],config_.heads,config_.head_dim);
                 } else {
                     q = project_dit(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
                                weights, p + ".attn.to_q");
@@ -989,6 +1135,15 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         }
         if(retire_weights_) {
             mx::eval(outputs);mx::eval(hidden);
+            if(!reuse && cache_prefix && compact_stream_prefix()) {
+                // Prefix slices otherwise retain every target token in the
+                // full prefill K/V backing for all remaining denoise steps.
+                // Complete exact owned copies before the slot is retired.
+                auto& kv=new_prefix.back();
+                auto key=owned_prefix_copy(kv.key),value=owned_prefix_copy(kv.value);
+                mx::eval(key,value);
+                kv={std::move(key),std::move(value)};
+            }
             retire_weights_(i);
         }
         if (db_decode && i == config_.layers - db_back_blocks - 1) {
@@ -1008,7 +1163,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     }
     if (!reuse && !(prefill_last_target_only_ && !trace))
         hidden = slice_axis(hidden, 1, prefix_length, hidden.shape(1));
-    auto out_scale = mx::reshape(slice_axis(project_dit(silu(temb), weights_, "norm_out.linear"), 0, 0, 1), {1, 1, config_.hidden()});
+    auto out_scale = mx::reshape(slice_axis(prepared_timestep ? prepared_timestep->raw_output_scale_ :
+        project_dit(silu(*temb), weights_, "norm_out.linear"), 0, 0, 1), {1, 1, config_.hidden()});
     auto result = project_dit(layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + out_scale), weights_, "proj_out");
     if (cache_prefix && !reuse) {
         prefix_ = std::move(new_prefix);

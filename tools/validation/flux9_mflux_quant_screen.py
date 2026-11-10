@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Stock mflux FLUX9B BF16/Q4/Q8 full-image reference sweeps, not native ranks."""
 import argparse
-import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
 import statistics
-import subprocess
 import sys
 import time
 

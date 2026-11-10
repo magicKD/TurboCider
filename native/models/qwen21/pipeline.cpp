@@ -296,12 +296,15 @@ RunResult Session::generate(const Request &request, const Event &event, std::ato
 }
 RunResult Session::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                        bool warmup, bool prepare_only) try {
+    const bool vae_decode_only = stream_vae_decode_only_request(requested, prepare_only,
+        std::getenv("TURBOCIDER_QWEN21_STREAM_VAE_DECODE_ONLY"));
+    validate_stream_timestep_cache_route(requested,std::getenv("TURBOCIDER_QWEN21_STREAM_TIMESTEP_CACHE"));
     validate_checkpoint_recipe(requested,transformer_source_,convrot_w8a8_available());
     if (requested.residency == "streamed") {
         require(!bf16_streaming_enabled(), "Qwen21 ConvRot streaming cannot combine with the BF16 streaming diagnostic");
         require(!memory_context_ && !diagnostic_prefill_observer_ && !diagnostic_block_observer_ &&
                     !diagnostic_async_step_observer_, "Qwen21 ConvRot streaming requires an ordinary GPU session");
-        return run_weight_streamed(requested, event, cancelled, warmup, prepare_only);
+        return run_weight_streamed(requested, event, cancelled, warmup, prepare_only, vae_decode_only);
     }
     require(!turbo_checkpoint(transformer_source_) || !bf16_streaming_enabled(),
         "Qwen21 Turbo excludes the separate base BF16 streaming executor");
@@ -340,7 +343,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             encoder_profile_path("TURBOCIDER_QWEN21_ENCODER_CALIBRATION_OUT").empty() &&
             encoder_profile_path("TURBOCIDER_QWEN21_ENCODER_S1_PROFILE").empty() && (!prefill || !*prefill),
             "BF16 streaming cannot silently override native Metal/ANE encoder, DiT or calibration routes");
-        return run_weight_streamed(requested,event,cancelled,warmup,prepare_only);
+        return run_weight_streamed(requested,event,cancelled,warmup,prepare_only,vae_decode_only);
     }
     auto start = Clock::now();
     ScopedWiredResidency wired_residency;

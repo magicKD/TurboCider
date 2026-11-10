@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from seedvr2_framework_screen import sha256,write_json
+from seedvr2_evidence import sha256,write_json
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"tools/coreml"))
 from export_ltx_gemma_mlp import read_header

@@ -18,7 +18,6 @@ manifest.
 import argparse
 import fcntl
 import gc
-import hashlib
 import json
 import mmap
 import os
@@ -32,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lora import apply as apply_lora
 from lora import load as load_loras
 from lora import provenance as lora_provenance
+from lora import sha256 as sha
 from z_image_smoothquant import (load_calibration_union,
                                  smooth_partial_ffn,
                                  calibrate_input_a8, calibrate_hidden_a8,
@@ -48,14 +48,6 @@ def atom(path: Path, value) -> None:
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
     os.replace(temporary, path)
-
-
-def sha(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(8 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 _CONVROT_HADAMARD = {}

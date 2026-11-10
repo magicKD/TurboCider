@@ -10,7 +10,6 @@ claiming that the requested image/video speed gate is satisfied.
 
 import argparse
 import asyncio
-import hashlib
 import json
 import math
 import os
@@ -19,25 +18,12 @@ import shutil
 import socket
 import statistics
 import subprocess
-import sys
 import time
 import uuid
 
+from seedvr2_evidence import sha256, write_json
+
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def write_json(path, value):
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2) + "\n")
-    temporary.replace(path)
-
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(4 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def native_request(args, source, output, index):

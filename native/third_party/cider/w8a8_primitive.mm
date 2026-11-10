@@ -150,6 +150,7 @@ private:
 
 namespace {
 std::atomic<uint64_t> convrot_projections{0}, convrot_activation_rows{0};
+std::atomic<uint64_t> convrot_quantizations{0}, convrot_quantized_rows{0};
 }
 
 bool convrot_w8a8_available() {
@@ -163,6 +164,10 @@ ConvrotW8A8Stats convrot_w8a8_stats() {
   return {convrot_projections.load(std::memory_order_relaxed),
           convrot_activation_rows.load(std::memory_order_relaxed)};
 }
+ConvrotW8A8QuantStats convrot_w8a8_quant_stats() {
+  return {convrot_quantizations.load(std::memory_order_relaxed),
+          convrot_quantized_rows.load(std::memory_order_relaxed)};
+}
 
 void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
                                 std::vector<array>& outputs) {
@@ -172,6 +177,9 @@ void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
   const auto& w = inputs[1]; // physically padded N, unchanged signed codes
   const auto& scales = inputs[2];
   auto& output = outputs[0];
+  if (output.dtype()!=output_dtype_ ||
+      (output_dtype_!=bfloat16 && output_dtype_!=float16 && output_dtype_!=float32))
+    throw std::runtime_error("ConvRot W8A8 output must match its BF16/F16/F32 primitive dtype");
   const uint32_t m = output.shape(0), n = output.shape(1), k = x.shape(1);
   const bool small = m <= 64;
   const uint32_t bm = small ? 32 : 128, bn = 128;
@@ -193,8 +201,15 @@ void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
   enc.set_bytes(m,3);
   enc.set_bytes(k,4);
   enc.dispatch_threadgroups(MTL::Size(padded_m,1,1),MTL::Size(256,1,1));
+  convrot_quantizations.fetch_add(1,std::memory_order_relaxed);
+  convrot_quantized_rows.fetch_add(m,std::memory_order_relaxed);
   enc.barrier();
-  enc.set_compute_pipeline_state(cache.get(small ? "tc_convrot_w8a8_f32_small" : "tc_convrot_w8a8_f32"));
+  const char* gemm = output_dtype_==bfloat16 ?
+      (small ? "tc_convrot_w8a8_bf16_small" : "tc_convrot_w8a8_bf16") :
+      output_dtype_==float16 ?
+      (small ? "tc_convrot_w8a8_f16_small" : "tc_convrot_w8a8_f16") :
+      (small ? "tc_convrot_w8a8_f32_small" : "tc_convrot_w8a8_f32");
+  enc.set_compute_pipeline_state(cache.get(gemm));
   const uint32_t tiles_m = (m+bm-1)/bm, tiles_n = (n+bn-1)/bn;
   const uint32_t swizzle = tiles_m<=3 ? 0 : tiles_m<=6 ? 1 : 2;
   const uint32_t tile = 1u<<swizzle;
@@ -213,8 +228,16 @@ void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
 
 array convrot_linear(const array& rotated, const array& codes,
                      const array& row_scales, StreamOrDevice s) {
+  return convrot_linear_typed(rotated,codes,row_scales,float32,s);
+}
+
+array convrot_linear_typed(const array& rotated, const array& codes,
+                           const array& row_scales, Dtype output_dtype,
+                           StreamOrDevice s) {
   if (!convrot_w8a8_available())
     throw std::invalid_argument("ConvRot W8A8 requires M5 Metal TensorOps and macOS 26.4 or later");
+  if (output_dtype!=bfloat16 && output_dtype!=float16 && output_dtype!=float32)
+    throw std::invalid_argument("ConvRot W8A8 output dtype must be BF16, F16 or F32");
   if (rotated.ndim()!=2 || codes.ndim()!=2 || row_scales.ndim()!=2 ||
       (rotated.dtype()!=bfloat16 && rotated.dtype()!=float16 && rotated.dtype()!=float32) ||
       codes.dtype()!=int8 || row_scales.dtype()!=float32 ||
@@ -226,9 +249,113 @@ array convrot_linear(const array& rotated, const array& codes,
     throw std::invalid_argument("ConvRot W8A8 requires floating [M,K], original I8 [N,K], F32 [N,1], K aligned to256 and <=131072");
   const int n = codes.shape(0), padded_n = ((n+127)/128)*128;
   auto w = n==padded_n ? codes : pad(codes,std::vector<std::pair<int,int>>{{0,padded_n-n},{0,0}},array(0,int8),"constant",s);
-  return array({rotated.shape(0),n},float32,
-      std::make_shared<ConvrotW8A8Linear>(to_stream(s)),
+  return array({rotated.shape(0),n},output_dtype,
+      std::make_shared<ConvrotW8A8Linear>(to_stream(s),output_dtype),
       {contiguous(rotated,false,s),contiguous(w,false,s),contiguous(row_scales,false,s)});
+}
+
+void ConvrotW8A8ManyLinear::eval_gpu(const std::vector<array>& inputs,
+                                    std::vector<array>& outputs) {
+  if (!convrot_w8a8_available())
+    throw std::runtime_error("ConvRot shared A8 requires M5 Metal TensorOps and macOS 26.4 or later");
+  if (widths_.empty() || inputs.size()!=1+2*widths_.size() || outputs.size()!=1 ||
+      outputs[0].dtype()!=output_dtype_ ||
+      (output_dtype_!=bfloat16 && output_dtype_!=float16 && output_dtype_!=float32))
+    throw std::runtime_error("ConvRot shared A8 primitive geometry/dtype changed");
+  const auto& x=inputs[0];
+  auto& output=outputs[0];
+  const uint32_t m=x.shape(0),k=x.shape(1);
+  const bool small=m<=64;
+  const uint32_t bm=small ? 32 : 128;
+  const uint32_t padded_m=((m+bm-1)/bm)*bm;
+  array activation({int(padded_m),int(k)},int8,nullptr,{});
+  array token_scales({int(padded_m)},float32,nullptr,{});
+  activation.set_data(allocator::malloc(activation.nbytes()));
+  token_scales.set_data(allocator::malloc(token_scales.nbytes()));
+  output.set_data(allocator::malloc(output.nbytes()));
+  auto& cache=PipelineCache::instance();cache.ensure_init("builtin:cider-4d91fcee");
+  auto& enc=metal::get_command_encoder(stream());
+  const char* quantize=x.dtype()==bfloat16 ? "tc_convrot_quantize_bf16" :
+                       x.dtype()==float16 ? "tc_convrot_quantize_f16" : "tc_convrot_quantize_f32";
+  enc.set_compute_pipeline_state(cache.get(quantize));
+  enc.set_input_array(x,0);enc.set_output_array(activation,1);enc.set_output_array(token_scales,2);
+  enc.set_bytes(m,3);enc.set_bytes(k,4);
+  enc.dispatch_threadgroups(MTL::Size(padded_m,1,1),MTL::Size(256,1,1));
+  convrot_quantizations.fetch_add(1,std::memory_order_relaxed);
+  convrot_quantized_rows.fetch_add(m,std::memory_order_relaxed);
+  enc.barrier();
+  const char* gemm=output_dtype_==bfloat16 ?
+      (small ? "tc_convrot_w8a8_bf16_small" : "tc_convrot_w8a8_bf16") :
+      output_dtype_==float16 ?
+      (small ? "tc_convrot_w8a8_f16_small" : "tc_convrot_w8a8_f16") :
+      (small ? "tc_convrot_w8a8_f32_small" : "tc_convrot_w8a8_f32");
+  const uint32_t tiles_m=(m+bm-1)/bm;
+  const uint32_t swizzle=tiles_m<=3 ? 0 : tiles_m<=6 ? 1 : 2;
+  const uint32_t tile=1u<<swizzle;
+  size_t offset=0;
+  for(size_t i=0;i<widths_.size();++i) {
+    const uint32_t n=uint32_t(widths_[i]),tiles_n=(n+127)/128;
+    enc.set_compute_pipeline_state(cache.get(gemm));
+    enc.set_input_array(activation,0);enc.set_input_array(inputs[1+2*i],1);
+    // Each GEMM retains its own logical N and row pitch. Only its output
+    // base address moves; original weight buffers are never concatenated.
+    enc.set_output_array(output,2,int64_t(offset*output.itemsize()));
+    enc.set_bytes(m,3);enc.set_bytes(n,4);enc.set_bytes(k,5);
+    enc.set_input_array(token_scales,6);enc.set_input_array(inputs[2+2*i],7);
+    enc.set_bytes(swizzle,8);enc.set_bytes(tiles_m,9);enc.set_bytes(tiles_n,10);
+    enc.dispatch_threadgroups(MTL::Size(tiles_n*tile,(tiles_m+tile-1)/tile,1),
+                              MTL::Size(small ? 128 : 512,1,1));
+    offset+=size_t(m)*n;
+    convrot_projections.fetch_add(1,std::memory_order_relaxed);
+    convrot_activation_rows.fetch_add(m,std::memory_order_relaxed);
+  }
+  enc.add_temporary(activation);enc.add_temporary(token_scales);
+}
+
+std::vector<array> convrot_linear_many_typed(
+    const array& rotated,const std::vector<array>& codes,
+    const std::vector<array>& row_scales,Dtype output_dtype,StreamOrDevice s) {
+  if (!convrot_w8a8_available())
+    throw std::invalid_argument("ConvRot shared A8 requires M5 Metal TensorOps and macOS 26.4 or later");
+  if (output_dtype!=bfloat16 && output_dtype!=float16 && output_dtype!=float32)
+    throw std::invalid_argument("ConvRot shared A8 output dtype must be BF16, F16 or F32");
+  if (codes.empty() || codes.size()!=row_scales.size() || rotated.ndim()!=2 ||
+      (rotated.dtype()!=bfloat16 && rotated.dtype()!=float16 && rotated.dtype()!=float32) ||
+      rotated.shape(0)<=0 || rotated.shape(0)>std::numeric_limits<int>::max()-128 ||
+      rotated.shape(1)<=0 || rotated.shape(1)%256 || rotated.shape(1)>131072)
+    throw std::invalid_argument("ConvRot shared A8 requires nonempty aligned floating [M,K] and matching projection lists");
+  std::vector<int> widths;uint64_t total=0;
+  for(size_t i=0;i<codes.size();++i) {
+    const auto& w=codes[i];const auto& scales=row_scales[i];
+    if (w.ndim()!=2 || w.dtype()!=int8 || w.shape(0)<=0 ||
+        w.shape(0)>std::numeric_limits<int>::max()-128 || w.shape(1)!=rotated.shape(1) ||
+        scales.dtype()!=float32 || scales.shape()!=Shape{w.shape(0),1})
+      throw std::invalid_argument("ConvRot shared A8 requires original I8 [N,K] and F32 [N,1] per projection");
+    total+=uint64_t(rotated.shape(0))*uint64_t(w.shape(0));
+    if(total>uint64_t(std::numeric_limits<int>::max()))
+      throw std::invalid_argument("ConvRot shared A8 flat output exceeds the bounded shape limit");
+    widths.push_back(w.shape(0));
+  }
+  if(codes.size()==1)return {convrot_linear_typed(rotated,codes[0],row_scales[0],output_dtype,s)};
+  std::vector<array> inputs{contiguous(rotated,false,s)};
+  for(size_t i=0;i<codes.size();++i) {
+    const auto& w=codes[i];const int padded_n=((widths[i]+127)/128)*128;
+    auto padded=widths[i]==padded_n ? w :
+        pad(w,std::vector<std::pair<int,int>>{{0,padded_n-widths[i]},{0,0}},array(0,int8),"constant",s);
+    inputs.push_back(contiguous(padded,false,s));
+    inputs.push_back(contiguous(row_scales[i],false,s));
+  }
+  auto flat=array({int(total)},output_dtype,
+      std::make_shared<ConvrotW8A8ManyLinear>(to_stream(s),output_dtype,widths),std::move(inputs));
+  std::vector<array> output;int offset=0;
+  for(const int n:widths) {
+    const int count=rotated.shape(0)*n;
+    // Independent single-output slices avoid compiled sibling cycles. The
+    // complete flat backing intentionally lives until its last consumer.
+    output.push_back(reshape(slice(flat,{offset},{offset+count},s),{rotated.shape(0),n},s));
+    offset+=count;
+  }
+  return output;
 }
 
 void W8A8Linear::eval_gpu(const std::vector<array> &inputs,

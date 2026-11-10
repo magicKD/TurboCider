@@ -496,6 +496,7 @@ struct RunResult {
     std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
     std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
     std::optional<QwenConvrotStreamingMetrics> qwen_convrot_streaming;
+    std::optional<QwenStreamVaeDecodeResidencyMetrics> qwen_stream_vae_decode_residency;
     std::optional<QwenEncoderPrefillMetrics> qwen_encoder_prefill;
     std::optional<QwenTokenizerReuseMetrics> qwen_tokenizer_reuse;
     std::optional<QwenRuntimePrefixSnapshotMetrics> qwen_runtime_prefix_snapshot;

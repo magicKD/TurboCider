@@ -2766,6 +2766,104 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(p['decoded_shape'],[512,512,1])
         self.assertEqual([x['id'] for x in p['stages']],['text_encode','denoise','vae_decode','export'])
 
+    def test_flux_variants_accept_generate_transform_and_edit_requests(self):
+        for model in ('flux2-klein-4b', 'flux2-klein-9b'):
+            for residency in ('resident', 'component_staged'):
+                for operation, role, count in (
+                        ('image.generate', 'reference', 0),
+                        ('image.transform', 'init_image', 1),
+                        ('image.edit', 'reference', 8)):
+                    with self.subTest(model=model, residency=residency, operation=operation):
+                        request = dict(model=model, model_variant=model, operation=operation,
+                                       width=512, height=528, frames=1, steps=4,
+                                       execution='gpu', residency=residency,
+                                       inputs=[dict(kind='image', role=role, path=f'/input-{i}.png')
+                                               for i in range(count)])
+                        code, configured, error = plan(request)
+                        self.assertEqual(code, 0, error)
+                        self.assertEqual(configured['decoded_shape'], [512, 528, 1])
+                        self.assertEqual(configured['residency'], residency)
+                        self.assertEqual(configured['stages'][-1]['id'], 'export')
+
+    def test_flux_variants_reject_invalid_geometry_and_image_inputs(self):
+        image = dict(kind='image', role='reference', path='/input.png')
+        cases = (
+            (dict(width=513), 'FLUX dimensions must be multiples of 16'),
+            (dict(frames=2), 'FLUX requires frames=1'),
+            (dict(operation='video.generate'), 'unsupported FLUX operation'),
+            (dict(model_variant='other'), 'model_variant does not match the selected FLUX module'),
+            (dict(inputs=[image]), 'image.generate does not accept image inputs'),
+            (dict(operation='image.edit'), 'FLUX requires 1...8 images'),
+            (dict(operation='image.edit', inputs=[image] * 9), 'FLUX requires 1...8 images'),
+            (dict(operation='image.transform', inputs=[image] * 2), 'image.transform requires one init_image'),
+            (dict(operation='image.transform', inputs=[image]), 'incorrect FLUX image role'),
+            (dict(operation='image.edit', inputs=[dict(image, role='init_image')]), 'incorrect FLUX image role'),
+            (dict(operation='image.edit', inputs=[dict(image, kind='audio')]), 'incorrect FLUX image role'),
+        )
+        for model in ('flux2-klein-4b', 'flux2-klein-9b'):
+            base = dict(model=model, width=512, height=512, execution='gpu')
+            for changes, expected in cases:
+                with self.subTest(model=model, changes=changes):
+                    code, result, error = plan({**base, **changes})
+                    self.assertNotEqual(code, 0)
+                    self.assertIsNone(result)
+                    self.assertEqual(error, expected)
+
+    def test_flux_variants_keep_lora_and_residency_boundaries(self):
+        for model in ('flux2-klein-4b', 'flux2-klein-9b'):
+            base = dict(model=model, width=512, height=512, execution='gpu')
+            for role in ('transformer', 'text_encoder'):
+                for strength in (-8.0, 8.0):
+                    with self.subTest(model=model, role=role, strength=strength):
+                        loras = [dict(path=f'/adapter-{i}.safetensors', role=role, strength=strength)
+                                 for i in range(8)]
+                        code, configured, error = plan({**base, 'loras': loras})
+                        self.assertEqual(code, 0, error)
+                        self.assertEqual(configured['lora_count'], 8)
+                        self.assertEqual(configured['lora_strategy'], 'in_memory_merge')
+            adapter = dict(path='/adapter.safetensors', role='refiner')
+            for changes, expected in (
+                    (dict(loras=[adapter]), 'unsupported FLUX LoRA role'),
+                    (dict(residency='block_streamed'), 'FLUX block streaming is not supported')):
+                with self.subTest(model=model, changes=changes):
+                    code, result, error = plan({**base, **changes})
+                    self.assertNotEqual(code, 0)
+                    self.assertIsNone(result)
+                    self.assertEqual(error, expected)
+
+    def test_flux_validation_preserves_first_failure_and_predecode_gate(self):
+        for model in ('flux2-klein-4b', 'flux2-klein-9b'):
+            base = dict(model=model, width=512, height=512, execution='gpu')
+            for changes, expected in (
+                    (dict(width=513, frames=2), 'FLUX dimensions must be multiples of 16'),
+                    (dict(frames=2, model_variant='other'), 'FLUX requires frames=1'),
+                    (dict(operation='image.edit', residency='block_streamed'), 'FLUX requires 1...8 images'),
+                    (dict(residency='block_streamed', loras=[dict(path='/adapter.safetensors', role='refiner')]),
+                     'FLUX block streaming is not supported')):
+                with self.subTest(model=model, changes=changes):
+                    code, _, error = plan({**base, **changes})
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(error, expected)
+        for value in ('', '0', '1'):
+            with self.subTest(predecode=value), patch.dict(
+                    os.environ, {'TURBOCIDER_FLUX9_PREDECODE_AFFINE': value}):
+                base = dict(model='flux2-klein-9b', width=512, height=512,
+                            execution='gpu', compile_gpu=False)
+                code, _, gate_error = plan(base)
+                self.assertNotEqual(code, 0)
+                # Public builds disable this switch; experimental builds require
+                # compile_gpu and the exact opt-in recipe. Both reject this request.
+                self.assertIn(gate_error, (
+                    'FLUX9B affine predecode is experimental-only',
+                    'FLUX9B affine predecode requires exact512/4 base GPU experimental opt-in'))
+                for changes, expected in (
+                        (dict(width=513), 'FLUX dimensions must be multiples of 16'),
+                        (dict(operation='image.edit'), gate_error)):
+                    code, _, error = plan({**base, **changes})
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(error, expected)
+
+
     def test_z_image_native_contract_and_separate_lora(self):
         request={
             'model':'z-image-turbo', 'operation':'image.generate',
