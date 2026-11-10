@@ -254,6 +254,8 @@ for src in ltx_mlx_upsampler ltx_mlx_video_vae ltx_mlx_audio_vae ltx_mlx_vocoder
  "$CXX" -std=c++20 -O3 -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -isystem "$MLX_ROOT/include" -c "$LTX_ROOT/$src.cpp" -o "$LTX_OUT/$src.o"
  LTX_OBJECTS+=("$LTX_OUT/$src.o")
 done
+"$CXX" -std=c++20 -O3 -fobjc-arc -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -I "$BUILD_IDENTITY_DIR" -c "$LTX_ROOT/ltx_w8a8.mm" -o "$LTX_OUT/ltx_w8a8.o"
+LTX_OBJECTS+=("$LTX_OUT/ltx_w8a8.o")
 "$TOOLCHAIN/ar" rcs "$LTX_OUT/libltx-runtime.a" "${LTX_OBJECTS[@]}"
 install -m 0644 "$LTX_ROOT/ltx_shaders.metal" "$OUT/ltx_shaders.metal"
 "$CC" -std=c11 -O3 -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$LTX_ROOT" -c tools/native/ltx_gemma_encode.c -o "$LTX_OUT/ltx_gemma_encode_tool.o"

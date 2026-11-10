@@ -622,7 +622,7 @@ struct StudioBehaviorTests {
                     ltx.steps == 11 && ltx.inputs?.map(\.role) == ["first_frame"],
                   "LTX descriptor defaults or public image-to-video mapping changed")
         studio.draft.residency = "streamed"
-        try rejects { try studio.draft.validate() }
+        try studio.draft.validate()
         studio.draft.residency = "component_staged"
         try check(LTXWorker.accepts(ltx), "LTX I2V must also use the disposable worker")
         studio.draft.audio = true

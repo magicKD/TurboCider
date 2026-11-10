@@ -95,6 +95,9 @@ typedef struct {
     uint64_t slot_refills;
     double load_seconds;
     double wait_seconds;
+    int convrot_w8a8_enabled;
+    uint64_t convrot_w8a8_projections;
+    uint64_t convrot_w8a8_quantizations;
 } ltx_native_streaming_info;
 ltx_native_denoiser *ltx_native_create(const ltx_native_options*,ltx_native_progress,void*,char*,size_t);
 /* Internal experimental layout-only entry. Public TurboCider eligibility is

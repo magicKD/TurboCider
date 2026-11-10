@@ -123,6 +123,8 @@ public struct NativeRequest: Codable, Sendable {
     public var fps: Int?
     public var audio: Bool?
     public var ltx_backend: String?
+    public var ltx_video_vae: String?
+    public var ltx_video_vae_path: String?
     public var ltx_fast_av: Bool?
     public var ltx_video_attention_batch: Bool?
     public var ltx_sol_stage1: Bool?
@@ -177,6 +179,8 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var quantized_cache: String?
     public var warmup_iterations: Int?
     public var ltx_backend: String?
+    public var ltx_video_vae: String?
+    public var ltx_video_vae_path: String?
     public var ltx_fast_av: Bool?
     public var ltx_video_attention_batch: Bool?
     public var ltx_sol_stage1: Bool?
@@ -241,6 +245,8 @@ public struct NativeRequestV2: Codable, Sendable {
             allow_approximation: request.allow_approximation,
             quantized_cache: request.quantized_cache, warmup_iterations: nil,
             ltx_backend: request.ltx_backend,
+            ltx_video_vae: request.ltx_video_vae,
+            ltx_video_vae_path: request.ltx_video_vae_path,
             ltx_fast_av: request.ltx_fast_av,
             ltx_video_attention_batch: request.ltx_video_attention_batch,
             ltx_sol_stage1: request.ltx_sol_stage1,

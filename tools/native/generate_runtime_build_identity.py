@@ -28,6 +28,7 @@ EXPERIMENTAL_VAE_SOURCES=(
 )
 BUILD_SCRIPTS = (
     "tools/native/build.sh",
+    "tools/native/ltx_video_finalizer.mm",
     "tools/native/embed_qwen21_sq_profile.py",
     "native/models/qwen21/calibration/sq_convrot_v1.json",
     "native/models/qwen21/calibration/sq_convrot_v1.f16le",

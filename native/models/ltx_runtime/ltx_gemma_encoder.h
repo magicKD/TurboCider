@@ -58,6 +58,9 @@ typedef struct {
     int ane_output_backing_used;
     int resident_weights_enabled;
     char ane_plan_reason[48];
+    int convrot_w8a8_enabled;
+    uint64_t convrot_w8a8_projections;
+    uint64_t convrot_w8a8_quantizations;
 } ltx_gemma_encoder_telemetry;
 
 #define LTX_GEMMA_MLP_PROBE_MAX_RUNS 50u

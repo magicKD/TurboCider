@@ -224,6 +224,36 @@ int main(int argc, char **argv) {
     assert(state.last_completion_status == 0);
     assert(state.release_calls == 3);
 
+    if (ltx_gpu_convrot_w8a8_info(gpu, nullptr, nullptr)) {
+        state.budget = 1u << 20;
+        auto *x = ltx_gpu_buffer_new(gpu, 256u * 2u, error, sizeof(error));
+        auto *w = ltx_gpu_buffer_new(gpu, 33u * 256u, error, sizeof(error));
+        auto *scales = ltx_gpu_buffer_new(gpu, 33u * 4u, error, sizeof(error));
+        auto *y = ltx_gpu_buffer_new(gpu, 33u * 2u, error, sizeof(error));
+        assert(x && w && scales && y);
+        std::memset(ltx_gpu_buffer_contents(x), 0, 256u * 2u);
+        std::memset(ltx_gpu_buffer_contents(w), 0, 33u * 256u);
+        auto *scale_data = static_cast<float *>(ltx_gpu_buffer_contents(scales));
+        for (unsigned i = 0; i < 33; ++i) scale_data[i] = 1.0f;
+        const uint64_t baseline = state.committed;
+        state.budget = baseline + 512u;
+        assert(!ltx_gpu_linear_int8_convrot_mps_bf16(gpu, y, x, w, scales, nullptr,
+            1u, 256u, 33u, 256u, error, sizeof(error)));
+        assert(std::strstr(error, "memory_budget_too_small"));
+        assert(state.committed == baseline && !state.reserved && !state.pending);
+        state.budget = 1u << 20;
+        assert(ltx_gpu_batch_begin(gpu, error, sizeof(error)));
+        assert(ltx_gpu_linear_int8_convrot_mps_bf16(gpu, y, x, w, scales, nullptr,
+            1u, 256u, 33u, 256u, error, sizeof(error)));
+        assert(state.committed == baseline && state.pending > 0);
+        ltx_gpu_buffer_free(y); ltx_gpu_buffer_free(scales);
+        ltx_gpu_buffer_free(w); ltx_gpu_buffer_free(x);
+        assert(!state.committed && state.pending > 0);
+        assert(ltx_gpu_batch_end(gpu, error, sizeof(error)));
+        assert(!state.pending && !state.reserved && !state.committed);
+        std::puts("W8A8 scratch admission, failure cleanup and deferred retirement passed");
+    }
+
     assert(ltx_gpu_drain(gpu, error, sizeof(error)));
     ltx_gpu_free(gpu);
     std::puts("LTX GPU memory hooks passed");

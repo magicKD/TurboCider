@@ -53,7 +53,7 @@ struct ModelLibraryView: View {
             Picker("管理内容", selection: $section) {
                 Text("基础模型").tag("models")
                 Text("LoRA · \(library.loras.count)").tag("loras")
-                Text("Tiny VAE").tag("tiny")
+                Text("VAE 模型").tag("tiny")
             }.pickerStyle(.segmented).labelsHidden().frame(width: 360).accessibilityIdentifier("modelLibrarySection")
             if library.busy || library.message != nil {
                 HStack(spacing: 8) {

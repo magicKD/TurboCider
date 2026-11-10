@@ -11,6 +11,10 @@ extern "C" {
 typedef struct ltx_gpu ltx_gpu;
 typedef struct ltx_gpu_buffer ltx_gpu_buffer;
 
+/* Quantizations may be fewer than projections: QKV/gate-up share one input. */
+int ltx_gpu_convrot_w8a8_info(const ltx_gpu *gpu,
+                             uint64_t *projections, uint64_t *quantizations);
+
 typedef enum {
     LTX_GPU_MEMORY_UNKNOWN = 0,
     LTX_GPU_MEMORY_WEIGHTS = 1,
@@ -678,6 +682,13 @@ int ltx_gpu_linear_int8_convrot_mps_bf16(
                         uint32_t output_dim,
                         uint32_t convrot_group_size,
                         char *error, size_t error_size);
+/* Different-width Q/K/V projections share one rotation and A8 quantization.
+ * One to three outputs; older hardware retains the original BF16 operations. */
+int ltx_gpu_linears_int8_convrot_bf16(
+        ltx_gpu *gpu, ltx_gpu_buffer *const *outputs, const ltx_gpu_buffer *input,
+        const ltx_gpu_buffer *const *weights, const ltx_gpu_buffer *const *scales,
+        const ltx_gpu_buffer *const *biases, const uint32_t *output_dims,
+        uint32_t count, uint32_t rows, uint32_t input_dim, char *error, size_t error_size);
 int ltx_gpu_mlp_int8_convrot_mps_bf16(
                         ltx_gpu *gpu, ltx_gpu_buffer *output,
                         const ltx_gpu_buffer *input,

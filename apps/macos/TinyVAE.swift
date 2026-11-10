@@ -1,4 +1,30 @@
 import Foundation
+
+extension StudioDraft {
+    var resolvedPrunaVAEPath: String? {
+        let path = ltxPrunaVAEPath.isEmpty
+            ? modelPaths["ltx-2.5-distilled"].map {
+                URL(fileURLWithPath: $0).appendingPathComponent("vae/prunavaed.safetensors").path
+            } : ltxPrunaVAEPath
+        guard let path, path.hasPrefix("/"),
+              let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true, values.fileSize == Int(PrunaVAEAsset.model.size) else { return nil }
+        return path
+    }
+    func validateLTXVideoVAE() throws {
+        guard ["conv", "prunavaed"].contains(ltxVideoVAE) else {
+            throw NativeFailure(message: "LTX 视频 VAE 选择无效。")
+        }
+        if ltxVideoVAE == "prunavaed" {
+            guard !usesPublicStreaming else {
+                throw NativeFailure(message: "PrunaVAED 尚未适配校准内存档位，请先关闭内存档位。")
+            }
+            guard resolvedPrunaVAEPath != nil else {
+                throw NativeFailure(message: "请先在模型库的 VAE 模型中下载或选择 PrunaVAED。")
+            }
+        }
+    }
+}
 import ImageIO
 
 extension TinyVAEAsset {

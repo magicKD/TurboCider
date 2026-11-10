@@ -1102,6 +1102,8 @@ int ltx_gemma_encoder_get_telemetry(
         ltx_gemma_encoder_telemetry *telemetry) {
     if (!encoder || !telemetry) return 0;
     *telemetry = encoder->telemetry;
+    telemetry->convrot_w8a8_enabled = ltx_gpu_convrot_w8a8_info(encoder->gpu,
+        &telemetry->convrot_w8a8_projections, &telemetry->convrot_w8a8_quantizations);
     return 1;
 }
 
@@ -1216,7 +1218,8 @@ int ltx_gemma_encoder_encode(
     ltx_gpu_buffer *video_flat_gpu = NULL;
     ltx_gpu_buffer *audio_flat_gpu = NULL;
     char name[512];
-    const int fused_mlp = getenv("TURBOCIDER_LTX_GEMMA_FUSED_MLP") != NULL;
+    const int fused_mlp = ltx_gpu_convrot_w8a8_info(encoder->gpu, NULL, NULL) ||
+        getenv("TURBOCIDER_LTX_GEMMA_FUSED_MLP") != NULL;
     const int gpu_taps = getenv("TURBOCIDER_LTX_GEMMA_GPU_TAPS") != NULL;
 
     const ltx_st_tensor *embedding_tensor = ltx_st_find(
@@ -1533,13 +1536,16 @@ int ltx_gemma_encoder_encode(
                     error, error_size));
         GEMMA_CALL("input norm", gemma_norm(encoder, input_norm, x,
                         input_weight, rows, GEMMA_HIDDEN, error, error_size));
-        GEMMA_CALL("q projection", gemma_apply_linear(encoder, q_raw,
-                        input_norm, &q, rows, error, error_size));
-        GEMMA_CALL("k projection", gemma_apply_linear(encoder, k_raw,
-                        input_norm, &k, rows, error, error_size));
-        if (sliding)
-            GEMMA_CALL("v projection", gemma_apply_linear(encoder, v_raw,
-                        input_norm, &v, rows, error, error_size));
+        {
+            ltx_gpu_buffer *outputs[] = {q_raw, k_raw, v_raw};
+            const ltx_gpu_buffer *weights[] = {q.weight, k.weight, v.weight};
+            const ltx_gpu_buffer *scales[] = {q.scale, k.scale, v.scale};
+            const ltx_gpu_buffer *biases[] = {q.bias, k.bias, v.bias};
+            const uint32_t dims[] = {q.output_dim, k.output_dim, v.output_dim};
+            GEMMA_CALL("q/k/v projections", ltx_gpu_linears_int8_convrot_bf16(
+                encoder->gpu, outputs, input_norm, weights, scales, biases, dims,
+                sliding ? 3u : 2u, rows, GEMMA_HIDDEN, error, error_size));
+        }
         GEMMA_CALL("q norm", gemma_norm(encoder, q_norm, q_raw, q_weight,
                         rows * GEMMA_HEADS, head_dim, error, error_size));
         GEMMA_CALL("k norm", gemma_norm(encoder, k_norm, k_raw, k_weight,
@@ -1823,6 +1829,18 @@ layer_cleanup:
                 audio_output, audio_count, error, error_size))
             goto cleanup;
     }
+    /* Reject invalid conditioning before it can be cached or consumed by DiT. */
+    const uint16_t *projected[] = {video_output, audio_output};
+    const size_t projected_counts[] = {(size_t)rows * GEMMA_VIDEO_DIM,
+                                       (size_t)rows * GEMMA_AUDIO_DIM};
+    for (size_t stream = 0; stream < 2; ++stream)
+        for (size_t i = 0; i < projected_counts[stream]; ++i)
+            if ((projected[stream][i] & 0x7f80u) == 0x7f80u) {
+                gemma_fail(error, error_size,
+                    "nonfinite Gemma %s conditioning at element %zu",
+                    stream ? "audio" : "video", i);
+                goto cleanup;
+            }
     /* LTX consumes an additive BF16 cross-attention mask. The valid token
      * rows are unmasked (zero); connector padding rows are appended by the
      * native connector and are also zero in the reference artifact format. */

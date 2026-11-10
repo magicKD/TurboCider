@@ -30,6 +30,9 @@ ltx_mlx_video_vae *ltx_mlx_video_vae_create_encoder(
 void ltx_mlx_video_vae_free(ltx_mlx_video_vae *vae);
 int ltx_mlx_video_vae_get_info(
     const ltx_mlx_video_vae *vae, ltx_mlx_video_vae_info *info);
+/* Auto-detected from validated weights: "conv" or "prunavaed".
+ * PrunaVAED accepts the original Diffusers safetensors without conversion. */
+const char *ltx_mlx_video_vae_decoder_name(const ltx_mlx_video_vae *vae);
 
 /*
  * Decode normalized BF16 tokens in BFHWC layout to BF16 pixels in BCFHW

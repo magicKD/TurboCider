@@ -129,6 +129,11 @@ struct NativeJob: Codable, Identifiable, Sendable {
             return execution.hasPrefix("gpu_ane")
                 ? "GPU + Core ML · \(precision) · ANE 驻留未知" : "GPU · \(precision)"
         }
+        if request.model == "ltx-2.5-distilled", execution == "gpu",
+           let precision = RunInsights(json: resultJSON).ltxComputeLabel {
+            let residency = plan["residency"] as? String == "streamed" ? " · 流式加载" : ""
+            return "GPU · " + precision + residency
+        }
         if request.model == "qwen-image-2.1", execution == "gpu",
            let convrot = result["qwen_convrot_w8a8"] as? [String: Any] {
             let precision: String

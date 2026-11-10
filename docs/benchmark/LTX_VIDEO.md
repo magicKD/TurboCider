@@ -1,5 +1,88 @@
 # LTX 2.5 base：完整音视频与实际框架边界
 
+## 2026-11-10：可选 PrunaVAED 原生解码
+
+新增 `ltx_video_vae: "prunavaed"`，需要 `allow_approximation: true`；默认仍是
+`"conv"`。v1 放在请求顶层，v2 放在 `execution` 中。示例见
+[video-ltx25-prunavaed.json](../../examples/requests/video-ltx25-prunavaed.json)。
+encoder、图生视频输入编码和 latent upsampler 继续使用原 Conv VAE。
+支持普通 resident / component_staged / streamed residency；尚未资格化的
+public streaming selector 和 memory_constrained 请求会显式拒绝。
+
+App 操作：打开「模型库 → VAE 模型」，点击 PrunaVAED 的「从 ModelScope
+下载」，完成后点击「用于 LTX 创作」；也可以在 LTX 创作页的「高级参数 →
+视频 VAE」中选择 Conv VAE 或 PrunaVAED，并直接下载缺失的权重。选择随
+草稿保存，复用历史任务时恢复，生成详情显示实际使用的 VAE。
+PrunaVAED 暂需关闭校准内存档位，可使用普通分阶段或预算式流式加载。
+
+App 下载器固定 ModelScope revision、大小和 SHA256，显示进度、支持取消，
+通过校验后才登记到共享模型库。CLI 可调用相同下载器：
+
+```bash
+build/native/turbocider-library download-vae prunavaed
+```
+
+模型库权重独立于 LTX 基础模型。App 自动传递绝对路径
+`ltx_video_vae_path`；CLI 也可显式设置此字段（v2 放在 `execution`），
+仅在 `ltx_video_vae: "prunavaed"` 时接受。省略路径时读取
+`<model-root>/vae/prunavaed.safetensors`。切回 Conv 时继续使用基础模型的
+原始 VAE。
+
+验证覆盖旧草稿默认值、选择持久化、历史复用、跨模型切换、v1/v2 请求、
+下载完整性与取消/复用，以及 worker 拒绝解码器不匹配的结果。
+另通过打包 CLI 和生产 App worker 完成 256×128×9、11 步、12 GiB
+streamed 的实际生成；产物经 AVFoundation 验证，结果记录
+`ltx_video_vae: "prunavaed"`。这条小尺寸冒烟不用于性能结论。
+
+从 [ModelScope PrunaAI/PrunaVAED](https://modelscope.cn/models/PrunaAI/PrunaVAED)
+下载、校验并安装到 LTX 模型目录：
+
+```bash
+.venv/bin/python tools/models/download_prunavaed_modelscope.py \
+  --install-root models/LTX-2.5-INT8
+```
+
+权重为 1,327,909,418 bytes，SHA256
+`4cbf0cbe6c185514d62c6c58c35dc42d7ea15924f34391e08be12f44bfccdf1d`。
+原文件保留在 `models/PrunaVAED/vae/diffusion_pytorch_model.safetensors`，
+安装位置为 `<model-root>/vae/prunavaed.safetensors`，同盘使用硬链接。
+下载器固定 revision、校验大小/SHA256，支持断点续传，不执行下载的 Python。
+
+原生 MLX 直接读取 Diffusers safetensors，校验全部 decoder tensor 的名称和
+形状，只物化 decoder 与 latent 统计量。实现两个带 affine LayerNorm 的
+残差投影、裁剪后的通道数、非因果时间 padding 和原始 patch 重排。
+加速包括加载时预排布卷积权重、1×1×1 shortcut 使用 GEMM、融合 SiLU，
+并复用现有空间分块路径。运行时无需 PyTorch / Diffusers。
+
+M5 Pro / 24 GiB，同一个真实 LTX-2.5 latent，输出 704×448×97，关闭
+额外近似；每种 decoder 预热一次，交替顺序各测三次，使用新进程。
+下面仅统计 decode compute，不含权重加载、RGB 转换、编码和 DiT：
+
+| Decoder | 解码中位数 | 相对 Conv |
+| --- | ---: | ---: |
+| 原 Conv VAE | 13.295587 s | 1.00× |
+| PrunaVAED，未融合 SiLU | 5.981037 s | 2.22× |
+| PrunaVAED，融合 SiLU | 5.912960 s | 2.25× |
+
+主要收益来自剪枝网络；本次 SiLU 融合约多省 1.1%，不单独宣称稳定大幅收益。
+`TURBOCIDER_PRUNAVAED_FUSED_SILU=0` 可用于 probe 对照。复现脚本为
+`tools/validation/benchmark_prunavaed.py`，独立 probe 构建脚本为
+`tools/native/build_ltx_video_vae_probe.sh`。
+
+官方 patched Diffusers FP32 oracle 对照（`prunavaed_parity.py`）：
+9×64×96 输出 RMSE 0.002930、最大绝对误差 0.016936；单帧96×64输出
+RMSE 0.002538。原 Conv 小样本改动前后逐字节一致。
+同一真实 latent 的全部97帧，PrunaVAED 相对原 Conv 的像素 PSNR 为
+32.07 dB（[-1,1]范围），不是无损替代；融合相对未融合为57.61 dB。
+上游训练/效果评估针对 LTX-2.3；本地确认 encoder、未剪枝 decoder 前段及
+latent mean/std 共106个 tensor 与2.5 Conv逐字节一致，且完成这一个视频
+样本的对照。更广泛的提示词、文字、细节和运动质量仍需额外评估。
+
+本地原始记录：`outputs/prunavaed/benchmark/benchmark.json`、
+`outputs/prunavaed/benchmark/pixel-comparison.json`、
+`models/PrunaVAED/ltx25-conv-compatibility.json`。以下为历史完整AV基准，
+不与本节的独立 VAE 测速混算。
+
 最新2026-10-12已补Comfy v0.39同源97帧完整AV：cold142.925s、单warm
 112.230s。按用户要求复用后续TC最佳quality63.848s／opt-in近似61.869s，
 为1.758×／1.814×；[完整重点对照](COMFYUI_MODEL_COMPARISON.md)明确

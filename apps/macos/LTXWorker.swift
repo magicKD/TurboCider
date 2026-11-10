@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import AVFoundation
+import AudioToolbox
 import CryptoKit
 
 /// The CLI owns the disposable denoiser process and execs the clean VAE
@@ -27,7 +28,9 @@ enum LTXWorker {
         }
     }
     static func accepts(_ request: NativeRequest) -> Bool {
-        request.model == "ltx-2.5-distilled" && request.residency == "component_staged"
+        request.model == "ltx-2.5-distilled" &&
+            (request.residency == "component_staged" ||
+             (request.residency == "streamed" && (request.memory_budget_bytes ?? 0) > 0))
     }
 
     static func generate(model: URL, request: NativeRequest, executable: URL? = nil,
@@ -168,9 +171,11 @@ enum LTXWorker {
                 let artifactBytes = try fm.attributesOfItem(atPath: artifact.path)[.size] as! NSNumber
                 var published = try JSONSerialization.jsonObject(with: result) as! [String: Any]
                 published["output"] = destination.path
-                published["worker_artifact"] = ["schema_version": 1, "staged_output": artifact.path,
+                var artifactReceipt: [String: Any] = ["schema_version": 1, "staged_output": artifact.path,
                     "published_output": destination.path, "bytes": artifactBytes, "sha256": digest,
                     "media_verified": true] as [String: Any]
+                if bound.outputs[0].audio { artifactReceipt["audio_pcm_verified"] = true }
+                published["worker_artifact"] = artifactReceipt
                 let receipt = try JSONSerialization.data(withJSONObject: published, options: [.sortedKeys])
                 try Task.checkCancellation()
                 guard try artifactIdentity(artifact, fd: bytes.fileDescriptor) == identity,
@@ -212,11 +217,15 @@ enum LTXWorker {
             let steps: Int
             let seed: Int
             let warmup: Bool
+            let ltx_video_vae: String?
             let public_streaming: NativeStreamingResultSummary?
         }
         let result: Result
         do { result = try JSONDecoder().decode(Result.self, from: data) }
         catch { throw NativeFailure(message: "worker_result_invalid: 视频进程未返回有效结果。") }
+        guard (result.ltx_video_vae ?? "conv") == (request.execution.ltx_video_vae ?? "conv") else {
+            throw NativeFailure(message: "worker_result_mismatch: 视频 VAE 与本次选择不一致。")
+        }
         guard request.outputs.count == 1, let output = request.outputs.first,
               result.schema_version == 1, !result.warmup,
               result.model == request.model, result.operation == request.operation,
@@ -290,6 +299,61 @@ enum LTXWorker {
         }
         guard reader.status == .completed, frames == expected.frames else {
             throw NativeFailure(message: "worker_artifact_invalid: 视频不完整或无法解码。")
+        }
+        if expected.audio {
+            guard audioTracks.count == 1, let audio = audioTracks.first else {
+                throw NativeFailure(message: "worker_artifact_invalid: 音频轨道数量与请求不一致。")
+            }
+            try await validateAudio(asset, track: audio, duration: Double(expected.frames) / Double(expected.fps), fps: expected.fps)
+        }
+    }
+
+    private static func validateAudio(_ asset: AVURLAsset, track: AVAssetTrack, duration: Double, fps: Int) async throws {
+        let time = try await track.load(.timeRange)
+        let formats = try await track.load(.formatDescriptions)
+        guard let format = formats.first,
+              let stream = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee,
+              stream.mSampleRate == 48000, stream.mChannelsPerFrame == 2,
+              time.duration.seconds.isFinite,
+              abs(time.duration.seconds - duration) <= 1.0 / Double(fps) else {
+            throw NativeFailure(message: "worker_artifact_invalid: 音频格式或声画时长与请求不一致。")
+        }
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000,
+            AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true, AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false])
+        guard reader.canAdd(output) else { throw NativeFailure(message: "worker_artifact_invalid: 无法解码音频。") }
+        reader.add(output)
+        guard reader.startReading() else { throw NativeFailure(message: "worker_artifact_invalid: 音频解码失败。") }
+        defer { reader.cancelReading() }
+        var frames: Int64 = 0
+        while let sample = output.copyNextSampleBuffer() {
+            try Task.checkCancellation()
+            let count = CMSampleBufferGetNumSamples(sample)
+            guard count > 0, count <= Int.max / 8,
+                  let block = CMSampleBufferGetDataBuffer(sample),
+                  CMBlockBufferGetDataLength(block) == count * 8 else {
+                throw NativeFailure(message: "worker_artifact_invalid: 音频 PCM 数据无效。")
+            }
+            var pcm = [Float](repeating: 0, count: count * 2)
+            let copied = pcm.withUnsafeMutableBytes { bytes in
+                CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: bytes.count, destination: bytes.baseAddress!)
+            }
+            guard copied == kCMBlockBufferNoErr, pcm.allSatisfy(\.isFinite) else {
+                throw NativeFailure(message: "worker_artifact_invalid: 音频 PCM 无法读取或包含非有限值。")
+            }
+            frames += Int64(count)
+            guard Double(frames) / 48000 <= duration + 2048.0 / 48000 else {
+                throw NativeFailure(message: "worker_artifact_invalid: 音频采样长度与请求不一致。")
+            }
+        }
+        // AAC packet boundaries can differ from the video timeline by up to
+        // two 1024-sample packets; the track timeline above must still match.
+        guard reader.status == .completed, frames > 0,
+              abs(Double(frames) / 48000 - duration) <= 2048.0 / 48000 else {
+            throw NativeFailure(message: "worker_artifact_invalid: 音频不完整或无法解码。")
         }
     }
 }

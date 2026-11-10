@@ -73,6 +73,10 @@ std::string preflight_request_digest(const Request &request) {
     out.string_field("lora_strategy", request.lora_strategy);
     out.string_field("hybrid_mlp_mode", request.hybrid_mlp_mode);
     out.string_field("ltx_backend", request.ltx_backend);
+    if (request.ltx_video_vae != "conv")
+        out.string_field("ltx_video_vae", request.ltx_video_vae);
+    if (!request.ltx_video_vae_path.empty())
+        out.string_field("ltx_video_vae_path", request.ltx_video_vae_path);
     out.unsigned_field("width", static_cast<uint64_t>(request.width));
     out.unsigned_field("height", static_cast<uint64_t>(request.height));
     out.unsigned_field("steps", static_cast<uint64_t>(request.steps));

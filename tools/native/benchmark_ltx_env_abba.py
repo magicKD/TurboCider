@@ -34,6 +34,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=704)
     parser.add_argument("--height", type=int, default=448)
     parser.add_argument("--frames", type=int, default=97)
+    parser.add_argument("--backend", choices=("auto", "c_metal", "cpp_mlx"), default="c_metal")
     parser.add_argument("--steps", type=int, default=11)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--audio", action="store_true")
@@ -105,6 +106,7 @@ def main() -> int:
             "seed": args.seed,
             "prompt": args.prompt,
             "execution": "gpu",
+            "ltx_backend": args.backend,
             "residency": args.residency,
             "memory_budget_bytes": (
                 args.memory_budget_bytes if args.residency == "streamed" else 0
@@ -152,6 +154,7 @@ def main() -> int:
             "steps": args.steps,
             "seed": args.seed,
             "execution": "gpu",
+            "ltx_backend": args.backend,
             "residency": args.residency,
             "memory_budget_bytes": (
                 args.memory_budget_bytes if args.residency == "streamed" else 0
@@ -189,6 +192,7 @@ def main() -> int:
             "stage2_video": str(latent),
             "stage2_video_sha256": file_sha256(latent),
             "block_streaming": result.get("block_streaming"),
+            "result": result,
         }
         print(json.dumps({
             "phase": phase,

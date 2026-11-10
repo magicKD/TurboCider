@@ -205,6 +205,70 @@ std::vector<std::string> encoder_weight_names(void) {
     return names;
 }
 
+// PrunaAI/PrunaVAED uses Diffusers names and two additional width-changing
+// residual projections. Validate the published graph before mapping it to our
+// Conv VAE names; a different Diffusers VAE must never silently load as Pruna.
+std::unordered_map<std::string, mx::array> pruna_decoder_weights(
+        const std::unordered_map<std::string, mx::array> &source) {
+    std::unordered_map<std::string, mx::array> result;
+    size_t decoder_tensors = 0;
+    auto copy = [&](const std::string &from, const std::string &to,
+                    const mx::Shape &shape) {
+        auto found = source.find(from);
+        if (found == source.end() || found->second.shape() != shape ||
+            !mx::issubdtype(found->second.dtype(), mx::floating))
+            throw std::runtime_error("invalid PrunaVAED tensor: " + from);
+        result.emplace(to, found->second);
+        if (from.starts_with("decoder.")) ++decoder_tensors;
+    };
+    auto conv = [&](const std::string &from, const std::string &to,
+                    int in, int out, int kernel = 3) {
+        copy(from + ".weight", to + ".weight", {out, in, kernel, kernel, kernel});
+        copy(from + ".bias", to + ".bias", {out});
+    };
+    copy("latents_mean", "per_channel_statistics.mean-of-means", {128});
+    copy("latents_std", "per_channel_statistics.std-of-means", {128});
+    conv("decoder.conv_in.conv", "decoder.conv_in.conv", 128, 1024);
+    conv("decoder.conv_out.conv", "decoder.conv_out.conv", 64, 48);
+    const int channels[] = {1024, 512, 384, 128, 64};
+    const int blocks[] = {2, 2, 4, 6, 4};
+    for (int stage = 0; stage < 5; ++stage) {
+        const std::string from = stage == 0 ? "decoder.mid_block.resnets" :
+            "decoder.up_blocks." + std::to_string(stage - 1) + ".resnets";
+        const std::string to = "decoder.up_blocks." +
+            std::to_string(stage * 2) + ".res_blocks";
+        for (int block = 0; block < blocks[stage]; ++block)
+            for (int c = 1; c <= 2; ++c) {
+                const auto suffix = "." + std::to_string(block) +
+                    ".conv" + std::to_string(c) + ".conv";
+                conv(from + suffix, to + suffix, channels[stage], channels[stage]);
+            }
+    }
+    const int up_in[] = {1024, 384, 256, 128};
+    const int up_out[] = {4096, 3072, 256, 256};
+    for (int stage = 0; stage < 4; ++stage) {
+        const auto from = "decoder.up_blocks." + std::to_string(stage);
+        const auto to = "decoder.up_blocks." + std::to_string(stage * 2 + 1);
+        conv(from + ".upsamplers.0.conv.conv", to + ".conv.conv",
+             up_in[stage], up_out[stage]);
+        if (stage != 1 && stage != 2) continue;
+        const int in = stage == 1 ? 512 : 384;
+        const int out = up_in[stage];
+        conv(from + ".conv_in.conv1.conv", to + ".conv_in.conv1.conv", in, out);
+        conv(from + ".conv_in.conv2.conv", to + ".conv_in.conv2.conv", out, out);
+        conv(from + ".conv_in.conv_shortcut", to + ".conv_in.conv_shortcut", in, out, 1);
+        for (const auto *suffix : {".weight", ".bias"})
+            copy(from + ".conv_in.norm3" + suffix,
+                 to + ".conv_in.norm3" + suffix, {in});
+    }
+    size_t actual = 0;
+    for (const auto &[name, value] : source)
+        if (name.starts_with("decoder.")) ++actual;
+    if (actual != decoder_tensors)
+        throw std::runtime_error("unsupported extra PrunaVAED decoder tensors");
+    return result;
+}
+
 class VideoVAE {
  public:
     explicit VideoVAE(const char *checkpoint_path, bool encoder)
@@ -229,9 +293,18 @@ class VideoVAE {
         }
         mx::set_default_device(gpu);
 
+        pruna_ = source_weights.contains("latents_mean");
+        if (pruna_ && encoder)
+            throw std::invalid_argument(
+                "PrunaVAED is a decoder option; use the LTX Conv VAE encoder");
+        if (pruna_) source_weights = pruna_decoder_weights(source_weights);
         std::vector<mx::array> materialize;
-        const std::vector<std::string> names = encoder ?
+        std::vector<std::string> names = encoder ?
             encoder_weight_names() : decoder_weight_names();
+        if (pruna_) {
+            names.clear();
+            for (const auto &[name, value] : source_weights) names.push_back(name);
+        }
         materialize.reserve(names.size());
         for (const std::string &name : names) {
             const auto found = source_weights.find(name);
@@ -240,12 +313,13 @@ class VideoVAE {
             }
             mx::array value = found->second;
             weight_bytes_ += value.nbytes();
-            if (name.ends_with(".weight")) {
+            if (name.ends_with(".weight") && name.find(".norm3.") == std::string::npos) {
                 if (value.ndim() != 5) {
                     throw std::runtime_error(
                         "expected rank-5 convolution weight: " + name);
                 }
-                value = mx::transpose(value, {0, 2, 3, 4, 1});
+                // Pack once in MLX's channels-last layout, not on each decode.
+                value = mx::contiguous(mx::transpose(value, {0, 2, 3, 4, 1}));
             } else if (value.ndim() != 1) {
                 throw std::runtime_error(
                     "expected rank-1 video VAE tensor: " + name);
@@ -268,6 +342,7 @@ class VideoVAE {
 
     uint32_t weight_tensors(void) const { return weight_tensors_; }
     uint64_t weight_bytes(void) const { return weight_bytes_; }
+    const char *decoder_name(void) const { return pruna_ ? "prunavaed" : "conv"; }
 
     void encode(uint16_t *output,
                 size_t output_elements,
@@ -433,15 +508,17 @@ class VideoVAE {
         dump_stage("04_up1", value);
         value = residual_stage(value, 2, 2);
         dump_stage("05_res2", value);
-        value = depth_to_space(value, 3, 512, 2, 2);
+        if (pruna_) value = pruna_projection(value, 3);
+        value = depth_to_space(value, 3, pruna_ ? 384 : 512, 2, 2);
         dump_stage("06_up3", value);
         value = residual_stage(value, 4, 4);
         dump_stage("07_res4", value);
-        value = depth_to_space(value, 5, 256, 1, 2);
+        if (pruna_) value = pruna_projection(value, 5);
+        value = depth_to_space(value, 5, pruna_ ? 128 : 256, 1, 2);
         dump_stage("08_up5", value);
         value = residual_stage(value, 6, 6);
         dump_stage("09_res6", value);
-        value = depth_to_space(value, 7, 128, 2, 1);
+        value = depth_to_space(value, 7, pruna_ ? 64 : 128, 2, 1);
         dump_stage("10_up7", value);
         value = residual_stage(value, 8, 4);
         dump_stage("11_res8", value);
@@ -588,7 +665,16 @@ class VideoVAE {
         return found->second;
     }
 
-    static mx::array silu(const mx::array &value) {
+    mx::array silu(const mx::array &value) const {
+        if (pruna_ && environment_enabled("TURBOCIDER_PRUNAVAED_FUSED_SILU", true)) {
+            // Fuse sigmoid and multiply: high-resolution decoder stages would
+            // otherwise allocate and read a full extra BF16 activation volume.
+            static auto compiled = mx::compile(
+                [](const std::vector<mx::array> &inputs) {
+                    return std::vector<mx::array>{inputs[0] * mx::sigmoid(inputs[0])};
+                }, true);
+            return compiled({value})[0];
+        }
         return value * mx::sigmoid(value);
     }
 
@@ -640,6 +726,20 @@ class VideoVAE {
         value = convolution(
             silu(pixel_norm(value)), base + ".conv2.conv", causal);
         return value + input;
+    }
+
+    mx::array pruna_projection(const mx::array &input, uint32_t stage) const {
+        const std::string base = "decoder.up_blocks." +
+            std::to_string(stage) + ".conv_in";
+        auto value = convolution(silu(pixel_norm(input)), base + ".conv1.conv", false);
+        value = convolution(silu(pixel_norm(value)), base + ".conv2.conv", false);
+        auto skip = mx::fast::layer_norm(input, weight(base + ".norm3.weight"),
+                                         weight(base + ".norm3.bias"), 1.0e-6f);
+        const auto &kernel = weight(base + ".conv_shortcut.weight");
+        // 1x1x1 convolution is a channels-last GEMM, avoiding a padded Conv3D.
+        skip = mx::matmul(skip, mx::transpose(mx::reshape(
+            kernel, {kernel.shape(0), kernel.shape(4)})));
+        return value + (skip + weight(base + ".conv_shortcut.bias"));
     }
 
     mx::array residual_stage(mx::array value,
@@ -816,6 +916,7 @@ class VideoVAE {
     uint32_t weight_tensors_ = 0;
     uint64_t weight_bytes_ = 0;
     bool encoder_ = false;
+    bool pruna_ = false;
 };
 
 }  // namespace
@@ -890,6 +991,10 @@ extern "C" int ltx_mlx_video_vae_get_info(
     info->weight_tensors = vae->implementation->weight_tensors();
     info->weight_bytes = vae->implementation->weight_bytes();
     return 1;
+}
+
+extern "C" const char *ltx_mlx_video_vae_decoder_name(const ltx_mlx_video_vae *vae) {
+    return vae && vae->implementation ? vae->implementation->decoder_name() : "unknown";
 }
 
 extern "C" int ltx_mlx_video_vae_decode_tokens_bf16(

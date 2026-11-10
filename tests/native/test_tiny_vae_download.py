@@ -1,5 +1,6 @@
 """Exercise the native Tiny VAE downloader entirely on a local fixture server."""
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 import threading
@@ -15,7 +16,8 @@ def main():
     thread.start()
     try:
         with tempfile.TemporaryDirectory(prefix="tc-tiny-download-") as root:
-            subprocess.run([str(ROOT / "build/native/turbocider-tiny-vae-download-tests"),
+            native = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native"))
+            subprocess.run([str(native / "turbocider-tiny-vae-download-tests"),
                             f"http://127.0.0.1:{server.server_port}", root], check=True)
         assert COUNTS.get(f"/test/tiny/resolve/{REVISION}/weights.bin") == 3, COUNTS
         assert not any("/api/" in path for path in COUNTS), COUNTS

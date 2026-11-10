@@ -475,6 +475,37 @@ enum LibraryTool {
             .map { URL(fileURLWithPath: $0.path).appendingPathComponent(asset.filename).path }
             .first { FileManager.default.fileExists(atPath: $0) }
     }
+    var prunaVAEPath: String? {
+        let asset = PrunaVAEAsset.model
+        return installations.filter { $0.modelID == asset.installationModelID && $0.revision == asset.revision }
+            .map { URL(fileURLWithPath: $0.path).appendingPathComponent(asset.filename).path }
+            .first { path in
+                guard let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]) else { return false }
+                return values.isRegularFile == true && values.fileSize == Int(asset.size)
+            }
+    }
+    func downloadPrunaVAE(studio: StudioState) {
+        perform { [self] in
+            let response = try await LibraryTool.run(["download-vae", "prunavaed", "--root", root]) { [weak self] event in
+                Task { @MainActor in self?.event = event }
+            }
+            _ = try LibraryTool.decode(LibraryInstallation.self, from: response)
+            try await readIndex()
+            // Register availability without changing the active model/decoder.
+            if let path = prunaVAEPath { studio.draft.ltxPrunaVAEPath = path; studio.save() }
+            message = "PrunaVAED 已从 ModelScope 下载并通过 SHA256 校验，可在 LTX 高级参数中选择。"
+        }
+    }
+    func usePrunaVAE(studio: StudioState) {
+        guard !busy, !studio.imageInputsBusy else { return }
+        if let path = prunaVAEPath { studio.draft.ltxPrunaVAEPath = path }
+        guard studio.draft.resolvedPrunaVAEPath != nil else {
+            message = "请先下载并校验 PrunaVAED。"; return
+        }
+        studio.draft.ltxVideoVAE = "prunavaed"
+        studio.save()
+        message = "已选择 PrunaVAED；下次 LTX 生成将使用此视频解码器。"
+    }
     func downloadTinyVAE(_ asset: TinyVAEAsset, source: TinyVAESource) {
         perform { [self] in
             let response = try await LibraryTool.run(["download-tiny", asset.id, source.rawValue, "--root", root]) { [weak self] event in

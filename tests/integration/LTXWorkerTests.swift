@@ -73,6 +73,8 @@ import CryptoKit
                           steps=sampling['steps'], seed=sampling['seed'], warmup=False)
             if mode == 'old_path': result['output'] = \(finalLiteral)
             if mode == 'wrong_seed': result['seed'] += 1
+            if mode.startswith('missing_') and mode[8:] in ('steps', 'seed', 'warmup'):
+                del result[mode[8:]]
             if v2:
                 selector = request['execution']['streaming']
                 summary = dict(schema_version=1, target_request_memory_bytes=selector['target_request_memory_bytes'],
@@ -97,8 +99,15 @@ import CryptoKit
         request.width = 64; request.height = 64; request.frames = 9; request.fps = 24
         request.steps = 1; request.seed = 42; request.audio = false
         request.residency = "component_staged"
+        guard LTXWorker.accepts(request) else { throw NativeFailure(message: "LTX staged worker route missing") }
+        var streamed = request
+        streamed.residency = "streamed"
+        guard !LTXWorker.accepts(streamed) else { throw NativeFailure(message: "Unbounded streamed worker request accepted") }
+        streamed.memory_budget_bytes = UInt64(12) << 30
+        guard LTXWorker.accepts(streamed) else { throw NativeFailure(message: "LTX budgeted worker route missing") }
         let intent = NativeRequestV2(legacy: request, targetBytes: 8 << 30)
-        for mode in ["empty_json", "old_path", "wrong_seed", "empty_file", "invalid_media", "missing_file", "symlink",
+        for mode in ["empty_json", "old_path", "wrong_seed", "missing_steps", "missing_seed", "missing_warmup",
+                     "empty_file", "invalid_media", "missing_file", "symlink",
                      "false_verified", "numeric_verified", "wrong_target", "wrong_layout", "missing_summary",
                      "huge_result", "huge_events"] {
             try original.write(to: output)
@@ -109,7 +118,8 @@ import CryptoKit
                     executable: executable, onEvent: { _ in })
             } catch {
                 failed = true
-                if ["empty_json", "old_path", "wrong_seed", "false_verified", "numeric_verified",
+                if ["empty_json", "old_path", "wrong_seed", "missing_steps", "missing_seed", "missing_warmup",
+                    "false_verified", "numeric_verified",
                     "wrong_target", "wrong_layout", "missing_summary"].contains(mode) {
                     try require(error.localizedDescription.contains("worker_result_"),
                                 "Wrong failure for result case \(mode): \(error)")

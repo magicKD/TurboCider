@@ -284,6 +284,7 @@ struct LibraryDownloader: Sendable {
                 totalFiles: plan.files.count, completedBytes: completed, totalBytes: totalBytes))
         }
         try Task.checkCancellation()
+        try preparePinnedLTXAudio(request, files: plan.files, in: staging)
         let record = try JSONEncoder().encode(plan)
         // Reserved metadata lives in the index, not a potentially colliding upstream path.
         let manifests = try store.managedDirectory("manifests")
@@ -297,5 +298,28 @@ struct LibraryDownloader: Sendable {
                 totalFiles: plan.files.count, completedBytes: totalBytes, totalBytes: totalBytes))
             return result
         } catch { try? FileManager.default.removeItem(at: recordURL); throw error }
+    }
+
+    /// Runs only after commitBlob/cachedBlob verified every selected digest.
+    /// The native audio preflight independently rechecks the pinned bytes.
+    private func preparePinnedLTXAudio(_ request: LibraryDownloadRequest, files: [HubFile], in staging: URL) throws {
+        let pin = LibraryRecipe.ltxAudioPin
+        guard request.modelID == "ltx-2.5-distilled", request.pinnedVariantID == "distilled-int8-convrot",
+              request.provider == .modelscope, request.repository == "Lightricks/LTX-2.5",
+              files.contains(where: { $0.path == pin.path && $0.installationPath == pin.path &&
+                  $0.size == pin.size && $0.sha256 == pin.sha256 && $0.revision == pin.revision }) else { return }
+        let artifact = staging.appendingPathComponent(pin.path)
+        let manifest: [String: Any] = [
+            "schema": "turbocider-ltx-audio-assets-modelscope-v1", "repository": request.repository,
+            "source": ["provider": "modelscope", "endpoint": "https://modelscope.cn",
+                "model_id": request.repository, "path": pin.path, "revision": pin.revision,
+                "catalog_pin": "distilled-int8-convrot"],
+            "artifact": ["filename": artifact.lastPathComponent, "bytes": pin.size, "sha256": pin.sha256!] as [String: Any],
+            "components": ["audio_vae_decoder": "audio_vae", "base_vocoder": "vocoder.vocoder",
+                "bwe_vocoder": "vocoder.bwe_generator", "mel_stft": "vocoder.mel_stft"],
+            "sample_rates": [16000,48000], "channels": 2,
+        ]
+        try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+            .write(to: artifact.deletingLastPathComponent().appendingPathComponent("ltx-audio.manifest.json"), options: .atomic)
     }
 }

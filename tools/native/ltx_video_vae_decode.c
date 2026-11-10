@@ -69,6 +69,7 @@ static double elapsed_seconds(struct timespec started, struct timespec ended) {
 }
 
 static void write_timings(const char *path,
+                          const char *decoder,
                           double input_read,
                           double weight_load,
                           double decode,
@@ -79,10 +80,10 @@ static void write_timings(const char *path,
     if (!stream) fail("cannot create Video VAE timing report");
     int count = fprintf(
         stream,
-        "{\"input_read_seconds\":%.9f,\"weight_load_seconds\":%.9f,"
+        "{\"ltx_video_vae\":\"%s\",\"input_read_seconds\":%.9f,\"weight_load_seconds\":%.9f,"
         "\"decode_compute_seconds\":%.9f,\"output_write_seconds\":%.9f,"
         "\"child_wall_seconds\":%.9f}\n",
-        input_read, weight_load, decode, output_write, process_wall);
+        decoder, input_read, weight_load, decode, output_write, process_wall);
     if (count < 0 || fclose(stream) != 0)
         fail("cannot write Video VAE timing report");
 }
@@ -141,6 +142,7 @@ int main(int argc, char **argv) {
         clock_gettime(CLOCK_MONOTONIC, &output_write_finished);
         write_timings(
             argc == 8 ? argv[7] : NULL,
+            ltx_mlx_video_vae_decoder_name(vae),
             elapsed_seconds(process_started, input_read_finished),
             elapsed_seconds(input_read_finished, weight_load_finished),
             elapsed_seconds(weight_load_finished, decode_finished),

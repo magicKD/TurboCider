@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "model": "ltx-2.5-distilled",
+  "operation": "video.generate",
+  "prompt": "A cinematic red fox walking through a snowy forest, natural soft daylight, realistic motion.",
+  "width": 704,
+  "height": 448,
+  "frames": 97,
+  "fps": 24,
+  "steps": 11,
+  "seed": 42,
+  "execution": "gpu",
+  "residency": "streamed",
+  "memory_budget_bytes": 12884901888,
+  "audio": false,
+  "ltx_backend": "c_metal",
+  "ltx_video_vae": "prunavaed",
+  "allow_approximation": true,
+  "output": "outputs/ltx25-prunavaed.mp4"
+}

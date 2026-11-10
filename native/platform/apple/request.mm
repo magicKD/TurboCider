@@ -166,7 +166,7 @@ static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
 }
 static NSArray *ltx_option_keys() {
     return @[
-        @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch",
+        @"ltx_backend", @"ltx_video_vae", @"ltx_video_vae_path", @"ltx_fast_av", @"ltx_video_attention_batch",
         @"ltx_sol_stage1", @"ltx_sol_stage2", @"ltx_sol_tau",
         @"ltx_sol_dense_edge_blocks", @"ltx_sol_dense_edge_steps",
         @"ltx_stage2_text_rows", @"ltx_sparse_mode", @"ltx_sparse_radius",
@@ -181,6 +181,8 @@ static void keys_with_ltx_options(NSDictionary *d, NSArray *allowed) {
 }
 static void parse_ltx_options(NSDictionary *d, Request &r) {
     r.ltx_backend = string_value(d, @"ltx_backend", r.ltx_backend);
+    r.ltx_video_vae = string_value(d, @"ltx_video_vae", r.ltx_video_vae);
+    r.ltx_video_vae_path = string_value(d, @"ltx_video_vae_path");
     r.ltx_fast_av = boolean(d, @"ltx_fast_av", r.ltx_fast_av);
     r.ltx_video_attention_batch = boolean(
         d, @"ltx_video_attention_batch", r.ltx_video_attention_batch);
@@ -463,6 +465,12 @@ Request request_from_json(NSDictionary *d) {
             }
         }
     }
+    require(r.model == "ltx-2.5-distilled" || r.ltx_video_vae == "conv",
+            "ltx_video_vae is only supported by LTX");
+    require(r.ltx_video_vae_path.empty() ||
+                (r.model == "ltx-2.5-distilled" && r.ltx_video_vae == "prunavaed" &&
+                 std::filesystem::path(r.ltx_video_vae_path).is_absolute()),
+            "ltx_video_vae_path requires prunavaed and an absolute path");
     if (r.tiny_vae && (r.tiny_vae->encoder == "tiny" || r.tiny_vae->decoder == "tiny")) {
         require(r.allow_approximation,
                 "tiny VAE encoding/final decoding requires allow_approximation=true");

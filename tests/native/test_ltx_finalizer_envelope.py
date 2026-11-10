@@ -16,12 +16,16 @@ FINALIZER = Path(os.environ.get(
 ))
 
 
-def invoke(envelope: dict | None) -> subprocess.CompletedProcess[str]:
+def invoke(envelope: dict | None, telemetry: dict | str | None = None) -> subprocess.CompletedProcess[str]:
     if not FINALIZER.is_file():
         raise RuntimeError(f"LTX finalizer is missing: {FINALIZER}")
     environment = os.environ.copy()
     environment.pop("TURBOCIDER_LTX_PUBLIC_ENVELOPE_FD", None)
     environment.pop("TURBOCIDER_LTX_VIDEO_VAE_CHECKPOINT_FD", None)
+    environment.pop("TURBOCIDER_LTX_STAGE_TELEMETRY", None)
+    environment.pop("TURBOCIDER_LTX_REQUEST_START_NS", None)
+    if telemetry is not None:
+        environment["TURBOCIDER_LTX_STAGE_TELEMETRY"] = telemetry if isinstance(telemetry, str) else json.dumps(telemetry)
     descriptor = -1
     path: Path | None = None
     try:
@@ -109,6 +113,38 @@ def main() -> None:
         rejected = invoke(malformed)
         assert rejected.returncode == 1, (field, rejected.stderr)
         assert "incomplete LTX public streaming finalizer envelope" in rejected.stderr
+    telemetry = {
+        "schema_version": 1, "steps": 11, "seed": 42,
+        "plan": {"model": "ltx-2.5-distilled"},
+        "timings_seconds": {key: 1.0 for key in (
+            "text_encoder_load", "text_encode", "connector", "pre_model_load",
+            "model_load", "conditioning_and_rng", "stage1", "latent_upsample", "stage2", "denoise")},
+        "denoise_step_seconds": {"stage1": [0.1] * 8, "stage2": [0.2] * 3},
+    }
+    accepted = invoke(None, telemetry)
+    assert "cannot open latent input" in accepted.stderr, accepted.stderr
+    for seed in (0, (1 << 64) - 1):
+        boundary = dict(telemetry, seed=seed)
+        accepted = invoke(None, boundary)
+        assert "cannot open latent input" in accepted.stderr, accepted.stderr
+    for key in ("steps", "seed"):
+        for bad in (None, True, -1, 1.5, "42", [], {}):
+            broken = dict(telemetry, **{key: bad})
+            rejected = invoke(None, broken)
+            assert "invalid LTX request identity" in rejected.stderr, rejected.stderr
+        broken = dict(telemetry)
+        del broken[key]
+        assert "invalid LTX request identity" in invoke(None, broken).stderr
+    for bad in (-1, True, "1", None):
+        broken = json.loads(json.dumps(telemetry))
+        broken["timings_seconds"]["text_encode"] = bad
+        rejected = invoke(None, broken)
+        assert rejected.returncode == 1 and "invalid LTX stage duration" in rejected.stderr, rejected.stderr
+    for stage, values in (("stage1", [0.1]*7), ("stage2", []), ("stage2", [0.1,True,0.3])):
+        broken = json.loads(json.dumps(telemetry))
+        broken["denoise_step_seconds"][stage] = values
+        rejected = invoke(None, broken)
+        assert rejected.returncode == 1 and "invalid LTX step" in rejected.stderr, rejected.stderr
     print("PASS LTX exec finalizer envelope shape/type rejection (no model/GPU work)")
 
 

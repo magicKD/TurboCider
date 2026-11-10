@@ -11,6 +11,7 @@ import struct
 import subprocess
 import tempfile
 from pathlib import Path
+from ltx_w8a8_build import compile_w8a8
 
 ROOT = Path(__file__).resolve().parents[2]
 LTX = ROOT / "native/models/ltx_runtime"
@@ -92,9 +93,11 @@ def main():
         if args.metal:
             metal = directory / "metal-test"
             gpu = directory / "gpu.o"
+            clangxx = subprocess.check_output(["xcrun", "--find", "clang++"], text=True).strip()
+            bridge = compile_w8a8(directory, clangxx, sdk)
             subprocess.run([clang, *flags, "-fobjc-arc", "-c", str(LTX / "ltx_gpu.m"), "-o", str(gpu)], check=True)
             subprocess.run([clang, *flags, str(ROOT / "tests/native/ltx_streaming_slot_test.c"),
-                            str(LTX / "ltx_streaming_slot.c"), *objects, str(gpu),
+                            str(LTX / "ltx_streaming_slot.c"), *objects, str(gpu), str(bridge), "-lc++",
                             "-framework", "Foundation", "-framework", "Metal", "-framework", "MetalPerformanceShaders",
                             "-framework", "MetalPerformanceShadersGraph", "-o", str(metal)], check=True)
             subprocess.run([str(metal), str(checkpoint), str(LTX / "ltx_shaders.metal")], check=True, timeout=60)

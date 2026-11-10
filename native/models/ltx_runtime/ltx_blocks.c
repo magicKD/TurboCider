@@ -1322,6 +1322,7 @@ static int apply_video_split_conditioning(
         block_weights *weights, uint32_t block_count, float sigma,
         float conditioned_sigma,
         ltx_gpu_buffer *conditioned_video_embedded,
+        uint16_t *streamed_conditioned_parameters,
         ltx_transformer_conditioning_values *values,
         char *error, size_t error_size) {
     if (!active_video_conditioned_prefix_rows)
@@ -1342,6 +1343,14 @@ static int apply_video_split_conditioning(
         snprintf(error, error_size,
                  "conditioned video dimension differs from blocks");
         ok = 0;
+    }
+    // Evaluating the ordinary timestep below reuses conditioning's host
+    // buffers. Keep the first-frame modulation alive for later slot refills.
+    if (ok && streamed_conditioned_parameters) {
+        memcpy(streamed_conditioned_parameters, conditioned.video_adaln,
+               (size_t)9u * video_dim * sizeof(uint16_t));
+        memcpy(streamed_conditioned_parameters + (size_t)9u * video_dim,
+               conditioned.av_video, (size_t)4u * video_dim * sizeof(uint16_t));
     }
     for (uint32_t block = 0; ok && block < block_count; block++)
         ok = add_parameters_to_table(
@@ -3327,6 +3336,7 @@ static int run_streamed_block_stack(
         ltx_gpu *gpu, block_weights *pinned, uint32_t pinned_count,
         const block_stream_source *source,
         ltx_transformer_conditioning_values *conditioning_values,
+        const uint16_t *conditioned_parameters,
         const block_rope *rope, block_workspace *workspace,
         const ltx_gpu_buffer *video_text,
         const ltx_gpu_buffer *audio_text,
@@ -3337,7 +3347,8 @@ static int run_streamed_block_stack(
     if (!source || !source->slots || !pinned_count ||
         pinned_count >= source->total_blocks || !conditioning_values ||
         !source->refill_slots ||
-        source->refill_slots > LTX_MAX_REFILL_SLOTS) {
+        source->refill_slots > LTX_MAX_REFILL_SLOTS ||
+        (active_video_conditioned_prefix_rows && !conditioned_parameters)) {
         snprintf(error, error_size, "invalid LTX block streaming plan");
         return 0;
     }
@@ -3379,6 +3390,15 @@ static int run_streamed_block_stack(
         if (!apply_scalar_conditioning_one(
                 conditioning_values, &loads[slot].slot->weights,
                 error, error_size) ||
+            (conditioned_parameters &&
+             (!add_parameters_to_table(
+                 &loads[slot].slot->weights.video_adaln_conditioned,
+                 0u, 9u, conditioned_parameters, error, error_size) ||
+              !add_parameters_to_table(
+                 &loads[slot].slot->weights.av_video_conditioned,
+                 0u, 4u,
+                 conditioned_parameters + (size_t)9u * conditioning_values->video_dim,
+                 error, error_size))) ||
             report_progress("ltx_block", (int)block,
                             (int)source->total_blocks, error, error_size) ||
             !run_block(gpu, &loads[slot].slot->weights, block,
@@ -3921,6 +3941,8 @@ static int run_denoise_schedule(
         ltx_gpu_buffer_new(
             gpu, (size_t)weights[0].video_self.query_dim * sizeof(uint16_t),
             error, error_size) : NULL;
+    uint16_t *streamed_conditioned_parameters = has_video_conditioning && stream_source ?
+        malloc((size_t)13u * weights[0].video_self.query_dim * sizeof(uint16_t)) : NULL;
     float *video_noise_host = malloc(video_f32_bytes);
     float *audio_noise_host = malloc(audio_f32_bytes);
     uint16_t *video_final_host = malloc(video_bf16_bytes);
@@ -3928,7 +3950,8 @@ static int run_denoise_schedule(
     int ok = video_x0 && audio_x0 && video_scratch && audio_scratch &&
         video_noise && audio_noise && video_noise_host && audio_noise_host &&
         video_final_host && audio_final_host &&
-        (!has_video_conditioning || conditioned_video_embedded);
+        (!has_video_conditioning || conditioned_video_embedded) &&
+        (!(has_video_conditioning && stream_source) || streamed_conditioned_parameters);
     if (!ok) {
         if (!error[0])
             snprintf(error, error_size,
@@ -4022,6 +4045,7 @@ static int run_denoise_schedule(
         if (!apply_video_split_conditioning(
                 conditioning, weights, resident_conditioning_blocks, sigma,
                 sigma * conditioning_mask, conditioned_video_embedded,
+                streamed_conditioned_parameters,
                 &values,
                 error, error_size)) {
             char detail[1024];
@@ -4049,6 +4073,7 @@ static int run_denoise_schedule(
                   error, error_size) : stream_source ?
               run_streamed_block_stack(
                   gpu, weights, pinned_block_count, stream_source, &values,
+                  streamed_conditioned_parameters,
                   rope, workspace, video_text, audio_text, text_mask,
                   video_rows, audio_rows, text_rows,
                   profile_blocks ? &profile_timing : NULL,
@@ -4247,6 +4272,7 @@ static int run_denoise_schedule(
 
 cleanup:
     active_video_conditioned_prefix_rows = 0u;
+    free(streamed_conditioned_parameters);
     sol_video_self.active_step = SIZE_MAX;
     sol_video_self.active_step_count = 0u;
     if (!ok && stream_source && stream_source->exact) {
@@ -4443,6 +4469,12 @@ int ltx_native_get_streaming_info(
     info->slot_refills = ctx->streaming_slot_refills;
     info->load_seconds = ctx->streaming_load_seconds;
     info->wait_seconds = ctx->streaming_wait_seconds;
+    info->convrot_w8a8_enabled = ltx_gpu_convrot_w8a8_info(ctx->gpu,
+        &info->convrot_w8a8_projections, &info->convrot_w8a8_quantizations);
+    uint64_t audio_projections = 0, audio_quantizations = 0;
+    (void)ltx_gpu_convrot_w8a8_info(ctx->audio_gpu, &audio_projections, &audio_quantizations);
+    info->convrot_w8a8_projections += audio_projections;
+    info->convrot_w8a8_quantizations += audio_quantizations;
     return 1;
 }
 
@@ -4951,11 +4983,9 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
     if (ctx->exact_stream &&
         (!ltx_exact_owner(ctx->exact_stream, error, error_size) ||
          !ltx_native_exact_source_current(ctx, error, error_size))) return 0;
-    if (ctx->options.stream_blocks && first_frame) {
-        snprintf(error, error_size,
-                 "LTX block streaming currently supports text-to-video only");
-        return 0;
-    }
+    /* Legacy block paging changes weight residency only. First-frame prefixes
+     * use the same conditioned sampler as resident execution. The exact/public
+     * route retains its separate text-only admission below. */
     ltx_workload *g=&ctx->workload;
     uint32_t rows=(uint32_t)(stage==1?g->stage1_video_tokens:g->stage2_video_tokens);
     uint32_t audio_rows=g->audio_tokens,vd=ltx_transformer_io_video_hidden_dim(ctx->io),ad=ltx_transformer_io_audio_hidden_dim(ctx->io);

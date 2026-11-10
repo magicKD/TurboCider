@@ -267,6 +267,8 @@ struct StudioDraft: Codable, Sendable {
     var fps = 24
     var audio = false
     var ltxBackend = "auto"
+    var ltxVideoVAE = "conv"
+    var ltxPrunaVAEPath = ""
     var ltxFastAV = true
     var ltxVideoAttentionBatch = false
     var ltxAccelerationMode = "quality"
@@ -311,6 +313,7 @@ struct StudioDraft: Codable, Sendable {
     init() {}
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
+        case ltxVideoVAE, ltxPrunaVAEPath
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21DiTW8A8, qwen21DiTSmoothQuantConvRot, qwen21ReferenceSize
@@ -331,6 +334,8 @@ struct StudioDraft: Codable, Sendable {
         fps = try c.decodeIfPresent(Int.self, forKey: .fps) ?? fps
         audio = try c.decodeIfPresent(Bool.self, forKey: .audio) ?? audio
         ltxBackend = try c.decodeIfPresent(String.self, forKey: .ltxBackend) ?? ltxBackend
+        ltxVideoVAE = try c.decodeIfPresent(String.self, forKey: .ltxVideoVAE) ?? "conv"
+        ltxPrunaVAEPath = try c.decodeIfPresent(String.self, forKey: .ltxPrunaVAEPath) ?? ""
         ltxFastAV = try c.decodeIfPresent(Bool.self, forKey: .ltxFastAV) ?? ltxFastAV
         ltxVideoAttentionBatch = try c.decodeIfPresent(
             Bool.self, forKey: .ltxVideoAttentionBatch) ?? ltxVideoAttentionBatch
@@ -711,7 +716,8 @@ struct StudioDraft: Codable, Sendable {
         guard activeAssets.isEmpty, activeLoRAs.isEmpty, !audio,
               (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) == "gpu",
               acceleration?.compileGPU != true, profilePath.isEmpty,
-              ltxBackend != "cpp_mlx", ltxAccelerationMode == "quality" else {
+              ltxBackend != "cpp_mlx", ltxAccelerationMode == "quality",
+              modelID != "ltx-2.5-distilled" || ltxVideoVAE == "conv" else {
             throw NativeFailure(message: "当前输入、LoRA 或加速模式不支持公共流式档位。")
         }
         // Discovery is cheap; installed-model resolution validates metadata.
@@ -796,7 +802,8 @@ struct StudioDraft: Codable, Sendable {
                   acceleration?.compileGPU != true, profilePath.isEmpty else {
                 throw NativeFailure(message: "public 流式加载首版仅支持纯 GPU；ANE 请先选择 Off。")
             }
-            guard ltxBackend != "cpp_mlx", ltxAccelerationMode == "quality" else {
+            guard ltxBackend != "cpp_mlx", ltxAccelerationMode == "quality",
+                  modelID != "ltx-2.5-distilled" || ltxVideoVAE == "conv" else {
                 throw NativeFailure(message: "public 流式加载首版不支持 LTX MLX/近似模式。")
             }
             guard activeAssets.isEmpty, !audio else {
@@ -807,6 +814,7 @@ struct StudioDraft: Codable, Sendable {
             guard ["auto", "c_metal", "cpp_mlx"].contains(ltxBackend) else {
                 throw NativeFailure(message: "LTX 后端选择无效。")
             }
+            try validateLTXVideoVAE()
             guard ["quality", "sol", "fast_approx"].contains(ltxAccelerationMode) else {
                 throw NativeFailure(message: "LTX 加速模式无效。")
             }
@@ -822,14 +830,8 @@ struct StudioDraft: Codable, Sendable {
             guard fps == 24 else {
                 throw NativeFailure(message: "LTX 2.5 Distilled 当前固定使用 24 FPS。")
             }
-            if audio && residency == "streamed" {
-                throw NativeFailure(message: "LTX 带音频输出暂不支持 streamed 驻留，请选择常驻或分阶段释放。")
-            }
             if ltxBackend == "cpp_mlx" && operation == "video.image" {
                 throw NativeFailure(message: "LTX C++/MLX 当前只支持文生视频；图生视频请选择 C/Metal。")
-            }
-            if residency == "streamed" && operation == "video.image" {
-                throw NativeFailure(message: "LTX 图生视频不支持 streamed 驻留，请选择分阶段释放或常驻。")
             }
             if ltxAccelerationMode != "quality" {
                 guard ltxBackend != "cpp_mlx" else {
@@ -966,6 +968,15 @@ struct StudioDraft: Codable, Sendable {
         request.frames = frames; request.fps = fps; request.audio = audio
         if modelID == "ltx-2.5-distilled" {
             request.ltx_backend = ltxBackend
+            request.ltx_video_vae = ltxVideoVAE
+            if ltxVideoVAE == "prunavaed" {
+                try validateLTXVideoVAE()
+                request.ltx_video_vae_path = resolvedPrunaVAEPath
+                request.allow_approximation = true
+            }
+            if residency == "streamed" {
+                request.memory_budget_bytes = UInt64(12) << 30
+            }
             request.ltx_fast_av = ltxFastAV
             request.ltx_video_attention_batch =
                 ltxAccelerationMode == "quality" && ltxVideoAttentionBatch
@@ -1681,6 +1692,7 @@ final class StudioState: ObservableObject {
             restored.modelPaths = draft.modelPaths
             restored.modelLoRAs = draft.modelLoRAs
             restored.tinyVAEPaths = draft.tinyVAEPaths
+            restored.ltxPrunaVAEPath = draft.ltxPrunaVAEPath
             restored.upscaleModelPaths = draft.upscaleModelPaths
             restored.upscaleModelPath = draft.upscaleModelPath
             restored.upscaleVariant = draft.upscaleVariant
@@ -1822,6 +1834,10 @@ final class StudioState: ObservableObject {
         draft.qwen21DiTSmoothQuantConvRot = false
         draft.qwen21ReferenceSize = 1024
         draft.residency = model.default_residency ?? "resident"
+        if id == "ltx-2.5-distilled", draft.operation == "video.generate",
+           !draft.audio, ProcessInfo.processInfo.physicalMemory <= UInt64(32) << 30 {
+            draft.residency = "streamed"
+        }
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")
         draft.loras = draft.modelLoRAs[id] ?? []
@@ -2274,6 +2290,8 @@ final class StudioState: ObservableObject {
             draft.streaming.status = "unknown"
         }
         draft.ltxBackend = request.ltx_backend ?? "auto"
+        draft.ltxVideoVAE = request.ltx_video_vae ?? "conv"
+        if let path = request.ltx_video_vae_path { draft.ltxPrunaVAEPath = path }
         draft.ltxFastAV = request.ltx_fast_av ?? true
         draft.ltxVideoAttentionBatch = request.ltx_video_attention_batch ?? false
         draft.ltxAccelerationMode = request.ltx_sol_stage2 == true

@@ -35,6 +35,7 @@ private struct Failure: Encodable { let ok = false; let error: String }
             turbocider library plan REQUEST.json [--root DIRECTORY]
             turbocider library download REQUEST.json [--root DIRECTORY]
             turbocider library download-tiny taef1|taeqi2_1 huggingface|mirror [--root DIRECTORY]
+            turbocider library download-vae prunavaed [--root DIRECTORY]
             turbocider library configure DIRECTORY
             turbocider library resolve MODEL_ID [--root DIRECTORY]
             turbocider library import CONFIG.json [--root DIRECTORY]
@@ -83,6 +84,11 @@ private struct Failure: Encodable { let ok = false; let error: String }
         }
         let store = try LibraryStore(root: rootOverride ?? LibraryStore.defaultRoot)
         switch command {
+        case "download-vae" where args.count == 2 && args[1] == "prunavaed":
+            emit(Success(result: try await PinnedVAEDownloader(
+                store: store, client: HubClient(provider: .modelscope)).install(PrunaVAEAsset.model) {
+                    emit($0, to: .standardError)
+                }))
         case "download-tiny" where args.count == 3:
             guard let asset = TinyVAEAsset.all.first(where: { $0.id == args[1] }),
                   let source = TinyVAESource(rawValue: args[2]) else { throw LibraryFailure(message: "Use download-tiny taef1|taeqi2_1 huggingface|mirror") }

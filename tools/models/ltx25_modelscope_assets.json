@@ -1,0 +1,50 @@
+[
+  {
+    "repository": "Lightricks/LTX-2.5",
+    "revision": "4b205d041cd006b4b268e5edfd19cdbcaed6732f",
+    "filename": "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+    "relative_path": "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+    "bytes": 21504034224,
+    "sha256": "c4279eeff115cbeaca494bd2183e7d768c38fe85a184dc6afbb7159157c44334"
+  },
+  {
+    "repository": "Lightricks/LTX-2.5",
+    "revision": "a14f34a9a04bc0adf394b608773c94899cd9723b",
+    "filename": "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+    "relative_path": "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+    "bytes": 15372969374,
+    "sha256": "6ce688a0aa98a5fa36a9f1e6c3f42152a498cc2b53ee8c15674c64244f91487f"
+  },
+  {
+    "repository": "Lightricks/LTX-2.5",
+    "revision": "65c57ea625e4b1da955f35f5a7d379c067554811",
+    "filename": "vae/ltx-2.5-video-vae-conv-bf16.safetensors",
+    "relative_path": "vae/ltx-2.5-video-vae-conv-bf16.safetensors",
+    "bytes": 1452269922,
+    "sha256": "685b06ee3d9b2039647698fc4ea33175112462fc374e2777312c907897dfce8d"
+  },
+  {
+    "repository": "Lightricks/LTX-2.5",
+    "revision": "5a5da253b8bd7ae649a8c7acdec41e6c1a1cffda",
+    "filename": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+    "relative_path": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+    "bytes": 364866540,
+    "sha256": "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5"
+  },
+  {
+    "repository": "Lightricks/LTX-2.5",
+    "revision": "4a7b2baed1b4366885c3c47f8208c0a78a85ddfa",
+    "filename": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+    "relative_path": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+    "bytes": 995778752,
+    "sha256": "eb5a71fe4068ee87ccdb1c3aa635e547ca76bd2d30ae20ae889f2c325c0677e8"
+  },
+  {
+    "repository": "mlx-community/ltx-2.5-mlx",
+    "revision": "9677e48834a7ab2582daaa86f615b6fde846f8f1",
+    "filename": "gemma4-12b-ltx-v1/tokenizer.json",
+    "relative_path": "gemma4-12b-ltx-v1/tokenizer.json",
+    "bytes": 32169626,
+    "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+  }
+]

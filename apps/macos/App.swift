@@ -996,7 +996,8 @@ struct StudioView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if model?.canGenerateAudio == true {
-                    Toggle("生成音频", isOn: $studio.draft.audio).controlSize(.small)
+                    Toggle(studio.draft.modelID == "ltx-2.5-distilled" ? "同步生成音频" : "生成音频", isOn: $studio.draft.audio).controlSize(.small)
+                        .help(studio.draft.modelID == "ltx-2.5-distilled" ? "联合采样音频与视频，输出包含 48 kHz 立体声 AAC 的 MP4。" : "生成包含音频轨道的视频。")
                 } else { Text("当前执行器输出无音轨视频。").font(.caption).foregroundStyle(.secondary) }
             }
             if ["image.transform", "video.image"].contains(studio.draft.operation) {
@@ -1116,7 +1117,7 @@ struct StudioView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
                     if studio.draft.publicStreamingModel {
-                        Picker("流式内存档位", selection: Binding(
+                        Picker(studio.draft.modelID == "ltx-2.5-distilled" ? "预设加载档位" : "流式内存档位", selection: Binding(
                             get: { studio.draft.streaming.selection },
                             set: { studio.setStreamingSelection($0) })) {
                             ForEach(StudioStreamingSelection.allCases) { value in
@@ -1172,6 +1173,46 @@ struct StudioView: View {
                         }
                     }
                     if studio.draft.modelID == "ltx-2.5-distilled" {
+                        Picker("视频 VAE", selection: Binding(
+                            get: { studio.draft.ltxVideoVAE },
+                            set: { value in
+                                studio.draft.ltxVideoVAE = value
+                                if value == "prunavaed", let path = library.prunaVAEPath {
+                                    studio.draft.ltxPrunaVAEPath = path
+                                }
+                                studio.save()
+                            })) {
+                            Text("Conv VAE（原始）").tag("conv")
+                            Text("PrunaVAED（更快解码）").tag("prunavaed")
+                        }.disabled(store.busy || submitting || studio.imageInputsBusy)
+                            .accessibilityIdentifier("ltxVideoVAE")
+                        if studio.draft.ltxVideoVAE == "prunavaed" {
+                            Text("剪枝解码器，画面细节与原始 VAE 有差异；仅影响视频解码。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                            if studio.draft.resolvedPrunaVAEPath == nil {
+                                if library.prunaVAEPath != nil {
+                                    Button("使用已下载的 PrunaVAED") { library.usePrunaVAE(studio: studio) }
+                                        .disabled(library.busy || store.busy || submitting)
+                                } else {
+                                    Button("从 ModelScope 下载 PrunaVAED（1.33 GB）") {
+                                        library.downloadPrunaVAE(studio: studio)
+                                    }.disabled(library.busy || store.busy || submitting)
+                                        .accessibilityIdentifier("downloadPrunaVAEAdvanced")
+                                    if library.busy, let event = library.event {
+                                        ProgressView(value: Double(event.completedBytes), total: Double(max(1, event.totalBytes)))
+                                    }
+                                    if let message = library.message {
+                                        Text(message).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                            } else {
+                                Label("PrunaVAED 已就绪", systemImage: "checkmark.circle").font(.caption2).foregroundStyle(.green)
+                            }
+                            if studio.draft.usesPublicStreaming {
+                                Text("使用 PrunaVAED 前，请将校准内存档位设为关闭。")
+                                    .font(.caption2).foregroundStyle(.orange)
+                            }
+                        }
                         Picker("LTX 后端", selection: $studio.draft.ltxBackend) {
                             Text("自动（C/Metal）").tag("auto")
                             Text("C/Metal").tag("c_metal")
@@ -1260,6 +1301,16 @@ struct StudioView: View {
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {
                         LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
+                    } else if studio.draft.modelID == "ltx-2.5-distilled" && !studio.draft.usesPublicStreaming {
+                        Picker("模型加载", selection: $studio.draft.residency) {
+                            Text("按层加载 · 12 GiB").tag("streamed")
+                            Text("常驻").tag("resident")
+                            Text("分阶段释放").tag("component_staged")
+                        }.disabled(store.busy || submitting).accessibilityIdentifier("ltxResidency")
+                        if studio.draft.residency == "streamed" {
+                            Text("12 GiB 用于采样阶段规划，并非应用内存硬上限。支持 GPU 文生视频、C/Metal 首帧图生视频及同步音频。M5 及以上在 macOS 26.4 及以上自动使用 W8A8。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     } else if studio.draft.modelID == "seedvr2-3b" {
                         Picker("模型驻留", selection: $studio.draft.residency) {
                             Text("常驻（速度优先）").tag("resident")

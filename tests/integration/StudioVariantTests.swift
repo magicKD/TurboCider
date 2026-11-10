@@ -256,6 +256,48 @@ import Foundation
         try check(qwenJob.routeSummary == "GPU · W8A8 ConvRot · 流式加载", "App mislabeled the measured W8A8 route")
         qwenJob.resultJSON = streamedRoute.replacingOccurrences(of: "true", with: "false")
         try check(qwenJob.routeSummary == "GPU · INT8 ConvRot · 浮点激活 · 流式加载", "App mislabeled float activation ConvRot")
+        var ltxRequest = qwenRequest
+        ltxRequest.model = "ltx-2.5-distilled"
+        var ltxJob = NativeJob(id: UUID(), createdAt: Date(), request: ltxRequest, state: "succeeded", phase: "complete",
+            completed: 11, total: 11, elapsed: 1,
+            resultJSON: #"{"model":"ltx-2.5-distilled","plan":{"execution":"gpu","residency":"streamed"},"convrot_compute_recipe":"original-i8-f32-scale-w8a8-rne127-bf16-io-v1"}"#, modelPath: qwen.path)
+        try check(ltxJob.routeSummary == "GPU · INT8 ConvRot · W8A8 · 流式加载", "LTX route ignored the native precision receipt")
+        ltxJob.resultJSON = #"{"model":"ltx-2.5-distilled","plan":{"execution":"gpu","residency":"streamed"},"convrot_compute_recipe":"convrot-w8-bf16-activations-v1"}"#
+        try check(ltxJob.routeSummary == "GPU · INT8 ConvRot · BF16 激活 · 流式加载", "LTX BF16 fallback mislabeled as W8A8")
+        var ltxDraft = StudioDraft()
+        ltxDraft.modelID = "ltx-2.5-distilled"; ltxDraft.operation = "video.generate"
+        ltxDraft.width = 704; ltxDraft.height = 448; ltxDraft.frames = 97; ltxDraft.steps = 11; ltxDraft.fps = 24
+        ltxDraft.modelPaths[ltxDraft.modelID] = root.path; ltxDraft.prompt = "keep LTX prompt"
+        ltxDraft.residency = "streamed"
+        let ltxStreamedRequest = try ltxDraft.request(output: root.appendingPathComponent("ltx.mp4"))
+        try check(ltxStreamedRequest.memory_budget_bytes == UInt64(12) << 30 &&
+                  ltxStreamedRequest.residency == "streamed" && ltxStreamedRequest.prompt == "keep LTX prompt" && LTXWorker.accepts(ltxStreamedRequest),
+                  "App LTX budget or isolated-worker routing missing")
+        ltxDraft.audio = true
+        try ltxDraft.validate()
+        let ltxAVRequest = try ltxDraft.request(output: root.appendingPathComponent("ltx-av.mp4"))
+        try check(ltxAVRequest.audio == true && ltxAVRequest.residency == "streamed" &&
+                  ltxAVRequest.memory_budget_bytes == UInt64(12) << 30 && LTXWorker.accepts(ltxAVRequest),
+                  "App LTX streamed audio/video request was blocked or lost audio")
+        let firstFrame = StudioAsset(path: root.appendingPathComponent("first-frame.png").path,
+                                     name: "First frame", width: 1, height: 1)
+        try Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=")!
+            .write(to: URL(fileURLWithPath: firstFrame.path))
+        ltxDraft.operation = "video.image"
+        ltxDraft.assets = [firstFrame]; ltxDraft.initImageID = firstFrame.id
+        ltxDraft.ltxBackend = "c_metal"; ltxDraft.strength = 0.65
+        for audio in [false, true] {
+            ltxDraft.audio = audio
+            // Restored drafts must work as well as freshly selected workflows.
+            let restored = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(ltxDraft))
+            try restored.validate()
+            let request = try restored.request(output: root.appendingPathComponent("ltx-image.mp4"))
+            try check(request.operation == "video.image" && request.audio == audio &&
+                      request.residency == "streamed" && request.memory_budget_bytes == UInt64(12) << 30 &&
+                      request.inputs?.count == 1 && request.inputs?.first?.role == "first_frame" &&
+                      request.inputs?.first?.path == firstFrame.path && request.inputs?.first?.strength == 0.65 &&
+                      LTXWorker.accepts(request), "Streamed first-frame request lost its image, strength, budget or audio")
+        }
         try Data(repeating: 0, count: 16).write(to: qwen.appendingPathComponent("diffusion_models/qwen_image_2.1_bf16.safetensors"))
         try check(!studio.draft.hasQwen21TurboCheckpoint && studio.draft.hasQwen21ConvrotCheckpoint,
             "App source priority differs from native when base and Turbo coexist")

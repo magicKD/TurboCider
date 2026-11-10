@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "model": "ltx-2.5-distilled",
+  "operation": "video.generate",
+  "prompt": "A cinematic red fox walking through a snowy forest. Its paws crunch softly in fresh snow, with gentle wind and distant birds chirping. Natural soft daylight, realistic motion, clear synchronized ambient sound.",
+  "width": 704,
+  "height": 448,
+  "frames": 97,
+  "fps": 24,
+  "steps": 11,
+  "seed": 42,
+  "execution": "gpu",
+  "residency": "streamed",
+  "memory_budget_bytes": 12884901888,
+  "audio": true,
+  "ltx_backend": "c_metal",
+  "output": "outputs/ltx25-int8-av.mp4"
+}

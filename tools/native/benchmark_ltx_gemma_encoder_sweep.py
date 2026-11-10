@@ -341,6 +341,9 @@ def run_case(
     variant = normalize_variant(variant)
     folder.mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
+    # These historical staged/fused/ANE comparisons qualify BF16 activations;
+    # do not let the M5 automatic W8A8 policy silently change the reference.
+    environment["TURBOCIDER_LTX_CONVROT_W8A8"] = "0"
     environment.pop("TURBOCIDER_LTX_GEMMA_FUSED_MLP", None)
     environment.pop("TURBOCIDER_LTX_GEMMA_GPU_TAPS", None)
     if variant in ("fused", "fused_gpu_taps", "hybrid_ane"):

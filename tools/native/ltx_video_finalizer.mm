@@ -29,6 +29,38 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
+struct AudioStageTimings {
+    double input = 0.0, vae = 0.0, vocoder = 0.0, bwe = 0.0;
+};
+
+struct FinalizerProgress {
+    long long sequence = -1, origin_ns = 0;
+    FinalizerProgress() {
+        const char* seq = std::getenv("TURBOCIDER_LTX_EVENT_SEQUENCE");
+        const char* origin = std::getenv("TURBOCIDER_LTX_EVENT_ORIGIN_NS");
+        if (!seq || !origin) return;
+        char* end = nullptr;
+        errno = 0;
+        const auto parsed_sequence = std::strtoll(seq, &end, 10);
+        if (errno || !seq[0] || !end || *end || parsed_sequence < 0 ||
+            parsed_sequence >= std::numeric_limits<long long>::max() - 32) return;
+        const auto parsed_origin = std::strtoll(origin, &end, 10);
+        const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            Clock::now().time_since_epoch()).count();
+        if (errno || !origin[0] || !end || *end || parsed_origin <= 0 || parsed_origin > now) return;
+        sequence = parsed_sequence; origin_ns = parsed_origin;
+    }
+    void emit(const char* phase, int completed) {
+        if (sequence < 0) return;
+        const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            Clock::now().time_since_epoch()).count();
+        std::fprintf(stderr, "{\"schema_version\":1,\"sequence\":%lld,\"phase\":\"%s\","
+            "\"completed\":%d,\"total\":1,\"elapsed_seconds\":%.9f}\n",
+            ++sequence, phase, completed, static_cast<double>(now - origin_ns) * 1e-9);
+        std::fflush(stderr);
+    }
+};
+
 double environment_seconds(const char* name) {
     const char* text = std::getenv(name);
     if (!text || !text[0]) return 0.0;
@@ -37,6 +69,67 @@ double environment_seconds(const char* name) {
     double value = std::strtod(text, &end);
     return errno == 0 && end && *end == '\0' && std::isfinite(value) &&
         value >= 0.0 ? value : 0.0;
+}
+
+NSDictionary* read_stage_telemetry() {
+    const char* text = std::getenv("TURBOCIDER_LTX_STAGE_TELEMETRY");
+    if (!text || !text[0]) return nil;
+    if (std::strlen(text) >= 65536u)
+        throw std::runtime_error("LTX stage telemetry exceeds size limit");
+    NSError* error = nil;
+    NSData* data = [NSData dataWithBytes:text length:std::strlen(text)];
+    id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    if (![parsed isKindOfClass:NSDictionary.class] ||
+        ![parsed[@"schema_version"] isEqual:@1] ||
+        ![parsed[@"plan"] isKindOfClass:NSDictionary.class] ||
+        ![parsed[@"timings_seconds"] isKindOfClass:NSDictionary.class] ||
+        ![parsed[@"denoise_step_seconds"] isKindOfClass:NSDictionary.class])
+        throw std::runtime_error("invalid LTX stage telemetry");
+    NSDictionary* value = parsed;
+    const auto unsigned_integer = [](id number) {
+        return [number isKindOfClass:NSNumber.class] &&
+            CFGetTypeID((__bridge CFTypeRef)number) != CFBooleanGetTypeID() &&
+            std::strchr("csilqCSILQ", [number objCType][0]) &&
+            [number compare:@0] != NSOrderedAscending;
+    };
+    if (!unsigned_integer(value[@"steps"]) ||
+        [value[@"steps"] unsignedLongLongValue] != 11u ||
+        !unsigned_integer(value[@"seed"]))
+        throw std::runtime_error("invalid LTX request identity in stage telemetry");
+    for (NSString* key in @[@"text_encoder_load", @"text_encode", @"connector",
+             @"pre_model_load", @"model_load", @"conditioning_and_rng", @"stage1",
+             @"latent_upsample", @"stage2", @"denoise"]) {
+        id number = value[@"timings_seconds"][key];
+        if (![number isKindOfClass:NSNumber.class] ||
+            CFGetTypeID((__bridge CFTypeRef)number) == CFBooleanGetTypeID() ||
+            !std::isfinite([number doubleValue]) || [number doubleValue] < 0)
+            throw std::runtime_error("invalid LTX stage duration");
+    }
+    for (NSString* key in @[@"stage1", @"stage2"]) {
+        id steps = value[@"denoise_step_seconds"][key];
+        if (![steps isKindOfClass:NSArray.class] ||
+            [steps count] != ([key isEqual:@"stage1"] ? 8u : 3u))
+            throw std::runtime_error("invalid LTX step timing count");
+        for (id number in steps)
+            if (![number isKindOfClass:NSNumber.class] ||
+                CFGetTypeID((__bridge CFTypeRef)number) == CFBooleanGetTypeID() ||
+                !std::isfinite([number doubleValue]) || [number doubleValue] < 0)
+                throw std::runtime_error("invalid LTX step duration");
+    }
+    return value;
+}
+
+double request_wall_seconds(double fallback) {
+    const char* text = std::getenv("TURBOCIDER_LTX_REQUEST_START_NS");
+    if (!text || !text[0]) return fallback;
+    char* end = nullptr;
+    errno = 0;
+    const long long start = std::strtoll(text, &end, 10);
+    const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        Clock::now().time_since_epoch()).count();
+    if (errno || !end || *end || start <= 0 || start > now)
+        throw std::runtime_error("invalid LTX cross-process request clock");
+    return static_cast<double>(now - start) * 1e-9;
 }
 
 uint32_t parse_u32(const char* text, const char* label) {
@@ -172,8 +265,11 @@ std::string json_result(const std::filesystem::path& output,
                         double export_seconds,
                         double audio_decode_seconds,
                         double audio_mux_seconds,
+                        const AudioStageTimings& audio_stages,
                         double finalizer_wall_seconds,
-                        NSDictionary* public_streaming_envelope) {
+                        NSDictionary* public_streaming_envelope,
+                        NSDictionary* stage_telemetry,
+                        const std::string& video_decoder) {
     @autoreleasepool {
         const char* cache_value = std::getenv(
             "TURBOCIDER_LTX_CONDITIONING_CACHE_HIT");
@@ -181,6 +277,7 @@ std::string json_result(const std::filesystem::path& output,
         const char* mode_value = std::getenv("TURBOCIDER_LTX_CONDITIONING_MODE");
         const std::string conditioning_mode = mode_value && mode_value[0] ?
             mode_value : "unknown";
+        const double wall = request_wall_seconds(pre_finalizer_seconds + finalizer_wall_seconds);
         NSMutableDictionary* value = [@{
             @"schema_version": @1,
             @"model": @"ltx-2.5-distilled",
@@ -190,6 +287,7 @@ std::string json_result(const std::filesystem::path& output,
             @"height": @(info.height),
             @"frames": @(info.frames),
             @"fps": @(info.fps),
+            @"warmup": @NO,
             @"audio": @(audio),
             @"audio_channels": audio ? @(audio_info.channels) : (id)[NSNull null],
             @"audio_sample_rate": audio ? @(audio_info.sample_rate) : (id)[NSNull null],
@@ -200,6 +298,7 @@ std::string json_result(const std::filesystem::path& output,
             @"conditioning_cache_hit": @(cache_hit),
             @"conditioning_mode": @(conditioning_mode.c_str()),
             @"video_vae_isolation": @"exec",
+            @"ltx_video_vae": @(video_decoder.c_str()),
             @"timings_seconds": @{
                 @"pre_finalizer": @(pre_finalizer_seconds),
                 @"video_input_read": @(video_input_read_seconds),
@@ -208,16 +307,41 @@ std::string json_result(const std::filesystem::path& output,
                 @"video_vae_decode": @(vae_decode_seconds),
                 @"rgb_convert": @(rgb_convert_seconds),
                 @"export": @(export_seconds),
+                @"video_export": @(export_seconds),
                 @"audio_decode": @(audio_decode_seconds),
                 @"audio_mux": @(audio_mux_seconds),
+                @"audio_input_read": @(audio_stages.input),
+                @"audio_vae_decode": @(audio_stages.vae),
+                @"audio_vocoder": @(audio_stages.vocoder),
+                @"audio_bwe": @(audio_stages.bwe),
                 @"finalizer_wall": @(finalizer_wall_seconds),
                 @"request_wall_estimate": @(
                     pre_finalizer_seconds + finalizer_wall_seconds),
+                @"request_wall": @(wall),
+                @"exec_handoff": @(std::max(0.0,
+                    wall - pre_finalizer_seconds - finalizer_wall_seconds)),
             },
             @"validation": audio ?
                 @"native_gpu_audio_video_exec_finalizer" :
                 @"native_gpu_video_only_exec_finalizer",
         } mutableCopy];
+        if (stage_telemetry) {
+            // Copy only presentation telemetry. Public receipts/authority are
+            // supplied exclusively by the separately verified fd envelope.
+            for (NSString* key in @[@"steps", @"seed", @"plan", @"convrot_compute_recipe",
+                    @"denoiser_implementation", @"denoise_step_seconds",
+                    @"c_metal_convrot_w8a8_total_projections",
+                    @"c_metal_convrot_w8a8_total_quantizations",
+                    @"encoder_convrot_w8a8", @"encoder_convrot_w8a8_projections",
+                    @"encoder_convrot_w8a8_quantizations", @"ltx_streaming_observation"])
+                if (stage_telemetry[key]) value[key] = stage_telemetry[key];
+            NSMutableDictionary* times = [value[@"timings_seconds"] mutableCopy];
+            for (NSString* key in @[@"text_encoder_load", @"text_encode", @"connector",
+                    @"pre_model_load", @"model_load", @"conditioning_and_rng",
+                    @"stage1", @"latent_upsample", @"stage2", @"denoise"])
+                times[key] = stage_telemetry[@"timings_seconds"][key];
+            value[@"timings_seconds"] = times;
+        }
         if (public_streaming_envelope) {
             for (NSString* key in @[
                     @"public_streaming", @"block_residency",
@@ -250,9 +374,12 @@ int main(int argc, char** argv) {
     std::filesystem::path transient_video;
     try {
         const auto finalizer_started = Clock::now();
+        FinalizerProgress progress;
+        AudioStageTimings audio_stages;
         const bool audio = argc == 12;
         NSDictionary* public_streaming_envelope =
             read_public_streaming_envelope();
+        NSDictionary* stage_telemetry = read_stage_telemetry();
         const double pre_finalizer_seconds = environment_seconds(
             "TURBOCIDER_LTX_PRE_FINALIZER_SECONDS");
         const uint32_t latent_frames = parse_u32(argv[3], "latent frames");
@@ -279,6 +406,7 @@ int main(int argc, char** argv) {
                 video_vae_fd, argv[1], error, sizeof(error)) :
             ltx_mlx_video_vae_create(argv[1], error, sizeof(error));
         if (!vae) throw std::runtime_error(error[0] ? error : "cannot load Video VAE");
+        const std::string video_decoder = ltx_mlx_video_vae_decoder_name(vae);
         const auto video_weight_loaded = Clock::now();
         const int ok = ltx_mlx_video_vae_decode_tokens_bf16(
             vae, pixels.data(), pixels.size(), latent.data(), latent.size(),
@@ -288,6 +416,7 @@ int main(int argc, char** argv) {
         ltx_mlx_video_vae_clear_cache();
         if (!ok) throw std::runtime_error(error[0] ? error : "Video VAE decode failed");
         const auto vae_decoded = Clock::now();
+        progress.emit("video_vae", 1);
         std::vector<uint8_t> rgb(static_cast<size_t>(output_frames64) *
                                   output_height64 * output_width64 * 3u);
         if (!ltx_video_bf16_planar_to_rgb24(
@@ -299,6 +428,7 @@ int main(int argc, char** argv) {
             throw std::runtime_error(error[0] ? error : "RGB conversion failed");
         const auto rgb_converted = Clock::now();
         const std::filesystem::path output = argv[6];
+        progress.emit("export", 0);
         std::filesystem::path video_only = output;
         if (audio) {
             video_only += "." + std::string(NSUUID.UUID.UUIDString.UTF8String) +
@@ -310,6 +440,7 @@ int main(int argc, char** argv) {
                               static_cast<int>(output_width64),
                               static_cast<int>(output_height64), 24);
         const auto exported = Clock::now();
+        progress.emit("export", 1);
         tc::AudioMediaInfo audio_info{};
         auto audio_decoded = exported;
         auto audio_muxed = exported;
@@ -329,6 +460,9 @@ int main(int argc, char** argv) {
             std::vector<float> waveform16(waveform_samples * 2u);
             std::vector<float> waveform48(waveform_samples * 3u * 2u);
 
+            const auto audio_vae_started = Clock::now();
+            audio_stages.input = std::chrono::duration<double>(audio_vae_started - exported).count();
+            progress.emit("audio_vae", 0);
             ltx_mlx_audio_vae* audio_vae = ltx_mlx_audio_vae_create(
                 argv[9], error, sizeof(error));
             if (!audio_vae)
@@ -342,7 +476,11 @@ int main(int argc, char** argv) {
             if (!audio_ok)
                 throw std::runtime_error(error[0] ? error :
                                          "Audio VAE decode failed");
+            const auto audio_vae_finished = Clock::now();
+            audio_stages.vae = std::chrono::duration<double>(audio_vae_finished - audio_vae_started).count();
+            progress.emit("audio_vae", 1);
 
+            progress.emit("base_vocoder", 0);
             ltx_mlx_vocoder* vocoder = ltx_mlx_vocoder_create_base(
                 argv[9], error, sizeof(error));
             if (!vocoder)
@@ -356,7 +494,11 @@ int main(int argc, char** argv) {
             if (!audio_ok)
                 throw std::runtime_error(error[0] ? error :
                                          "base vocoder decode failed");
+            const auto vocoder_finished = Clock::now();
+            audio_stages.vocoder = std::chrono::duration<double>(vocoder_finished - audio_vae_finished).count();
+            progress.emit("base_vocoder", 1);
 
+            progress.emit("bwe_vocoder", 0);
             ltx_mlx_bwe* bwe = ltx_mlx_bwe_create(
                 argv[9], error, sizeof(error));
             if (!bwe)
@@ -373,10 +515,14 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(error[0] ? error :
                                          "BWE vocoder decode failed");
             audio_decoded = Clock::now();
+            audio_stages.bwe = std::chrono::duration<double>(audio_decoded - vocoder_finished).count();
+            progress.emit("bwe_vocoder", 1);
+            progress.emit("audio_mux", 0);
             audio_info = tc::mux_video_with_audio(
                 video_only, output, waveform48.data(), waveform48.size() / 2u,
                 48000, 2);
             audio_muxed = Clock::now();
+            progress.emit("audio_mux", 1);
             std::error_code ignored;
             std::filesystem::remove(transient_video, ignored);
             transient_video.clear();
@@ -408,8 +554,9 @@ int main(int argc, char** argv) {
             pre_finalizer_seconds, video_input_read_seconds,
             video_weight_load_seconds, video_decode_compute_seconds,
             vae_decode_seconds, rgb_convert_seconds,
-            export_seconds, audio_decode_seconds, audio_mux_seconds,
-            finalizer_wall_seconds, public_streaming_envelope).c_str());
+            export_seconds, audio_decode_seconds, audio_mux_seconds, audio_stages,
+            finalizer_wall_seconds, public_streaming_envelope, stage_telemetry,
+            video_decoder).c_str());
         std::fflush(stdout);
         const std::filesystem::path latent_path = argv[2];
         remove_managed_staging_directory(latent_path);

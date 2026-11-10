@@ -1,3 +1,4 @@
+#include "precision.hpp"
 #include "block.hpp"
 
 #include <chrono>
@@ -95,13 +96,15 @@ void BasicAVTransformerBlock::load(const std::filesystem::path &checkpoint,
     const auto prefix = "model.diffusion_model.transformer_blocks." +
                         std::to_string(block_index) + ".";
     weights_.load_file(checkpoint, prefix);
+    weights_.set_convrot_w8a8(configured_convrot_w8a8(convrot_w8a8_available()));
+    if (weights_.convrot_w8a8()) weights_.set_metal_convrot(true);
     // Keep a raw ConvRot route available while validating the operation graph.
     // The packed MLX path is selected by default once its group-layout probe is
     // verified; raw mode is useful for isolating quantizer and graph errors.
     const bool raw_mode = std::getenv("TURBOCIDER_LTX_RAW_CONVROT") != nullptr;
-    const auto packed = raw_mode ? 0 :
+    const auto packed = (raw_mode || weights_.convrot_w8a8()) ? 0 :
         static_cast<int>(weights_.pack_convrot_q8(convrot_group_size, mx::float32));
-    require(raw_mode || packed > 0, "LTX block contains no ConvRot INT8 projections");
+    require(raw_mode || weights_.convrot_w8a8() || packed > 0, "LTX block contains no ConvRot INT8 projections");
     weights_.materialize();
     require(weights_.has("scale_shift_table") &&
                 weights_.has("audio_scale_shift_table") &&
@@ -425,6 +428,7 @@ CompiledBlockForward::CompiledBlockForward(
       audio_attention_mask_(audio_attention_mask.has_value()),
       video_cross_attention_mask_(video_cross_attention_mask.has_value()),
       metal_convrot_(prototype.weights_.metal_convrot()),
+      convrot_w8a8_(prototype.weights_.convrot_w8a8()),
       bf16_fences_(prototype.bf16_fences_) {
     auto keys = weight_keys_;
     const bool has_video_text = video_text_;
@@ -437,6 +441,7 @@ CompiledBlockForward::CompiledBlockForward(
     const bool has_audio_attention_mask = audio_attention_mask_;
     const bool has_video_cross_attention_mask = video_cross_attention_mask_;
     const bool use_metal_convrot = metal_convrot_;
+    const bool use_convrot_w8a8 = convrot_w8a8_;
     const bool use_bf16_fences = bf16_fences_;
 
     graph_ = mx::compile(
@@ -444,7 +449,7 @@ CompiledBlockForward::CompiledBlockForward(
          has_video_rope, has_audio_rope, has_video_cross_rope,
          has_audio_cross_rope, has_video_attention_mask,
          has_audio_attention_mask, has_video_cross_attention_mask,
-         use_metal_convrot, use_bf16_fences](const std::vector<Tensor> &args) {
+         use_metal_convrot, use_convrot_w8a8, use_bf16_fences](const std::vector<Tensor> &args) {
             size_t cursor = 0;
             auto take = [&]() -> Tensor {
                 require(cursor < args.size(),
@@ -486,6 +491,7 @@ CompiledBlockForward::CompiledBlockForward(
 
             BasicAVTransformerBlock block;
             block.weights_.set_metal_convrot(use_metal_convrot);
+            block.weights_.set_convrot_w8a8(use_convrot_w8a8);
             // Keep the compiled experiment's precision policy identical to
             // the eager prototype.  Forcing extra BF16 fences here changed
             // the long-sequence numerical trajectory more than compiling the
@@ -520,6 +526,7 @@ bool CompiledBlockForward::compatible(
     const std::optional<Tensor> &audio_attention_mask,
     const std::optional<Tensor> &video_cross_attention_mask) const {
     return metal_convrot_ == block.weights_.metal_convrot() &&
+           convrot_w8a8_ == block.weights_.convrot_w8a8() &&
            bf16_fences_ == block.bf16_fences_ &&
            video_text_ == video_text_embeds.has_value() &&
            audio_text_ == audio_text_embeds.has_value() &&

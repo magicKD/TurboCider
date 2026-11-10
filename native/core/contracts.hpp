@@ -47,6 +47,10 @@ struct Request {
     // explicit modes avoid process-global diagnostic flags in resident/batch use.
     std::string hybrid_mlp_mode = "auto";
     std::string ltx_backend = "auto";
+    // Optional pruned decoder at <model-root>/vae/prunavaed.safetensors.
+    // Encoder and latent upsampler statistics continue to use the Conv VAE.
+    std::string ltx_video_vae = "conv";
+    std::string ltx_video_vae_path;
     std::string profile_identity;
     std::string model_variant = "auto";
     // Optional native Qwen3.5 PE-T2I prompt enhancer installation. Empty

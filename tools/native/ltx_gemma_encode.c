@@ -102,6 +102,7 @@ int main(int argc, char **argv) {
     }
     ltx_gemma_encoder_telemetry telemetry = {};
     if (encoder) ltx_gemma_encoder_get_telemetry(encoder, &telemetry);
+    fused_mlp = fused_mlp || telemetry.convrot_w8a8_enabled;
     ltx_gemma_encoder_free(encoder);
     if (!ok) {
         fprintf(stderr, "%s\n", error[0] ? error : "Gemma encode failed");
@@ -137,7 +138,9 @@ int main(int argc, char **argv) {
         if (run > 1u) fputc(',', stdout);
         printf("%.9f", warm_seconds[run - 1u]);
     }
-    printf("],\"ane_requested\":%s,\"ane_used\":%s,"
+    printf("],\"convrot_w8a8\":%s,\"convrot_counter_scope\":\"encoder_lifetime\","
+           "\"convrot_w8a8_projections\":%llu,\"convrot_w8a8_quantizations\":%llu,"
+           "\"ane_requested\":%s,\"ane_used\":%s,"
            "\"resident_weights_enabled\":%s,"
            "\"resident_weight_cache_hits\":%u,"
            "\"resident_weight_cache_misses\":%u,"
@@ -152,6 +155,9 @@ int main(int argc, char **argv) {
            "\"ane_minimum_profitable_rows\":%u,"
            "\"ane_execution_rows\":%llu,\"ane_total_seconds\":%.9f,"
            "\"ane_output_backing_used\":%s,\"ane_plan_reason\":\"%s\"}\n",
+           telemetry.convrot_w8a8_enabled ? "true" : "false",
+           (unsigned long long)telemetry.convrot_w8a8_projections,
+           (unsigned long long)telemetry.convrot_w8a8_quantizations,
            telemetry.ane_requested ? "true" : "false",
            telemetry.ane_used ? "true" : "false",
            telemetry.resident_weights_enabled ? "true" : "false",

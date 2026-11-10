@@ -20,6 +20,7 @@
 #include "../../models/ltx_runtime/ltx_streaming_plan.hpp"
 #include "../../models/ltx_runtime/ltx_video_convert.h"
 #include "../../models/ltx_mlx/native.hpp"
+#include "../../models/ltx_mlx/precision.hpp"
 #include "../../runtime/streaming/actual_receipt.hpp"
 #include "../../runtime/streaming/canonical_encoding.hpp"
 #include "../../runtime/streaming/public_result.hpp"
@@ -81,6 +82,11 @@ constexpr const char* kLtxPublicUpsamplerLogicalId =
 constexpr const char* kLtxPublicVideoVaeLogicalId =
     "vae/ltx-2.5-video-vae-conv-bf16.safetensors";
 
+static std::string ltx_convrot_compute_recipe() {
+    return ltx_mlx::configured_convrot_w8a8(convrot_w8a8_available()) ?
+        "original-i8-f32-scale-w8a8-rne127-bf16-io-v1" : "convrot-w8-bf16-activations-v1";
+}
+
 static void ltx_append_public_file(
         const std::filesystem::path& root,
         const std::filesystem::path& relative,
@@ -110,7 +116,8 @@ static streaming::PresetSourceIdentity ltx_public_source_identity(
 static streaming::PresetRuntimeIdentity ltx_public_runtime_identity() {
     return {tc::catalog_runtime_identity(), "public-streaming-runtime-v3",
             "ltx-public-adapter-v2", "ltx-pread-convrot-lease-v1",
-            kLtxPublicKernelRevision, "ltx-request-cache-disabled-v1"};
+            std::string(kLtxPublicKernelRevision) + ":" + ltx_convrot_compute_recipe(),
+            "ltx-request-cache-disabled-v1"};
 }
 
 static std::string ltx_public_feature_digest(
@@ -1760,7 +1767,8 @@ static ConditioningCacheLocation ltx_conditioning_cache_location(
     const std::string material = absolute_root.string() + "\n" +
         ltx_cache_file_identity(checkpoint) + "\n" +
         ltx_cache_file_identity(gemma) + "\n" +
-        ltx_cache_file_identity(tokenizer) + "\n" + prompt;
+        ltx_cache_file_identity(tokenizer) + "\n" +
+        tc::catalog_runtime_identity() + "\n" + ltx_convrot_compute_recipe() + "\n" + prompt;
     result.key = sha256_text(material);
     result.directory = result.root / result.key / "conditioning";
     return result;
@@ -2007,11 +2015,40 @@ struct Progress {
     const Event& event;
     std::atomic<bool>& cancel;
     std::exception_ptr failure;
+    std::vector<double>* step_seconds = nullptr;
+    Clock::time_point step_started{};
+    int step_index = -1;
+    void begin_steps(std::vector<double>& output, size_t count) {
+        output.clear();
+        output.reserve(count);
+        step_seconds = &output;
+        step_index = -1;
+    }
+    void finish_steps() {
+        if (step_seconds && step_index >= 0)
+            step_seconds->push_back(std::chrono::duration<double>(
+                Clock::now() - step_started).count());
+        step_seconds = nullptr;
+        step_index = -1;
+    }
+    void observe_step(const char* phase, int current, int total) {
+        if (!step_seconds || !phase ||
+            (std::strcmp(phase, "ltx_step") != 0 &&
+             std::strcmp(phase, "ltx_mlx_step") != 0) ||
+            current == step_index) return;
+        const auto now = Clock::now();
+        if (step_index >= 0)
+            step_seconds->push_back(std::chrono::duration<double>(
+                now - step_started).count());
+        step_index = current < total ? current : -1;
+        step_started = now;
+    }
     static int receive(const char* phase, int current, int total,
                        void* opaque) noexcept {
         auto& value = *static_cast<Progress*>(opaque);
         try {
             if (value.cancel.load()) return 1;
+            value.observe_step(phase, current, total);
             value.event(phase ? phase : "ltx", current, total);
             return value.cancel.load() ? 1 : 0;
         } catch (...) {
@@ -2735,6 +2772,18 @@ public:
         }
         const bool exact_streaming = ltx_exact_streaming_requested(request);
         auto plan = make_plan(request);
+        const auto video_decoder_path = request.ltx_video_vae == "prunavaed" ?
+            (request.ltx_video_vae_path.empty() ? root_ / "vae" / "prunavaed.safetensors" :
+                std::filesystem::path(request.ltx_video_vae_path)) : video_vae_path_;
+        // The default decoder may already be held through a verified source
+        // lease. Do not reopen or restat its pathname after lease admission.
+        if (request.ltx_video_vae == "prunavaed")
+            require(std::filesystem::is_regular_file(video_decoder_path),
+                    "LTX video decoder is missing: " + video_decoder_path.string());
+        if (video_decoder_path != video_decoder_key_) {
+            video_vae_.reset();
+            video_decoder_key_ = video_decoder_path;
+        }
         require(!request.prompt.empty() && !request.output.empty(),
                 "prompt and output are required");
         require(request.output.ends_with(".mp4"), "LTX output must be .mp4");
@@ -2885,10 +2934,6 @@ public:
             (public_stream_lease_ != nullptr ||
              ltx_gpu_batch_audio_requested());
         if (block_streaming) {
-            require(!image_to_video,
-                    "LTX block streaming currently supports text-to-video only");
-            require(!request.audio,
-                    "LTX block streaming currently supports video-only output");
             require(effective_execution == "gpu",
                     "LTX block streaming currently requires GPU execution");
         }
@@ -2911,6 +2956,8 @@ public:
         // A public request must derive conditioning from its request-scoped
         // Gemma/transformer lease. A precomputed path cache is useful for the
         // legacy route, but it is not part of the authorized source closure.
+        double text_encoder_load_seconds = 0.0, text_encode_seconds = 0.0;
+        double connector_seconds = 0.0;
         auto conditioning = public_stream_lease_ ? Conditioning{} :
             load_conditioning(root_, selected_checkpoint, request.prompt);
         if (conditioning.connected && conditioning_reservation) {
@@ -2945,6 +2992,15 @@ public:
         const float first_frame_strength = image_to_video ?
             request.inputs.front().strength : 0.0f;
         if (image_to_video) {
+            // A reused low-memory session must release its previous denoiser
+            // before encoding the two first-frame resolutions. Only the small
+            // clean prefixes survive into the streamed sampling stages.
+            if (component_staged || block_streaming) {
+                denoiser_.reset();
+                denoiser_key_.clear();
+                mlx_denoiser_.reset();
+                mlx_denoiser_key_.clear();
+            }
             /* A resident decoder from an earlier request must not overlap the
              * encoder's weights in unified memory. */
             video_vae_.reset();
@@ -2998,6 +3054,7 @@ public:
                     "LTX Gemma4 tokenizer is missing; provide conditioning or "
                     "install the tokenizer");
             if (!gemma_encoder_) {
+                const auto encoder_load_started = Clock::now();
                 event("text_encoder", 0, 1);
                 ltx_gemma_encoder_options options{};
                 options.checkpoint = gemma_checkpoint_path_.c_str();
@@ -3039,6 +3096,8 @@ public:
                     &options, error, sizeof(error)));
                 require(gemma_encoder_ != nullptr, error);
                 event("text_encoder", 1, 1);
+                text_encoder_load_seconds = std::chrono::duration<double>(
+                    Clock::now() - encoder_load_started).count();
             }
             const size_t max_video = static_cast<size_t>(1024u) * kLtxVideoDim;
             const size_t max_audio = static_cast<size_t>(1024u) * kLtxAudioDim;
@@ -3047,6 +3106,7 @@ public:
             std::vector<uint16_t> raw_mask(1024u);
             uint32_t raw_rows = 0;
             Progress text_progress{event, cancel, {}};
+            const auto text_encode_started = Clock::now();
             event("text_encode", 0, 1);
             require(ltx_gemma_encoder_prepare_prompt(
                         gemma_encoder_.get(), request.prompt.c_str(),
@@ -3065,6 +3125,8 @@ public:
                         gemma_encoder_.get(), &gemma_encoder_telemetry),
                     "cannot inspect LTX Gemma encoder telemetry");
             event("text_encode", 1, 1);
+            text_encode_seconds = std::chrono::duration<double>(
+                Clock::now() - text_encode_started).count();
             require(raw_rows > 0 && raw_rows <= 1024u,
                     "LTX Gemma4 encoder returned an invalid row count");
             raw_video.resize(static_cast<size_t>(raw_rows) * kLtxVideoDim);
@@ -3174,6 +3236,7 @@ public:
             ":memory_budget=" + std::to_string(request.memory_budget_bytes) +
             ":mlx_cache=" + std::to_string(mlx_cache_capacity) +
             ":convrot_group=" + std::to_string(mlx_convrot_group_size) +
+            ":convrot_compute=" + ltx_convrot_compute_recipe() +
             ":release_blocks=" +
             ((component_staged && (effective_execution != "gpu_ane" ||
                                    ane_config.release_blocks_final_step)) ?
@@ -3429,6 +3492,7 @@ public:
         write_ltx_dump_metadata(request.dump, workload);
         const bool used_native_connector = !conditioning.connected;
         if (!conditioning.connected) {
+            const auto connector_started = Clock::now();
             event("connector", 0, 1);
             auto raw_video = std::move(conditioning.video);
             auto raw_audio = std::move(conditioning.audio);
@@ -3463,6 +3527,8 @@ public:
             write_ltx_conditioning_cache(
                 root_, selected_checkpoint, request.prompt, conditioning);
             event("connector", 1, 1);
+            connector_seconds = std::chrono::duration<double>(
+                Clock::now() - connector_started).count();
         }
         if (conditioning_reservation) {
             conditioning_lease = commit_host_memory(
@@ -3485,6 +3551,7 @@ public:
         ltx_rng_fill_normal_bf16(&video_rng, video.data(), video.size());
         ltx_rng_fill_normal_bf16(&audio_rng, audio.data(), audio.size());
         Progress progress{event, cancel, {}};
+        std::vector<double> stage1_step_seconds, stage2_step_seconds;
         tc_stream_counters_v1 exact_counters{};
         tc_stream_counters_v1 exact_stage1_counters{};
         tc_stream_counters_v1 exact_stage2_counters{};
@@ -3537,6 +3604,7 @@ public:
             public_stage_receipts.push_back(std::move(stage));
         };
         const auto stage1_started = Clock::now();
+        progress.begin_steps(stage1_step_seconds, 8);
         bool stage1_ok = false;
         if (use_mlx) {
             stage1_ok = ltx_mlx_run(
@@ -3566,6 +3634,7 @@ public:
         }
         if (progress.failure) std::rethrow_exception(progress.failure);
         require(stage1_ok, error);
+        progress.finish_steps();
         dump_ltx_bf16(request.dump, "stage1_video", video.data(), video.size());
         dump_ltx_bf16(request.dump, "stage1_audio", audio.data(), audio.size());
         checkpoint(cancel);
@@ -3704,6 +3773,7 @@ public:
                 exact_block_bytes,
                 stage2_layout.pools.front().slots.front().capacity_bytes);
         }
+        progress.begin_steps(stage2_step_seconds, 3);
         bool stage2_ok = false;
         if (use_mlx) {
             stage2_ok = ltx_mlx_run(
@@ -3733,6 +3803,7 @@ public:
         }
         if (progress.failure) std::rethrow_exception(progress.failure);
         require(stage2_ok, error);
+        progress.finish_steps();
         dump_ltx_bf16(request.dump, "stage2_video", video.data(), video.size());
         dump_ltx_bf16(request.dump, "stage2_audio", audio.data(), audio.size());
         checkpoint(cancel);
@@ -4017,6 +4088,7 @@ public:
          * keep exec explicitly opt-in for disposable processes. A child
          * helper keeps the parent alive and requires separate peak evidence. */
         const bool exec_finalizer = (component_staged ||
+            (!exact_streaming && block_streaming && !request.memory_constrained.enabled) ||
             (exact_streaming && public_stream_lease_)) &&
             exec_value && std::strcmp(exec_value, "1") == 0;
         if (exec_finalizer) {
@@ -4044,6 +4116,53 @@ public:
                      conditioning.cache_hit ? "1" : "0", 1);
             ::setenv("TURBOCIDER_LTX_CONDITIONING_MODE",
                      conditioning_mode.c_str(), 1);
+            NSMutableArray *stage1_steps = [NSMutableArray array];
+            NSMutableArray *stage2_steps = [NSMutableArray array];
+            for (double seconds : stage1_step_seconds) [stage1_steps addObject:@(seconds)];
+            for (double seconds : stage2_step_seconds) [stage2_steps addObject:@(seconds)];
+            // Telemetry only: this carries no file or public-streaming authority.
+            const auto telemetry = json(@{
+                @"schema_version": @1,
+                @"steps": @(request.steps),
+                @"seed": @(request.seed),
+                @"plan": to_dictionary(plan),
+                @"convrot_compute_recipe": @(ltx_convrot_compute_recipe().c_str()),
+                @"denoiser_implementation": use_mlx ? @"cpp_mlx" : @"c_metal",
+                @"c_metal_convrot_w8a8_total_projections": @(streaming_after.convrot_w8a8_projections),
+                @"c_metal_convrot_w8a8_total_quantizations": @(streaming_after.convrot_w8a8_quantizations),
+                @"encoder_convrot_w8a8": @(gemma_encoder_telemetry.convrot_w8a8_enabled),
+                @"encoder_convrot_w8a8_projections": @(gemma_encoder_telemetry.convrot_w8a8_projections),
+                @"encoder_convrot_w8a8_quantizations": @(gemma_encoder_telemetry.convrot_w8a8_quantizations),
+                @"ltx_streaming_observation": !use_mlx ? @{
+                    @"streamed_blocks": @(streaming_after.streamed_blocks),
+                    @"memory_budget_bytes": @(request.memory_budget_bytes),
+                    @"request_bytes_loaded": @(streaming_after.bytes_loaded - streaming_before.bytes_loaded),
+                    @"request_load_seconds": @(streaming_after.load_seconds - streaming_before.load_seconds),
+                    @"request_wait_seconds": @(streaming_after.wait_seconds - streaming_before.wait_seconds),
+                } : @{},
+                @"denoise_step_seconds": @{@"stage1": stage1_steps, @"stage2": stage2_steps},
+                @"timings_seconds": @{
+                    @"text_encoder_load": @(text_encoder_load_seconds),
+                    @"text_encode": @(text_encode_seconds),
+                    @"connector": @(connector_seconds),
+                    @"pre_model_load": @(std::chrono::duration<double>(model_load_started - request_started).count()),
+                    @"model_load": @(std::chrono::duration<double>(model_ready - model_load_started).count()),
+                    @"conditioning_and_rng": @(std::chrono::duration<double>(stage1_started - model_ready).count()),
+                    @"stage1": @(std::chrono::duration<double>(stage1_finished - stage1_started).count()),
+                    @"latent_upsample": @(std::chrono::duration<double>(upsample_finished - stage1_finished).count()),
+                    @"stage2": @(std::chrono::duration<double>(stage2_finished - upsample_finished).count()),
+                    @"denoise": @(std::chrono::duration<double>(stage1_finished - stage1_started).count() +
+                        std::chrono::duration<double>(stage2_finished - upsample_finished).count()),
+                },
+            });
+            require(telemetry.size() < 65536u &&
+                    ::setenv("TURBOCIDER_LTX_STAGE_TELEMETRY", telemetry.c_str(), 1) == 0,
+                    "cannot preserve LTX stage telemetry across finalizer exec");
+            const auto request_start_ns = std::to_string(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    request_started.time_since_epoch()).count());
+            require(::setenv("TURBOCIDER_LTX_REQUEST_START_NS", request_start_ns.c_str(), 1) == 0,
+                    "cannot preserve LTX request start across finalizer exec");
             std::string verified_public_envelope;
             streaming::OwnedSourceFd public_video_vae_fd;
             if (public_stream_lease_) {
@@ -4060,7 +4179,7 @@ public:
                     kLtxPublicVideoVaeLogicalId);
             }
             exec_ltx_video_finalizer(
-                video_vae_finalizer_path_, video_vae_path_, video,
+                video_vae_finalizer_path_, video_decoder_path, video,
                 audio_checkpoint_path_, audio, workload, request,
                 effective_execution, verified_public_envelope,
                 public_video_vae_fd.get());
@@ -4086,7 +4205,7 @@ public:
             video_vae_.reset();
             ltx_mlx_video_vae_clear_cache();
             pixels = decode_ltx_video_isolated(
-                video_vae_helper_path_, video_vae_path_, video, workload,
+                video_vae_helper_path_, video_decoder_path, video, workload,
                 cancel);
             video_vae_isolation = "process";
             decoded_in_isolated_process = true;
@@ -4097,7 +4216,7 @@ public:
             video_vae_.reset();
             ltx_mlx_video_vae_clear_cache();
             pixels = decode_ltx_video_isolated(
-                video_vae_helper_path_, video_vae_path_, video, workload,
+                video_vae_helper_path_, video_decoder_path, video, workload,
                 cancel, video_vae_fd.get());
             video_vae_isolation = "process_fd";
             decoded_in_isolated_process = true;
@@ -4108,11 +4227,11 @@ public:
                     auto video_vae_fd = public_stream_lease_->duplicate_fd(
                         kLtxPublicVideoVaeLogicalId);
                     video_vae_.reset(ltx_mlx_video_vae_create_fd(
-                        video_vae_fd.get(), video_vae_path_.c_str(),
+                        video_vae_fd.get(), video_decoder_path.c_str(),
                         error, sizeof(error)));
                 } else {
                     video_vae_.reset(ltx_mlx_video_vae_create(
-                        video_vae_path_.c_str(), error, sizeof(error)));
+                        video_decoder_path.c_str(), error, sizeof(error)));
                 }
                 require(video_vae_ != nullptr, error);
             }
@@ -4191,6 +4310,7 @@ public:
         const auto video_export_finished = Clock::now();
         auto audio_decode_finished = video_export_finished;
         auto audio_mux_finished = video_export_finished;
+        double audio_vae_decode_seconds = 0.0, audio_vocoder_seconds = 0.0, audio_bwe_seconds = 0.0;
         tc::AudioMediaInfo audio_info{};
         if (request.audio) {
             const uint32_t audio_tokens = workload.audio_tokens;
@@ -4204,34 +4324,38 @@ public:
             std::vector<uint16_t> mel(mel_elements);
             std::vector<float> waveform16(waveform16_elements);
             std::vector<float> waveform48(waveform48_elements);
+            const auto audio_vae_started = Clock::now();
+            event("audio_vae", 0, 1);
             if (!audio_vae_) {
-                event("audio_vae", 0, 1);
                 audio_vae_.reset(ltx_mlx_audio_vae_create(
                     audio_checkpoint_path_.c_str(), error, sizeof(error)));
                 require(audio_vae_ != nullptr, error);
-                event("audio_vae", 1, 1);
             }
             require(ltx_mlx_audio_vae_decode_bf16(
                 audio_vae_.get(), mel.data(), mel.size(), audio.data(), audio.size(),
                 1, audio_tokens, error, sizeof(error)), error);
+            const auto audio_vae_finished = Clock::now();
+            audio_vae_decode_seconds = std::chrono::duration<double>(audio_vae_finished - audio_vae_started).count();
+            event("audio_vae", 1, 1);
             checkpoint(cancel);
+            event("base_vocoder", 0, 1);
             if (!base_vocoder_) {
-                event("base_vocoder", 0, 1);
                 base_vocoder_.reset(ltx_mlx_vocoder_create_base(
                     audio_checkpoint_path_.c_str(), error, sizeof(error)));
                 require(base_vocoder_ != nullptr, error);
-                event("base_vocoder", 1, 1);
             }
             require(ltx_mlx_vocoder_decode_base_bf16(
                 base_vocoder_.get(), waveform16.data(), waveform16.size(),
                 mel.data(), mel.size(), 1, mel_time, error, sizeof(error)), error);
+            const auto vocoder_finished = Clock::now();
+            audio_vocoder_seconds = std::chrono::duration<double>(vocoder_finished - audio_vae_finished).count();
+            event("base_vocoder", 1, 1);
             checkpoint(cancel);
+            event("bwe_vocoder", 0, 1);
             if (!bwe_) {
-                event("bwe_vocoder", 0, 1);
                 bwe_.reset(ltx_mlx_bwe_create(
                     audio_checkpoint_path_.c_str(), error, sizeof(error)));
                 require(bwe_ != nullptr, error);
-                event("bwe_vocoder", 1, 1);
             }
             require(ltx_mlx_bwe_extend_f32(
                 bwe_.get(), waveform48.data(), waveform48.size(),
@@ -4239,6 +4363,8 @@ public:
                 static_cast<uint32_t>(waveform_samples), error, sizeof(error)), error);
             checkpoint(cancel);
             audio_decode_finished = Clock::now();
+            audio_bwe_seconds = std::chrono::duration<double>(audio_decode_finished - vocoder_finished).count();
+            event("bwe_vocoder", 1, 1);
             audio_wav = video_only;
             audio_wav += ".wav";
             audio_info = write_audio_pcm16_wav(
@@ -4270,6 +4396,10 @@ public:
             exact_counters.fills :
             ltx_checked_add(request_slot_allocations, request_slot_refills,
                             "LTX request slot fills");
+        NSMutableArray *stage1_steps = [NSMutableArray arrayWithCapacity:stage1_step_seconds.size()];
+        NSMutableArray *stage2_steps = [NSMutableArray arrayWithCapacity:stage2_step_seconds.size()];
+        for (double seconds : stage1_step_seconds) [stage1_steps addObject:@(seconds)];
+        for (double seconds : stage2_step_seconds) [stage2_steps addObject:@(seconds)];
         id plan_value = to_dictionary(plan);
         NSDictionary *actual_block_layout = nil;
         if (exact_streaming) {
@@ -4453,7 +4583,18 @@ public:
                       @"cache_hits": @(use_mlx ? mlx_info.cache_hits : 0ull),
                       @"cache_evictions": @(use_mlx ? mlx_info.cache_evictions : 0ull),
                   },
+                  @"denoise_step_seconds": @{
+                      @"stage1": stage1_steps,
+                      @"stage2": stage2_steps,
+                  },
                   @"timings_seconds": @{
+                      @"text_encoder_load": @(text_encoder_load_seconds),
+                      @"text_encode": @(text_encode_seconds),
+                      @"connector": @(connector_seconds),
+                      @"denoise": @(std::chrono::duration<double>(
+                          stage1_finished - stage1_started).count() +
+                          std::chrono::duration<double>(
+                          stage2_finished - upsample_finished).count()),
                       @"pre_model_load": @(
                           std::chrono::duration<double>(
                               model_load_started - request_started).count()),
@@ -4484,12 +4625,21 @@ public:
                       @"audio_decode": @(
                           std::chrono::duration<double>(
                               audio_decode_finished - video_export_finished).count()),
+                      @"audio_vae_decode": @(audio_vae_decode_seconds),
+                      @"audio_vocoder": @(audio_vocoder_seconds),
+                      @"audio_bwe": @(audio_bwe_seconds),
                       @"audio_mux": @(
                           std::chrono::duration<double>(
                               audio_mux_finished - audio_decode_finished).count()),
                       @"request_wall": @(request_wall_seconds),
                   },
                   @"execution": @(effective_execution.c_str()),
+                  @"convrot_compute_recipe": @(ltx_convrot_compute_recipe().c_str()),
+                  @"c_metal_convrot_w8a8_total_projections": @(streaming_after.convrot_w8a8_projections),
+                  @"c_metal_convrot_w8a8_total_quantizations": @(streaming_after.convrot_w8a8_quantizations),
+                  @"encoder_convrot_w8a8": @(gemma_encoder_telemetry.convrot_w8a8_enabled),
+                  @"encoder_convrot_w8a8_projections": @(gemma_encoder_telemetry.convrot_w8a8_projections),
+                  @"encoder_convrot_w8a8_quantizations": @(gemma_encoder_telemetry.convrot_w8a8_quantizations),
                   @"denoiser_implementation": use_mlx ? @"cpp_mlx" :
                       (exact_streaming ? exact_implementation : @"c_metal"),
                   @"gpu_parallel_av": @(gpu_parallel_av),
@@ -4533,6 +4683,7 @@ public:
                   @"encoder_ane_output_backing_used": @(
                       gemma_encoder_telemetry.ane_output_backing_used),
                   @"video_vae_isolation": @(video_vae_isolation.c_str()),
+                  @"ltx_video_vae": @(request.ltx_video_vae.c_str()),
                   @"plan": plan_value,
                   @"lora_fusion": request.loras.empty() ? @"none" :
                       @"sidecar_manifest_verified",
@@ -4629,6 +4780,7 @@ private:
     std::filesystem::path checkpoint_path_;
     std::filesystem::path upsampler_path_;
     std::filesystem::path video_vae_path_;
+    std::filesystem::path video_decoder_key_;
     std::filesystem::path audio_checkpoint_path_;
     std::filesystem::path gemma_checkpoint_path_;
     std::filesystem::path gemma_tokenizer_path_;

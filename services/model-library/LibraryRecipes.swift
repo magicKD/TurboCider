@@ -159,6 +159,45 @@ struct LibraryRecipe: Codable, Sendable {
             preparation: "Turbo 固定 8 步。支持原生 GPU 流式文生图，使用 INT8 ConvRot DiT 和编码器、原始 VAE 与官方 Tokenizer。请确认 Qwen 研究用途许可。",
             modelScopePins: pins)
     }()
+    static let ltxAudioPin = HubFile(path: "vae/ltx-2.5-audio-vae-bf16.safetensors", size: 364866540,
+        sha256: "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5",
+        revision: "5a5da253b8bd7ae649a8c7acdec41e6c1a1cffda")
+    private static let ltxINT8Variant: LibraryVariant = {
+        let pins = [
+            HubFile(path: "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors", size: 21504034224,
+                sha256: "c4279eeff115cbeaca494bd2183e7d768c38fe85a184dc6afbb7159157c44334",
+                revision: "4b205d041cd006b4b268e5edfd19cdbcaed6732f"),
+            HubFile(path: "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", size: 15372969374,
+                sha256: "6ce688a0aa98a5fa36a9f1e6c3f42152a498cc2b53ee8c15674c64244f91487f",
+                revision: "a14f34a9a04bc0adf394b608773c94899cd9723b"),
+            HubFile(path: "vae/ltx-2.5-video-vae-conv-bf16.safetensors", size: 1452269922,
+                sha256: "685b06ee3d9b2039647698fc4ea33175112462fc374e2777312c907897dfce8d",
+                revision: "65c57ea625e4b1da955f35f5a7d379c067554811"),
+            ltxAudioPin,
+            HubFile(path: "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors", size: 995778752,
+                sha256: "eb5a71fe4068ee87ccdb1c3aa635e547ca76bd2d30ae20ae889f2c325c0677e8",
+                revision: "4a7b2baed1b4366885c3c47f8208c0a78a85ddfa"),
+            HubFile(path: "gemma4-12b-ltx-v1/tokenizer.json", size: 32169626,
+                sha256: "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+                revision: "9677e48834a7ab2582daaa86f615b6fde846f8f1", sourceRepository: "mlx-community/ltx-2.5-mlx"),
+        ]
+        let components = [
+            ("dit", "LTX 2.5 Distilled", "INT8 ConvRot", "diffusion_models/"),
+            ("text_encoder", "Gemma 4 12B", "INT8 ConvRot", "text_encoders/"),
+            ("vae", "视频 / 音频 VAE 与 Vocoder", "BF16", "vae/"),
+            ("upscaler", "空间放大模型", "BF16", "latent_upscale_models/"),
+            ("tokenizer", "Tokenizer", "JSON", "gemma4-12b-ltx-v1/")
+        ].map { kind, title, precision, prefix in
+            LibraryVariantComponent(kind: kind, title: title, format: kind == "tokenizer" ? "JSON" : "safetensors",
+                precision: precision, repository: kind == "tokenizer" ? "mlx-community/ltx-2.5-mlx" : "Lightricks/LTX-2.5",
+                include: pins.map(\.path).filter { $0.hasPrefix(prefix) }, note: "LTX 2.5 原始配套文件。")
+        }
+        return LibraryVariant(id: "distilled-int8-convrot", title: "Distilled · INT8 ConvRot",
+            repository: "Lightricks/LTX-2.5", include: pins.map(\.path),
+            components: components, runnable: true,
+            preparation: "ModelScope 固定版本与 SHA256 校验。INT8 DiT 和 Gemma；M5 及以上、macOS 26.4 及以上自动使用 W8A8，其余设备保留 BF16 激活。包含视频 VAE、音频 VAE / Vocoder 和空间放大模型，可同步输出音视频。",
+            modelScopePins: pins)
+    }()
     private static let qwenVariants: [LibraryVariant] = {
         let baseline = LibraryVariant(id: "bf16", title: "BF16 · 推荐", repository: qwenRepository,
             include: [qwenBF16, qwenEncoder, qwenVAE, qwenTokenizer], supplements: [qwenTokenizerSource],
@@ -202,13 +241,13 @@ struct LibraryRecipe: Codable, Sendable {
         .init(modelID: "flux2-klein-9b", repository: "black-forest-labs/FLUX.2-klein-9B",
               include: ["model_index.json", "scheduler/", "transformer/", "vae/", "text_encoder/", "tokenizer/"],
               preparation: "需要在来源网站接受模型条款。9B 当前使用 GPU，需要更多统一内存。"),
-        .init(modelID: "ltx-2.5-distilled", repository: "comfyicu/LTX-2.5",
+        .init(modelID: "ltx-2.5-distilled", repository: "Lightricks/LTX-2.5",
               include: ["diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
                         "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
                         "vae/ltx-2.5-video-vae-conv-bf16.safetensors",
                         "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", "gemma4-12b-ltx-v1/tokenizer.json"],
-              preparation: "权重来自 comfyicu，tokenizer 单独来自 mlx-community/ltx-2.5-mlx；不下载第二份编码器。当前仅文生视频、无音轨。任一仓库没有 ModelScope 镜像时，请选择 Hugging Face。",
-              supplements: [.init(repository: "mlx-community/ltx-2.5-mlx", include: ["gemma4-12b-ltx-v1/tokenizer.json"])]),
+              preparation: ltxINT8Variant.preparation,
+              supplements: [.init(repository: "mlx-community/ltx-2.5-mlx", include: ["gemma4-12b-ltx-v1/tokenizer.json"])], variants: [ltxINT8Variant]),
         .init(modelID: "minimax-h3-turbo", repository: "MiniMaxAI/MiniMax-H3", include: ["FL2VA/"],
               preparation: "默认仅下载 FL2VA（文生视频、首尾帧）。基础权重还需配套 LightX2V Turbo LoRA，并通过离线 prepare-lora 工具生成预融合模型；参考视频另需 Ref2VA 的独立模型与 Turbo 来源记录。"),
         .init(modelID: "wan2.1-1.3b-qad", repository: "FastVideo/FastMetal-1.3B-QAD", include: ["model_index.json", "mlx_dit.json", "mlx_dit.safetensors", "scheduler/", "text_encoder/", "tokenizer/", "vae/"],

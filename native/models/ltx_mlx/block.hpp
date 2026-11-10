@@ -103,6 +103,7 @@ class CompiledBlockForward {
     bool audio_attention_mask_ = false;
     bool video_cross_attention_mask_ = false;
     bool metal_convrot_ = false;
+    bool convrot_w8a8_ = false;
     bool bf16_fences_ = false;
 
   public:

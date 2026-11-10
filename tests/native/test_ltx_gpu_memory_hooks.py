@@ -6,6 +6,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 from pathlib import Path
+from ltx_w8a8_build import compile_w8a8
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,7 @@ def main() -> int:
         gpu_object = directory / "ltx_gpu.o"
         test_object = directory / "ltx_gpu_memory_hooks_test.o"
         binary = directory / "ltx-gpu-memory-hooks-test"
+        bridge = compile_w8a8(directory, clangxx, sdk)
         subprocess.run([
             clang, "-std=c11", "-O0", "-g", "-fobjc-arc",
             "-isysroot", sdk, "-I", str(LTX), "-c",
@@ -42,7 +44,7 @@ def main() -> int:
             "-o", str(test_object),
         ], check=True)
         subprocess.run([
-            clangxx, "-isysroot", sdk, str(test_object), str(gpu_object),
+            clangxx, "-isysroot", sdk, str(test_object), str(gpu_object), str(bridge),
             "-framework", "Foundation", "-framework", "Metal",
             "-framework", "MetalPerformanceShaders",
             "-framework", "MetalPerformanceShadersGraph",

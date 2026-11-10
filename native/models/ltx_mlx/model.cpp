@@ -1,3 +1,4 @@
+#include "precision.hpp"
 #include "model.hpp"
 
 #include <algorithm>
@@ -111,7 +112,10 @@ void Transformer::load_top_weights(const std::filesystem::path &checkpoint) {
     top_weights_.erase_prefix("transformer_blocks.");
     top_weights_.erase_prefix("video_embeddings_connector.");
     top_weights_.erase_prefix("audio_embeddings_connector.");
-    top_weights_.pack_convrot_q8(options_.convrot_group_size, mx::float32);
+    top_weights_.set_convrot_w8a8(configured_convrot_w8a8(convrot_w8a8_available()));
+    if (top_weights_.convrot_w8a8()) top_weights_.set_metal_convrot(true);
+    if (!top_weights_.convrot_w8a8())
+        top_weights_.pack_convrot_q8(options_.convrot_group_size, mx::float32);
     top_weights_.cast_unquantized_float32(mx::bfloat16);
     top_weights_.materialize();
     require(top_weights_.has("patchify_proj.weight") &&

@@ -4,6 +4,24 @@ import Foundation
     static func main() throws {
         func check(_ ok: Bool, _ text: String) throws { if !ok { throw NativeFailure(message: text) } }
         let empty = RunInsights(json: "{}")
+        let ltx = RunInsights(json: #"{"model":"ltx-2.5-distilled","conditioning_cache_hit":false,"convrot_compute_recipe":"original-i8-f32-scale-w8a8-rne127-bf16-io-v1","timings_seconds":{"text_encoder_load":0.5,"text_encode":2.5,"denoise":33,"stage1":14,"stage2":19,"latent_upsample":0.55,"video_vae_decode":13.8},"denoise_step_seconds":{"stage1":[1,2,3],"stage2":[5,6]}}"#)
+        try check(ltx.isLTX && ltx.promptCacheHit == false && ltx.encoderTotalSeconds == 3 && ltx.denoiseSeconds == 33 &&
+                  ltx.vaeDecodeSeconds == 13.8 && ltx.stage1Seconds == 14 && ltx.stage2Seconds == 19 &&
+                  ltx.stage1MeanStepSeconds == 2 && ltx.stage2MeanStepSeconds == 5.5 && ltx.ltxComputeLabel == "INT8 ConvRot · W8A8",
+                  "LTX encoder/cache/stage/step receipts were lost")
+        let cachedLtx = RunInsights(json: #"{"model":"ltx-2.5-distilled","conditioning_cache_hit":true,"timings_seconds":{"text_encoder_load":0,"text_encode":0},"denoise_step_seconds":{"stage1":[],"stage2":[true]}}"#)
+        try check(cachedLtx.promptCacheHit == true && cachedLtx.encoderTotalSeconds == 0 && cachedLtx.stage1StepSeconds == nil && cachedLtx.stage2StepSeconds == nil,
+                  "LTX measured cache zero or absent/invalid step timings misreported")
+        let av = RunInsights(json: #"{"model":"ltx-2.5-distilled","audio":true,"timings_seconds":{"audio_decode":2,"audio_vae_decode":0.2,"audio_vocoder":1,"audio_bwe":0.7,"audio_mux":0.3}}"#)
+        try check(av.audioDecodeSeconds == 2 && av.audioVAEDecodeSeconds == 0.2 && av.audioVocoderSeconds == 1 &&
+                  av.audioBWESeconds == 0.7 && av.audioMuxSeconds == 0.3, "LTX audio stages missing")
+        let videoOnly = RunInsights(json: #"{"model":"ltx-2.5-distilled","audio":false,"timings_seconds":{"audio_decode":0}}"#)
+        try check(videoOnly.audioDecodeSeconds == nil && cachedLtx.audioDecodeSeconds == nil,
+                  "Skipped audio stages were presented as measured decode time")
+        for value in ["-1", "true", "1e1000", "null", "\"1\""] {
+            let invalidLtx = RunInsights(json: "{\"model\":\"ltx-2.5-distilled\",\"denoise_step_seconds\":{\"stage1\":[1,\(value)]}}")
+            try check(invalidLtx.stage1StepSeconds == nil,"Invalid LTX step timing accepted or silently dropped")
+        }
         let seed = RunInsights(json: #"{"model":"seedvr2-3b","timings_seconds":{"vae_encode":79.59,"denoise":56.05,"vae_decode":200.07}}"#)
         try check(seed.isSeedVR2 && seed.vaeEncodeSeconds == 79.59 && seed.vaeDecodeSeconds == 200.07 && seed.denoiseSeconds == 56.05,
                   "SeedVR2 VAE timings missing")

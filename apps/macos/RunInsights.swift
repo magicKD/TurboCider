@@ -10,6 +10,21 @@ struct RunInsights {
     let vaeEncodeSeconds: Double?
     let vaeDecodeSeconds: Double?
     let isSeedVR2: Bool
+    let isLTX: Bool
+    let ltxComputeLabel: String?
+    let ltxVideoVAELabel: String?
+    let encoderLoadSeconds: Double?
+    let connectorSeconds: Double?
+    let stage1Seconds: Double?
+    let stage2Seconds: Double?
+    let latentUpsampleSeconds: Double?
+    let stage1StepSeconds: [Double]?
+    let stage2StepSeconds: [Double]?
+    let audioDecodeSeconds: Double?
+    let audioVAEDecodeSeconds: Double?
+    let audioVocoderSeconds: Double?
+    let audioBWESeconds: Double?
+    let audioMuxSeconds: Double?
     let activeBytes: Double?
     let peakBytes: Double?
     let coreMLCalls: Int?
@@ -46,7 +61,15 @@ struct RunInsights {
             guard let n = number(dict, key), n < Double(Int.max), n.rounded(.down) == n else { return nil }
             return Int(n)
         }
+        let isLtxModel = raw["model"] as? String == "ltx-2.5-distilled"
+        isLTX = isLtxModel
+        switch isLtxModel ? raw["ltx_video_vae"] as? String : nil {
+        case "prunavaed": ltxVideoVAELabel = "PrunaVAED"
+        case "conv": ltxVideoVAELabel = "Conv VAE"
+        default: ltxVideoVAELabel = nil
+        }
         if let hit = raw["prompt_cache_hit"] as? NSNumber, CFGetTypeID(hit) == CFBooleanGetTypeID() { promptCacheHit = hit.boolValue }
+        else if isLtxModel, let hit = raw["conditioning_cache_hit"] as? NSNumber, CFGetTypeID(hit) == CFBooleanGetTypeID() { promptCacheHit = hit.boolValue }
         else { promptCacheHit = nil }
         let selections = (raw["acceleration_selection"] as? String ?? "")
             .split(separator: ";").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -55,8 +78,39 @@ struct RunInsights {
                 : selections.contains("edit prefix KV snapshot miss") ? false : nil
         } else { editPrefixCacheHit = nil }
         textSeconds = number(times, "text_encode"); denoiseSeconds = number(times, "denoise")
-        vaeEncodeSeconds = number(times,"vae_encode"); vaeDecodeSeconds = number(times,"vae_decode")
+        vaeEncodeSeconds = number(times,"vae_encode")
+        vaeDecodeSeconds = number(times,"vae_decode") ?? (isLtxModel ? number(times,"video_vae_decode") : nil)
         isSeedVR2 = raw["model"] as? String == "seedvr2-3b"
+        encoderLoadSeconds = isLtxModel ? number(times,"text_encoder_load") : nil
+        connectorSeconds = isLtxModel ? number(times,"connector") : nil
+        stage1Seconds = isLtxModel ? number(times,"stage1") : nil
+        stage2Seconds = isLtxModel ? number(times,"stage2") : nil
+        latentUpsampleSeconds = isLtxModel ? number(times,"latent_upsample") : nil
+        switch isLtxModel ? raw["convrot_compute_recipe"] as? String : nil {
+        case "original-i8-f32-scale-w8a8-rne127-bf16-io-v1": ltxComputeLabel = "INT8 ConvRot · W8A8"
+        case "convrot-w8-bf16-activations-v1": ltxComputeLabel = "INT8 ConvRot · BF16 激活"
+        default: ltxComputeLabel = nil
+        }
+        let steps = raw["denoise_step_seconds"] as? [String:Any] ?? [:]
+        func durations(_ key: String) -> [Double]? {
+            guard isLtxModel, let values = steps[key] as? [Any], !values.isEmpty else { return nil }
+            let parsed = values.compactMap { value -> Double? in
+                guard let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+                      value.doubleValue.isFinite, value.doubleValue >= 0 else { return nil }
+                return value.doubleValue
+            }
+            guard parsed.count == values.count, parsed.reduce(0,+).isFinite else { return nil }
+            return parsed
+        }
+        stage1StepSeconds = durations("stage1"); stage2StepSeconds = durations("stage2")
+        let hasLTXAudio = isLtxModel && (raw["audio"] as? NSNumber).map {
+            CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue
+        } == true
+        audioDecodeSeconds = hasLTXAudio ? number(times,"audio_decode") : nil
+        audioVAEDecodeSeconds = hasLTXAudio ? number(times,"audio_vae_decode") : nil
+        audioVocoderSeconds = hasLTXAudio ? number(times,"audio_vocoder") : nil
+        audioBWESeconds = hasLTXAudio ? number(times,"audio_bwe") : nil
+        audioMuxSeconds = hasLTXAudio ? number(times,"audio_mux") : nil
         activeBytes = number(memory, "mlx_active_bytes"); peakBytes = number(memory, "mlx_peak_bytes")
         coreMLCalls = count(hybrid, "calls_session_total"); coreMLBlocks = count(hybrid, "block_count"); coreMLRows = count(hybrid, "bucket")
         coreMLLoadSeconds = number(hybrid, "load_seconds")
@@ -120,7 +174,9 @@ struct RunInsights {
                 streamResidentLayers = nil
             }
         } else {
-            let streaming = raw["block_residency"] as? [String: Any] ?? [:]
+            let streaming = raw["block_residency"] as? [String: Any]
+                ?? raw["block_streaming"] as? [String: Any]
+                ?? raw["ltx_streaming_observation"] as? [String: Any] ?? [:]
             streamedBlocks = count(streaming, "streamed_blocks")
             streamReadBytes = number(streaming, "request_bytes_loaded")
             streamWaitSeconds = number(streaming, "request_wait_seconds")
@@ -138,6 +194,17 @@ struct RunInsights {
     }
     var cacheLabel: String {
         switch promptCacheHit { case .some(true): return "已复用文本编码"; case .some(false): return "本次重新编码文本"; case .none: return "文本缓存未报告" }
+    }
+    var encoderTotalSeconds: Double? {
+        guard let load = encoderLoadSeconds, let encode = textSeconds,
+              (load + encode).isFinite else { return nil }
+        return load + encode
+    }
+    var stage1MeanStepSeconds: Double? {
+        stage1StepSeconds.map { $0.reduce(0,+) / Double($0.count) }
+    }
+    var stage2MeanStepSeconds: Double? {
+        stage2StepSeconds.map { $0.reduce(0,+) / Double($0.count) }
     }
     static func memory(_ bytes: Double) -> String { String(format: "%.2f GiB", bytes / 1_073_741_824) }
 }

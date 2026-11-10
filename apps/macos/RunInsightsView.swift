@@ -19,6 +19,8 @@ struct RunInsightsView: View {
                     Text("单步恢复仍需完整 VAE 编解码和 32 个模型块。视频的主要耗时通常在 VAE，不是提示词编码。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.accessibilityIdentifier("seedvr2StageTimings")
+            } else if info.isLTX {
+                ltxInsights(info)
             } else {
             HStack {
                 Label(info.cacheLabel, systemImage: info.promptCacheHit == true ? "arrow.triangle.2.circlepath" : "text.bubble")
@@ -65,7 +67,7 @@ struct RunInsightsView: View {
             }
             if let blocks = info.streamedBlocks, blocks > 0 {
                 HStack(spacing: 16) {
-                    Text("按层加载 \(blocks) 次")
+                    Text(info.isLTX ? "按层加载 \(blocks) 个模型块" : "按层加载 \(blocks) 次")
                     if let bytes = info.streamReadBytes {
                         Text("权重累计读取 \(RunInsights.memory(bytes))")
                             .help("源权重的逻辑读取总量，包含跨采样步重复读取；不是磁盘实际传输量。")
@@ -111,6 +113,65 @@ struct RunInsightsView: View {
             }
         }.padding(14).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
         .accessibilityIdentifier("runInsights")
+    }
+    private func ltxInsights(_ info: RunInsights) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(info.ltxComputeLabel ?? "LTX · 分阶段耗时", systemImage: "film.stack")
+                .font(.callout.weight(.medium))
+            if let vae = info.ltxVideoVAELabel {
+                Text("视频解码器：\(vae)").font(.caption).foregroundStyle(.secondary)
+            }
+            Label(info.cacheLabel, systemImage: info.promptCacheHit == true ? "arrow.triangle.2.circlepath" : "text.bubble")
+                .font(.caption).foregroundStyle(info.promptCacheHit == true ? Color.green : Color.secondary)
+            HStack(spacing: 16) {
+                if let seconds = info.encoderTotalSeconds { metric("文本编码（含加载）", String(format: "%.2f 秒",seconds)) }
+                if let seconds = info.denoiseSeconds { metric("DiT", String(format: "%.2f 秒",seconds)) }
+                if let seconds = info.vaeDecodeSeconds { metric("VAE 解码", String(format: "%.2f 秒",seconds)) }
+            }
+            HStack(spacing: 16) {
+                if let seconds = info.encoderLoadSeconds { Text(String(format: "编码器加载 %.2f 秒",seconds)) }
+                if let seconds = info.connectorSeconds { Text(String(format: "条件连接器 %.2f 秒",seconds)) }
+            }.font(.caption).monospacedDigit()
+                .help("条件连接器时间包含条件缓存写入；命中缓存后跳过编码器与连接器。")
+            if let seconds = info.audioDecodeSeconds {
+                HStack(spacing: 16) {
+                    metric("音频解码（含 Vocoder）", String(format: "%.2f 秒",seconds))
+                    if let mux = info.audioMuxSeconds { metric("音视频封装", String(format: "%.2f 秒",mux)) }
+                }
+                HStack(spacing: 16) {
+                    if let value = info.audioVAEDecodeSeconds { Text(String(format: "音频 VAE %.2f 秒",value)) }
+                    if let value = info.audioVocoderSeconds { Text(String(format: "Vocoder %.2f 秒",value)) }
+                    if let value = info.audioBWESeconds { Text(String(format: "BWE %.2f 秒",value)) }
+                }.font(.caption).monospacedDigit()
+            }
+            HStack(spacing: 16) {
+                if let seconds = info.stage1Seconds { Text(String(format: "Stage 1 %.2f 秒",seconds)) }
+                if let seconds = info.latentUpsampleSeconds { Text(String(format: "放大 %.2f 秒",seconds)) }
+                if let seconds = info.stage2Seconds { Text(String(format: "Stage 2 %.2f 秒",seconds)) }
+            }.font(.caption).monospacedDigit()
+            HStack(spacing: 16) {
+                if let seconds = info.stage1MeanStepSeconds { Text(String(format: "Stage 1 平均 %.2f 秒/步",seconds)) }
+                if let seconds = info.stage2MeanStepSeconds { Text(String(format: "Stage 2 平均 %.2f 秒/步",seconds)) }
+            }.font(.caption).monospacedDigit()
+            if info.stage1StepSeconds != nil || info.stage2StepSeconds != nil {
+                DisclosureGroup("逐步耗时") {
+                    HStack(alignment: .top, spacing: 28) {
+                        if let steps = info.stage1StepSeconds { stepTimings("Stage 1",steps) }
+                        if let steps = info.stage2StepSeconds { stepTimings("Stage 2",steps) }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    Text("每步包含该步计算与按层加载。阶段总耗时还包含准备和收尾。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.font(.caption)
+            }
+        }.accessibilityIdentifier("ltxStageTimings")
+    }
+    private func stepTimings(_ title: String, _ steps: [Double]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).fontWeight(.medium)
+            ForEach(Array(steps.enumerated()), id: \.offset) { item in
+                Text(String(format: "第 %d 步  %.3f 秒",item.offset + 1,item.element)).monospacedDigit()
+            }
+        }
     }
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {

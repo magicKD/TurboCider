@@ -6,7 +6,36 @@ enum TinyVAESource: String, CaseIterable, Identifiable {
     var title: String { self == .mirror ? "Hugging Face 镜像" : "Hugging Face 官方" }
 }
 
-struct TinyVAEAsset: Sendable, Identifiable, Codable {
+protocol PinnedVAEAsset: Sendable, Encodable {
+    var id: String { get }
+    var title: String { get }
+    var repository: String { get }
+    var revision: String { get }
+    var sourceFile: String { get }
+    var size: Int64 { get }
+    var sha256: String { get }
+    var installationModelID: String { get }
+    var filename: String { get }
+    var manifestFilename: String { get }
+    var hubFile: HubFile { get }
+}
+
+struct PrunaVAEAsset: PinnedVAEAsset {
+    static let model = PrunaVAEAsset()
+    let id = "prunavaed"
+    let title = "PrunaVAED · LTX 视频解码器"
+    let repository = "PrunaAI/PrunaVAED"
+    let revision = "16dbad8c7c3fa0c2da35464a34dc1aaf592e7390"
+    let sourceFile = "vae/diffusion_pytorch_model.safetensors"
+    let size: Int64 = 1_327_909_418
+    let sha256 = "4cbf0cbe6c185514d62c6c58c35dc42d7ea15924f34391e08be12f44bfccdf1d"
+    var installationModelID: String { "ltx-prunavaed" }
+    var filename: String { "prunavaed.safetensors" }
+    var manifestFilename: String { "prunavaed-source.json" }
+    var hubFile: HubFile { HubFile(path: sourceFile, size: size, sha256: sha256, revision: revision) }
+}
+
+struct TinyVAEAsset: PinnedVAEAsset, Identifiable, Codable {
     let id: String
     let title: String
     let modelID: String
@@ -17,6 +46,7 @@ struct TinyVAEAsset: Sendable, Identifiable, Codable {
     let sha256: String
     var installationModelID: String { "tiny-vae-" + id.replacingOccurrences(of: "_", with: "-") }
     var filename: String { id + ".safetensors" }
+    var manifestFilename: String { "tiny-vae-source.json" }
     var hubFile: HubFile {
         HubFile(path: sourceFile, size: size, sha256: sha256, revision: revision)
     }
@@ -41,17 +71,21 @@ struct TinyVAEAsset: Sendable, Identifiable, Codable {
 /// Pinned public assets, no Python/conversion and no server metadata can change
 /// the chosen file/architecture. Uses the same lease, verified content store,
 /// atomic installation and index as the ordinary model-library downloader.
-struct TinyVAEDownloader: Sendable {
+typealias TinyVAEDownloader = PinnedVAEDownloader
+
+struct PinnedVAEDownloader: Sendable {
     let store: LibraryStore
     let client: HubClient
-    func install(
-        _ asset: TinyVAEAsset,
+    func install<Asset: PinnedVAEAsset>(
+        _ asset: Asset,
         progress: @escaping @Sendable (LibraryDownloadEvent) -> Void = { _ in }
     ) async throws -> LibraryInstallation {
         let lease = try store.acquireLease()
         defer { withExtendedLifetime(lease) {} }
         try LibraryStore.validateIdentifier(asset.id)
         try LibraryStore.validateRelativePath(asset.sourceFile)
+        try LibraryStore.validateRelativePath(asset.filename)
+        try LibraryStore.validateRelativePath(asset.manifestFilename)
         try LibraryStore.validateIdentifier(asset.revision)
         @Sendable func event(_ phase: String, _ bytes: Int64, _ files: Int = 0, file: String? = nil)
         {
@@ -84,14 +118,14 @@ struct TinyVAEDownloader: Sendable {
             guard cached.resolvingSymlinksInPath().path == cached.path,
                 try cached.resourceValues(forKeys: [.fileSizeKey]).fileSize == Int(asset.size),
                 try LibraryStore.sha256(cached) == asset.sha256
-            else { throw LibraryFailure(message: "Tiny VAE 缓存损坏；原文件已保留，请检查模型库。") }
+            else { throw LibraryFailure(message: "VAE 缓存损坏；原文件已保留，请检查模型库。") }
             blob = cached
         } else {
             let capacity =
                 try FileManager.default.attributesOfFileSystem(forPath: store.root.path)[
                     .systemFreeSize] as? NSNumber
             guard let capacity, capacity.int64Value > asset.size + (16 << 20) else {
-                throw LibraryFailure(message: "没有足够空间下载 Tiny VAE。")
+                throw LibraryFailure(message: "没有足够空间下载 VAE。")
             }
             let temporary = staging.appendingPathComponent(".download")
             try await client.download(
@@ -106,7 +140,7 @@ struct TinyVAEDownloader: Sendable {
         }
         try Task.checkCancellation()
         try LibraryStore.linkBlob(blob, at: asset.filename, in: staging)
-        let manifest = staging.appendingPathComponent("tiny-vae-source.json")
+        let manifest = staging.appendingPathComponent(asset.manifestFilename)
         try JSONEncoder().encode(asset).write(to: manifest, options: .withoutOverwriting)
         try Task.checkCancellation()
         let item = try store.publish(

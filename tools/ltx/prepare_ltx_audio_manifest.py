@@ -2,10 +2,12 @@
 """Verify the LTX 2.5 audio bundle against ModelScope and write its manifest.
 
 The runtime deliberately refuses an unverified audio safetensors file.  This
-tool is the only supported way to create the sidecar: it obtains the official
+tool obtains the official
 ModelScope file record, checks the installed bytes and safetensors structure,
 then writes a small provenance document next to the artifact.  The model
 weights themselves are never copied into the repository.
+The App's pinned ModelScope recipe can also create this sidecar after its
+installer verifies the same fixed revision, length and SHA-256.
 """
 
 from __future__ import annotations

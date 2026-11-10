@@ -637,6 +637,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         [algorithm_approximations addObject:@"tiny_vae_reference_encoding"];
     if(r.tiny_vae && r.tiny_vae->decoder=="tiny")
         [algorithm_approximations addObject:@"tiny_vae_final_decoding"];
+    if (r.model == "ltx-2.5-distilled" && r.ltx_video_vae == "prunavaed")
+        [algorithm_approximations addObject:@"ltx_prunavaed_pruned_decoder"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
         [algorithm_approximations addObject:[NSString stringWithFormat:
             @"qwen21_reference_resize_%d", r.qwen21_reference_size]];
@@ -801,6 +803,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"lora_fusion" : lora_fusion,
         @"audio" : @(r.audio),
         @"ltx_backend" : @(r.ltx_backend.c_str()),
+        @"ltx_video_vae" : @(r.ltx_video_vae.c_str()),
+        @"ltx_video_vae_path" : @(r.ltx_video_vae_path.c_str()),
         @"ltx_fast_av" : @(r.ltx_fast_av),
         @"ltx_video_attention_batch" : @(r.ltx_video_attention_batch),
         @"ltx_sol_stage1" : @(r.ltx_sol_stage1),

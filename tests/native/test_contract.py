@@ -3296,7 +3296,10 @@ class ContractTests(unittest.TestCase):
         self.assertGreater(p['memory_estimate_bytes'],
                            p['memory_budget_bytes'])
         self.assertNotIn('streamed', p['algorithm_approximations'])
-        self.assertNotEqual(plan({**streamed, 'audio':True})[0], 0)
+        av_code,av_plan,av_error = plan({**streamed, 'audio':True})
+        self.assertEqual(av_code,0,av_error)
+        self.assertTrue(av_plan['audio'])
+        self.assertEqual(av_plan['residency'],'streamed')
         self.assertNotEqual(plan({**streamed, 'operation':'video.image'})[0], 0)
         self.assertNotEqual(plan({**streamed, 'execution':'gpu_ane',
                                  'allow_approximation':True,
@@ -3322,6 +3325,19 @@ class ContractTests(unittest.TestCase):
         self.assertIn('first_frame_vae_encode',stages)
         self.assertIn('first_frame_vae_encode',
                       stages['av_stage1']['dependencies'])
+        for audio in (False, True):
+            streamed = {**request, 'residency':'streamed', 'execution':'gpu',
+                        'memory_budget_bytes':12*(1<<30), 'audio':audio,
+                        'ltx_backend':'c_metal'}
+            code, result, error = plan(streamed)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(result['operation'], 'video.image')
+            self.assertEqual(result['residency'], 'streamed')
+            self.assertEqual(result['audio'], audio)
+            self.assertIn('first_frame_vae_encode',
+                          {stage['id'] for stage in result['stages']})
+            self.assertNotEqual(plan({**streamed, 'ltx_backend':'cpp_mlx'})[0], 0)
+            self.assertNotEqual(plan({**streamed, 'inputs':[]})[0], 0)
         for invalid in [
             {**request,'inputs':[]},
             {**request,'inputs':[{'kind':'image','role':'reference',

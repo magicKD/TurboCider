@@ -139,6 +139,11 @@ private final class ProgressProbe: @unchecked Sendable {
             try check(error.message.contains("ModelScope 固定权重"), error.message)
         }
         try check(LibraryRecipe.all.allSatisfy { !$0.downloadVariants.isEmpty }, "Existing model lost its default download preset")
+        let ltxINT8 = LibraryRecipe.all.first { $0.modelID == "ltx-2.5-distilled" }!.downloadVariants.first { $0.id == "distilled-int8-convrot" }!
+        let ltxVAEs = try ltxINT8.request(modelID: "ltx-2.5-distilled", componentKind: "vae")
+        try check(ltxINT8.include.count == 6 && ltxVAEs.include.contains(LibraryRecipe.ltxAudioPin.path) &&
+                  ltxVAEs.include.contains("vae/ltx-2.5-video-vae-conv-bf16.safetensors"),
+                  "LTX AV recipe lost the pinned audio or video decoder")
         guard let zImage = LibraryRecipe.all.first(where: { $0.modelID == "z-image-turbo" }) else {
             throw LibraryFailure(message: "Z-Image recipe missing")
         }

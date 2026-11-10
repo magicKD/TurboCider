@@ -63,6 +63,15 @@ ModelModule ltx_module() {
                                 r.inputs[0].role == "first_frame",
                             "LTX image-to-video requires one first_frame");
                 require(r.fps == 24, "LTX distilled contract requires 24 fps");
+                require(r.ltx_video_vae == "conv" || r.ltx_video_vae == "prunavaed",
+                        "LTX video VAE must be conv or prunavaed");
+                if (r.ltx_video_vae == "prunavaed") {
+                    require(r.allow_approximation,
+                            "PrunaVAED requires allow_approximation=true");
+                    require(!r.streaming_selector && !r.streaming.active() &&
+                                !r.memory_constrained.enabled,
+                            "PrunaVAED is not qualified for public streaming or constrained memory plans");
+                }
                 require(r.residency == "resident" ||
                             r.residency == "component_staged" ||
                             r.residency == "streamed",
@@ -122,10 +131,6 @@ ModelModule ltx_module() {
                     require(stage2_rows <= 16384,
                             "LTX Stage-2 Sol supports at most 16384 video rows");
                 if (r.residency == "streamed") {
-                    require(r.operation == "video.generate",
-                            "LTX block streaming currently supports text-to-video only");
-                    require(!r.audio,
-                            "LTX block streaming currently supports video-only output");
                     require(r.execution != "gpu_ane",
                             "LTX block streaming currently requires GPU execution");
                     require(!r.memory_budget_bytes ||

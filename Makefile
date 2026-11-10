@@ -14,6 +14,7 @@ COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-base-benchmark
 .PHONY: test-tiny-vae test-tiny-vae-metal test-tiny-vae-download
 .PHONY: test-h3-download test-ltx-gemma-quality test-mlx-encoder-quality test-validation-helpers
+.PHONY: test-ltx-convrot
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -45,6 +46,7 @@ help:
 	@echo 'make test-tiny-vae-download      Verify pinned tiny VAE downloads with local fixtures'
 	@echo 'make test-h3-download           Verify H3 resumable downloads and identities without network'
 	@echo 'make test-ltx-gemma-quality      Verify Gemma BF16 metrics (NumPy; no GPU or weights)'
+	@echo 'make test-ltx-convrot            Verify LTX chip policy, resumable downloads and W8A8 GPU math'
 	@echo 'make test-mlx-encoder-quality    Verify H3/Qwen3 metrics on tiny MLX CPU tensors'
 	@echo 'make test-qwen21-runtime-host    Verify fixed-program/QKV/format/prefix/profiling contracts (no inference)'
 	@echo 'make build-runtime-ane-probe      Build optional runtime-weight Core ML component probe (not CLI)'
@@ -58,6 +60,10 @@ help:
 	@echo 'make h3-quant-cache MODEL=/path/to/transformer OUTPUT=/path/to/cache'
 setup:
 	@"$(PYTHON)" tools/setup_dependencies.py
+test-ltx-convrot:
+	@"$(PYTHON)" tests/native/test_ltx_convrot_precision.py
+	@"$(PYTHON)" tests/native/test_ltx_modelscope_ranges.py
+	@"$(PYTHON)" tests/native/test_ltx_w8a8.py
 build-app:
 	@tools/native/build_app.sh
 build:
@@ -153,6 +159,11 @@ test-tiny-vae-metal:
 	@build/native/tiny-preview-test qwen-image-2.1 models/tiny-vae/taeqi2_1.safetensors build/native/tiny-preview-qwen.png
 test-tiny-vae-download:
 	@"$(PYTHON)" -B tests/native/test_tiny_vae_download.py
+.PHONY: test-prunavaed test-prunavaed-download
+test-prunavaed:
+	@"$(PYTHON)" -B tests/native/test_prunavaed.py
+test-prunavaed-download:
+	@"$(PYTHON)" -B tests/native/test_prunavaed_download.py
 # No real model weights, full inference, or system memory pressure in these
 # focused targets. GPU tests may report SKIP when Metal access is unavailable.
 test-streaming-host:
@@ -306,6 +317,7 @@ test-quantized-host:
 test-runtime-ane: test-runtime-ane-host
 	@TURBOCIDER_TEST_RUNTIME_ANE=1 "$(PYTHON)" -B tests/native/test_ane_runtime.py
 test-app:
+	@build/native/turbocider-prunavaed-app-tests
 	@build/native/turbocider-tiny-vae-app-tests
 	@build/native/turbocider-runtime-image-worker-tests
 	@build/native/turbocider-upscaler-tests

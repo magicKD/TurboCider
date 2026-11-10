@@ -5,6 +5,8 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
+#include <cmath>
 #include <mach-o/dyld.h>
 #include <limits.h>
 #include <filesystem>
@@ -51,7 +53,30 @@ static tc_engine *active=nullptr;
 static bool resource_mode=false;
 static volatile std::sig_atomic_t interrupted=0;
 static void stop(int){interrupted=1;}
-static void event(const char*s,void*){if(interrupted){if(resource_mode)tc_coreml_resources_cancel();else tc_engine_cancel(active);}std::cerr<<s<<std::endl;}
+static void event(const char*s,void*) {
+ if(interrupted){if(resource_mode)tc_coreml_resources_cancel();else tc_engine_cancel(active);}
+ // Carry the actual last callback sequence and clock into the disposable
+ // finalizer, so App progress continues through audio decode and AAC mux.
+ const char *exec = std::getenv("TURBOCIDER_LTX_EXEC_FINALIZER");
+ if(s && exec && std::strcmp(exec,"1")==0 && std::strstr(s,"video_vae")) {
+  NSDictionary *value=[NSJSONSerialization JSONObjectWithData:[@(s) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  if([value isKindOfClass:NSDictionary.class] && [value[@"phase"] isEqual:@"video_vae"] &&
+     [value[@"completed"] isEqual:@0] && [value[@"sequence"] isKindOfClass:NSNumber.class] &&
+     [value[@"elapsed_seconds"] isKindOfClass:NSNumber.class]) {
+   const auto sequence=[value[@"sequence"] longLongValue];
+   const double elapsed=[value[@"elapsed_seconds"] doubleValue];
+   const auto now=std::chrono::duration_cast<std::chrono::nanoseconds>(
+       std::chrono::steady_clock::now().time_since_epoch()).count();
+   if(sequence>=0 && sequence<INT64_MAX-32 && std::isfinite(elapsed) &&
+      elapsed>=0 && elapsed<static_cast<double>(now)*1e-9) {
+    const auto origin=now-static_cast<int64_t>(elapsed*1e9);
+    ::setenv("TURBOCIDER_LTX_EVENT_SEQUENCE",std::to_string(sequence).c_str(),1);
+    ::setenv("TURBOCIDER_LTX_EVENT_ORIGIN_NS",std::to_string(origin).c_str(),1);
+   }
+  }
+ }
+ std::cerr<<s<<std::endl;
+}
 static std::string executable_path(const char *fallback) {
  uint32_t size=PATH_MAX;std::vector<char> value(size);
  if(_NSGetExecutablePath(value.data(),&size)!=0){value.resize(size);if(_NSGetExecutablePath(value.data(),&size)!=0)return fallback;}
@@ -69,7 +94,8 @@ static bool ltx_exec_finalizer_plan(NSString *request) {
         [value[@"model"] isEqual:@"ltx-2.5-distilled"]&&
         ([value[@"operation"] isEqual:@"video.generate"]||
          [value[@"operation"] isEqual:@"video.image"])&&
-        [value[@"residency"] isEqual:@"component_staged"];
+        ([value[@"residency"] isEqual:@"component_staged"] ||
+         [value[@"residency"] isEqual:@"streamed"]);
 }
 static void configure_ltx_cli_environment(NSString *request) {
  if(!ltx_exec_finalizer_plan(request))return;
