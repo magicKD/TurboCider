@@ -268,8 +268,9 @@ make the trajectories pixel-paired. A separate 768×768 full-VAE decode took
 87.95 s and reported a 53.10 GB peak process footprint on this device.
 The 768×768 Super and full VAE decodes of that same latent had raw-RGB mean
 SSIM 0.9758. These are single-run results on one 64-GiB M4 Max, not broad
-quality or memory guarantees. App canvases over 512 are therefore experimental
-and require at least 64 GiB unified memory.
+quality or memory guarantees. At the time, App canvases over 512 were limited
+to devices with at least 64 GiB; that hardware gate has since been replaced by
+an advisory warning and does not guarantee success on smaller systems.
 
 The corrected desktop job path was then run with the entire 526-token prompt,
 the same input and seed, and the bundled Super decoder. All measurements are
@@ -292,10 +293,80 @@ effect or establish a reliable quality improvement. The 512×768 run validates
 the independent width/height path, but changes the composition because the
 square source is cropped, so it is not a controlled resolution comparison.
 
-The 768-pixel ceiling is a conservative experimental App constraint, not the
-FastWan training geometry. The official Wan2.2 TI2V-5B example uses 1280×704
-or 704×1280, and the FastWan model card specifies 121×704×1280 training;
-neither geometry has been validated on this Mac in this implementation.
+The App initially used a conservative 768-pixel ceiling, not the FastWan
+training geometry. The official Wan2.2 TI2V-5B example uses 1280×704 or
+704×1280, and the FastWan model card specifies 121×704×1280 training. The
+subsequent high-resolution tests and widened App limits are recorded below.
+
+## Wider desktop canvases
+
+An intermediate desktop build limited the canvas to 128–1280 pixels per
+side, multiples of 32 and 1024×1024 pixels in total; above 512 it also
+required 64 GiB of unified memory, and above 768 it required Super decoding.
+The current experimental build removes those policy caps. The App accepts
+independently entered positive even dimensions subject to the native integer
+geometry bounds. It center-crops the input image to the requested aspect
+ratio, pads the resulting first frame to a multiple-of-32 model canvas by
+replicating its edges, and center-crops the decoded result back to the exact
+requested dimensions without resizing. H.264 export currently requires even
+width and height for exact output geometry. The plan reports both the padded
+decoded shape and requested output shape; the run receipt records the model
+canvas and crop offsets.
+
+The App warns before large or less-qualified runs, including full-VAE decode
+at large sizes and larger runs on systems with less than 64 GiB, but lets the
+user continue. This is not a promise that an arbitrary size will fit memory,
+be accepted by the system video encoder, complete, or produce good quality.
+Videos remain limited to 5–97 frames at 24 fps. Larger canvases and unaligned
+requested sizes fall back to the original RoPE path because the fusion policy
+has not been qualified at those geometries.
+
+The unrestricted bundle was tested on November 10, 2026 through the desktop
+draft, image importer and embedded job store, without GUI-window automation.
+Using FastWan, the bundled Super decoder, the same portrait and 97 frames at
+24 fps, a 720×1280 request completed in 95.68 s on the M4 Max/64 GiB. The
+receipt records an internal 736×1280 model canvas and an 8-pixel crop on each
+side; ffprobe confirmed the exported H.264 MP4 is exactly 720×1280 with 97
+frames. One inspected middle frame showed no obvious padding bars. A 512×512
+regression completed in 17.87 s, and its compressed-video YUV SSIM against
+the preceding desktop build was 1.0 for this input, prompt and seed. A
+518×514, 5-frame test also completed for both the three-step FastWan and
+four-step quanhaol checkpoints, with a 544×544 model canvas and exact
+518×514 exported geometry. These single runs validate the output path, not
+portrait identity consistency, performance across devices, or successful
+generation at every accepted size.
+
+On the M4 Max/64 GiB, one portrait, seed 201748011, 526 text tokens, 97
+frames, Super decode and pure GPU, the following fresh-process runs were
+observed. Probe wall times include text, model loads, inference, MP4 and
+diagnostic exports; the desktop job includes import/job handling and MP4.
+They are individual measurements, not medians or cross-model speed guarantees.
+
+| Model and canvas | Path | Wall time | Sampled process footprint |
+| --- | --- | ---: | ---: |
+| FastWan 896×896 | native probe | 75.53 s | 19.83 GB |
+| FastWan 1280×704 | native probe | 89.24 s | 22.19 GB |
+| FastWan 1024×1024 | embedded desktop job | 113.24 s | not sampled |
+| quanhaol 1024×1024 | native probe | 148.51 s | 25.18 GB |
+| quanhaol 1280×704 | embedded desktop job | 119.52 s | not sampled |
+
+The 1024 FastWan desktop job used the packaged Super resource, completed all
+97 frames, and reported the expected original-RoPE fallback; it exercised
+`StudioState` and `NativeJobStore`, not graphical-window automation. The
+quanhaol 1280×704 desktop job likewise used the bundled Super decoder and
+completed all 97 frames with the original-RoPE fallback. The
+quanhaol high-resolution probe may have overlapped part of an App build.
+Sampled process footprints are not total system peaks or universal bounds.
+The new desktop package also reran both variants at 512×512 in **18.93 s**
+and **23.20 s**, respectively. Each matched its prior packaged 512 output at
+compressed-video YUV SSIM All **1.0** for the checked prompt and seed; this
+is a regression check, not a general quality score.
+Both 1024 square samples produced clearer faces than the smaller samples but
+still changed identity and occasionally hand/sword geometry. The 1280×704
+test center-cropped the original square portrait and also showed face drift,
+so it is not a controlled square-resolution comparison. These results use
+one portrait and one seed; 704×1280 and other permitted shapes have request
+contract coverage but have not each been run end-to-end.
 
 ## Matched FastVideo MLX DiT follow-up
 

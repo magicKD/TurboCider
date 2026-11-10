@@ -992,11 +992,22 @@ struct StudioView: View {
                 HStack { ForEach(studio.draft.isWan22Video ? [256, 512, 640, 768] : [256, 512, 768, 1024], id: \.self) { size in
                     Button("\(size)") { studio.draft.width = size; studio.draft.height = size }
                         .font(.caption).disabled((qwenCanvasLocked && size != 512) ||
-                            (studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" && size > 512) ||
-                            (studio.draft.isWan22Video && size > 512 && ProcessInfo.processInfo.physicalMemory < (64 * 1024 * 1024 * 1024)))
+                            (studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" && size > 512))
                 } }
                 if studio.draft.isWan22Video {
-                    Text("支持宽高分别输入 128–768 的 32 倍数；超过 512 需要至少 64 GiB 统一内存。高分辨率不保证人物一致性。")
+                    HStack {
+                        Button("896×896") { studio.draft.width = 896; studio.draft.height = 896 }
+                        Button("1024×1024") { studio.draft.width = 1024; studio.draft.height = 1024 }
+                        Menu("横屏 / 竖屏") {
+                            Button("1280×720 横屏") { studio.draft.width = 1280; studio.draft.height = 720 }
+                            Button("720×1280 竖屏") { studio.draft.width = 720; studio.draft.height = 1280 }
+                            Button("1280×704 横屏") { studio.draft.width = 1280; studio.draft.height = 704 }
+                            Button("704×1280 竖屏") { studio.draft.width = 704; studio.draft.height = 1280 }
+                            Button("1024×576 横屏") { studio.draft.width = 1024; studio.draft.height = 576 }
+                            Button("576×1024 竖屏") { studio.draft.width = 576; studio.draft.height = 1024 }
+                        }.accessibilityIdentifier("wan22CanvasPresets")
+                    }.font(.caption)
+                    Text("可自由输入正偶数宽高。内部向上补边到 32 的倍数，解码后裁回输入尺寸，不缩放视频；首帧按画幅比例中心裁剪。大画幅可能很慢或耗尽内存，高分辨率不保证人物一致性。")
                         .font(.caption2).foregroundStyle(.secondary)
                     if (studio.draft.width > 512 || studio.draft.height > 512) && studio.draft.wan22TinyVAEDecoder == "original" {
                         Text("高分辨率完整 VAE 可能占用大量内存；请关闭其他重负载应用，或使用默认 Super 解码。")
@@ -1725,6 +1736,14 @@ struct StudioView: View {
         guard !store.busy, !api.running, !api.changing, !submitting, !studio.imageInputsBusy else { return }
         if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
+        if let risk = snapshot.wan22ResolutionRisk {
+            let alert = NSAlert()
+            alert.messageText = "大画幅生成提示"
+            alert.informativeText = risk
+            alert.addButton(withTitle: "继续生成")
+            alert.addButton(withTitle: "取消")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         if snapshot.upscaleAfterGeneration && studio.creationKind != "video" && snapshot.modelID != "seedvr2-3b" {
             do { try ImageUpscaler.validateModelURL(URL(fileURLWithPath: snapshot.upscaleModelPath)) }
             catch { studio.message = error.localizedDescription; return }

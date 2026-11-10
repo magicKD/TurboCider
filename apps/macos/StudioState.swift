@@ -323,6 +323,19 @@ struct StudioDraft: Codable, Sendable {
         ["wan2.2-ti2v-5b-fastwan", "wan2.2-ti2v-5b-quanhaol"].contains(modelID)
     }
     var wan22FixedSteps: Int { modelID == "wan2.2-ti2v-5b-quanhaol" ? 4 : 3 }
+    var wan22ResolutionRisk: String? {
+        guard isWan22Video, width > 0, height > 0 else { return nil }
+        let large = width > 1280 || height > 1280 || Double(width) * Double(height) > 1024 * 1024
+        let lowMemory = (width > 512 || height > 512) &&
+            ProcessInfo.processInfo.physicalMemory < (64 * 1024 * 1024 * 1024)
+        let fullVAE = (width > 768 || height > 768) && wan22TinyVAEDecoder == "original"
+        guard large || lowMemory || fullVAE else { return nil }
+        var reasons: [String] = []
+        if large { reasons.append("该画幅超出目前已实测的范围") }
+        if lowMemory { reasons.append("该设备的统一内存低于已测试的 64 GiB") }
+        if fullVAE { reasons.append("大画幅完整 VAE 解码可能需要更多内存") }
+        return reasons.joined(separator: "；") + "。生成可能很慢、失败或耗尽内存。"
+    }
     mutating func reuseWan22SiblingInstallation() {
         guard isWan22Video, modelPaths[modelID, default: ""].isEmpty else { return }
         let sibling = modelID == "wan2.2-ti2v-5b-quanhaol" ? "wan2.2-ti2v-5b-fastwan" : "wan2.2-ti2v-5b-quanhaol"
@@ -837,11 +850,19 @@ struct StudioDraft: Codable, Sendable {
         guard modelID == "seedvr2-3b" || !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         if let issue = runtimeANEIssue { throw NativeFailure(message: issue) }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
-        // Bound user-entered integers before any model-specific token/latent
-        // arithmetic, including LTX's Stage-2 row product below.
-        let maxDimension = modelID == "qwen-image-2.1" ? 4096 : 2048
-        let dimensionMultiple = modelID == "qwen-image-2.1" ? 32 : 16
-        guard (64...maxDimension).contains(width), (64...maxDimension).contains(height), width % dimensionMultiple == 0, height % dimensionMultiple == 0 else { throw NativeFailure(message: "宽高需为 64–\(maxDimension) 之间的 \(dimensionMultiple) 倍数。") }
+        // Wan accepts any even output dimensions within the integer bounds of
+        // its padded model canvas. Other models retain their existing limits.
+        if isWan22Video {
+            let maxAlignedInput = Int(Int32.max) - 31
+            guard width > 0, height > 0, width % 2 == 0, height % 2 == 0,
+                  width <= maxAlignedInput, height <= maxAlignedInput else {
+                throw NativeFailure(message: "Wan2.2 输出宽高必须为正偶数，并处于内部整数范围内。")
+            }
+        } else {
+            let maxDimension = modelID == "qwen-image-2.1" ? 4096 : 2048
+            let dimensionMultiple = modelID == "qwen-image-2.1" ? 32 : 16
+            guard (64...maxDimension).contains(width), (64...maxDimension).contains(height), width % dimensionMultiple == 0, height % dimensionMultiple == 0 else { throw NativeFailure(message: "宽高需为 64–\(maxDimension) 之间的 \(dimensionMultiple) 倍数。") }
+        }
         guard frames >= 1 && frames <= 362 else { throw NativeFailure(message: "帧数超出支持范围。") }
         if modelID == "ltx-video-0.9.8-distilled" {
             let outputWidth = steps == 10 ? 2 * (Int(Double(width) * 0.6666666) / 32 * 32) : width
@@ -864,13 +885,14 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         if isWan22Video {
-            guard width >= 128, height >= 128, width <= 768, height <= 768,
-                  width % 32 == 0, height % 32 == 0, (5...97).contains(frames), frames % 4 == 1,
+            guard (5...97).contains(frames), frames % 4 == 1,
                   fps == 24, steps == wan22FixedSteps, strength == 1 else {
-                throw NativeFailure(message: "Wan2.2 实验版使用 128–768 的 32 倍数画布、5–97 帧（4n+1）、24 fps、固定 \(wan22FixedSteps) 步和首帧强度 1。")
+                throw NativeFailure(message: "Wan2.2 支持 5–97 帧（4n+1）、24 fps、固定 \(wan22FixedSteps) 步和首帧强度 1。")
             }
-            guard (width <= 512 && height <= 512) || ProcessInfo.processInfo.physicalMemory >= (64 * 1024 * 1024 * 1024) else {
-                throw NativeFailure(message: "Wan2.2 超过 512 的画布目前仅在 64 GiB 或更大统一内存设备上开放；完整 VAE 更占内存。")
+            let spatialTokens = Int64((width + 31) / 32) * Int64((height + 31) / 32)
+            let latentFrames = (frames - 1) / 4 + 1
+            guard spatialTokens <= Int64(Int32.max) / Int64(max(4, latentFrames)) else {
+                throw NativeFailure(message: "Wan2.2 内部画布的 token 数超过整数计算范围，请降低分辨率。")
             }
             guard (acceleration?.policy ?? "gpu") == "gpu", residency == "resident", profilePath.isEmpty,
                   activeLoRAs.isEmpty, !audio else {

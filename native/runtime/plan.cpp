@@ -5,6 +5,7 @@
 #include "../models/qwen21/memory_policy.hpp"
 #include "../models/qwen21/native_route.hpp"
 #include "../models/wan22/identifiers.hpp"
+#include "../models/wan22/geometry.hpp"
 #include <set>
 #include <cmath>
 #include <algorithm>
@@ -135,9 +136,11 @@ static ExecutionPlan make_plan_impl(
         r.lora_strategy = lora_strategy;
     auto recipe = model_recipe(r.model);
     validate_recipe(recipe);
-    const int max_dimension = r.model == "qwen-image-2.1" ? 4096 : 2048;
-    require(r.width >= 64 && r.height >= 64 && r.width <= max_dimension && r.height <= max_dimension,
-            "dimensions must be 64..." + std::to_string(max_dimension));
+    if (!wan22::is_model(r.model)) {
+        const int max_dimension = r.model == "qwen-image-2.1" ? 4096 : 2048;
+        require(r.width >= 64 && r.height >= 64 && r.width <= max_dimension && r.height <= max_dimension,
+                "dimensions must be 64..." + std::to_string(max_dimension));
+    }
     require(r.steps >= 1 && r.steps <= 50, "steps must be 1...50");
     require(r.execution == "gpu" || r.execution == "auto" || r.execution == "gpu_ane",
             "unknown execution mode");
@@ -272,7 +275,10 @@ static ExecutionPlan make_plan_impl(
     else if (wan22::is_model(r.model)) {
         // Conservative heuristic only. The 512x512x97 native component run
         // peaked around 44 GiB process footprint without text encoding.
-        plan.memory_estimate_bytes = (38ull << 30) + uint64_t(r.width) * r.height * r.frames * 384 +
+        // Model validation has already checked the aligned canvas and all
+        // integer products; count padding rather than just the output crop.
+        const auto canvas = *wan22::canvas_geometry(r.width, r.height, r.frames);
+        plan.memory_estimate_bytes = (38ull << 30) + uint64_t(canvas.width) * canvas.height * r.frames * 384 +
             (device_info().physical_memory >= (64ull << 30) ? (384ull << 20) : 0ull);
     }
     else if (r.model == "seedvr2-3b")

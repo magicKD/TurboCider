@@ -6,6 +6,7 @@
 #include "../../models/wan22/pipeline.hpp"
 #include "../../models/wan22/text.hpp"
 #include "../../models/wan22/identifiers.hpp"
+#include "../../models/wan22/geometry.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -14,6 +15,25 @@
 
 namespace tc {
 namespace {
+
+Tensor pad_first_frame_edges(const Tensor &image, const wan22::CanvasGeometry &canvas) {
+    auto padded = image;
+    if (canvas.left || canvas.right) {
+        std::vector<Tensor> columns;
+        if (canvas.left) columns.push_back(mx::repeat(slice_axis(padded, 4, 0, 1), canvas.left, 4));
+        columns.push_back(padded);
+        if (canvas.right) columns.push_back(mx::repeat(slice_axis(padded, 4, padded.shape(4) - 1, padded.shape(4)), canvas.right, 4));
+        padded = mx::concatenate(columns, 4);
+    }
+    if (canvas.top || canvas.bottom) {
+        std::vector<Tensor> rows;
+        if (canvas.top) rows.push_back(mx::repeat(slice_axis(padded, 3, 0, 1), canvas.top, 3));
+        rows.push_back(padded);
+        if (canvas.bottom) rows.push_back(mx::repeat(slice_axis(padded, 3, padded.shape(3) - 1, padded.shape(3)), canvas.bottom, 3));
+        padded = mx::concatenate(rows, 3);
+    }
+    return padded;
+}
 
 class Wan22Session final : public ModelSession {
     std::filesystem::path root_;
@@ -45,6 +65,7 @@ class Wan22Session final : public ModelSession {
     RunResult generate(const Request &request, const Event &event, std::atomic<bool> &cancelled) override {
         require(request.model == model_id_, "request model differs from Wan2.2 session");
         const auto plan = make_plan(request);
+        const auto canvas = *wan22::canvas_geometry(request.width, request.height, request.frames);
         require(!request.output.empty() && std::filesystem::path(request.output).extension() == ".mp4",
                 "Wan2.2 output must be an .mp4 file");
         require(std::filesystem::is_regular_file(request.inputs[0].path), "Wan2.2 first-frame image is missing");
@@ -77,6 +98,7 @@ class Wan22Session final : public ModelSession {
             const double text_seconds = std::chrono::duration<double>(Clock::now() - text_started).count();
             auto image = load_image_center_crop_tensor(request.inputs[0].path, request.width, request.height);
             image = mx::astype(mx::expand_dims(mx::transpose(image, {0, 3, 1, 2}), 2), mx::bfloat16);
+            image = pad_first_frame_edges(image, canvas);
             mx::eval(image);
             const char *transformer = quanhaol_ ? "diffusion_models/quanhaol_wan22_ti2v_5b_turbo_fp16.safetensors" :
                                                   "diffusion_models/fastwan2.2_ti2v_5b_fullattn.safetensors";
@@ -94,9 +116,13 @@ class Wan22Session final : public ModelSession {
             const bool tiny_decoder = request.tiny_vae && request.tiny_vae->decoder == "tiny";
             if (tiny_decoder) options.tiny_decoder_checkpoint = request.tiny_vae->path;
             auto result = pipeline.generate(image, *cached_text_, options, event, cancelled);
-            require(result.pixels.shape() == mx::Shape{1, 3, request.frames, request.height, request.width} &&
+            require(result.pixels.shape() == mx::Shape{1, 3, request.frames, canvas.height, canvas.width} &&
                         mx::all(mx::isfinite(result.pixels)).item<bool>(), "Wan2.2 decoder produced invalid pixels");
-            auto rgb = mx::squeeze(mx::transpose(mx::astype(result.pixels, mx::float32), {0, 2, 3, 4, 1}), 0);
+            auto pixels = result.pixels;
+            if (canvas.left || canvas.top || canvas.right || canvas.bottom)
+                pixels = mx::slice(pixels, {0, 0, 0, canvas.top, canvas.left},
+                                   {1, 3, request.frames, canvas.top + request.height, canvas.left + request.width});
+            auto rgb = mx::squeeze(mx::transpose(mx::astype(pixels, mx::float32), {0, 2, 3, 4, 1}), 0);
             rgb = mx::astype(mx::round(mx::clip((rgb + 1.f) * 127.5f, Tensor(0.f), Tensor(255.f))), mx::uint8);
             rgb = mx::contiguous(rgb);
             mx::eval(rgb);
@@ -115,6 +141,9 @@ class Wan22Session final : public ModelSession {
                 @"schema_version":@1, @"model":@(request.model.c_str()), @"operation":@"video.image",
                 @"output":@(destination.c_str()), @"width":@(info.width), @"height":@(info.height),
                 @"frames":@(info.frames), @"fps":@(info.fps), @"seed":@(request.seed), @"steps":@(quanhaol_ ? 4 : 3),
+                @"model_canvas":@{@"width":@(canvas.width), @"height":@(canvas.height)},
+                @"output_crop":@{@"left":@(canvas.left), @"top":@(canvas.top),
+                                  @"right":@(canvas.right), @"bottom":@(canvas.bottom)},
                 @"actual_denoise_steps":@(quanhaol_ ? 4 : 3), @"first_frame_strength":@1.0,
                 @"scheduler":quanhaol_ ? @"quanhaol-dmd-shift8-bf16" : @"fastvideo-mlx-dmd-shift5-warped", @"execution":@"gpu",
                 @"runtime_backend":@"wan22-mlx-metal", @"runtime_dependency":@"native",

@@ -79,6 +79,35 @@ import ImageIO
         try check(wan.isWan22Video && wan.wan22FixedSteps == 4 && quanhaolConfig?.path == superWeights.path,
                   "quanhaol must use the four-step Wan route and Super decoding")
         wan.modelID = "wan2.2-ti2v-5b-fastwan"
+        wan.operation = "video.image"
+        wan.steps = 3; wan.frames = 97; wan.fps = 24; wan.strength = 1
+        let wanImage = StudioAsset(path: superWeights.path, name: "input fixture", width: 512, height: 512)
+        wan.assets = [wanImage]; wan.initImageID = wanImage.id
+        let wanDescriptor = StudioModel(id: wan.modelID, name: "Wan fixture", executor: true, output: "video",
+            operations: ["video.image"], default_steps: 3, default_frames: 97, default_width: 512, default_height: 512)
+        for decoder in ["tiny", "original"] {
+            wan.wan22TinyVAEDecoder = decoder
+            for (width, height) in [(896, 896), (1024, 1024), (1280, 720), (720, 1280),
+                                    (1536, 1024), (2560, 1440), (68, 66)] {
+                wan.width = width; wan.height = height
+                try wan.validate(model: wanDescriptor)
+            }
+        }
+        wan.width = 2560; wan.height = 1440
+        try check(wan.wan22ResolutionRisk != nil, "large full-VAE canvas should show a warning")
+        for (width, height) in [(0, 512), (511, 512), (512, 513), (2_147_483_618, 512),
+                                (1_000_000, 1_000_000)] {
+            wan.width = width; wan.height = height
+            var rejected = false
+            do { try wan.validate(model: wanDescriptor) } catch { rejected = true }
+            try check(rejected, "Wan accepted invalid or overflowing canvas \(width)x\(height)")
+        }
+        wan.width = 512; wan.height = 512; wan.frames = 96
+        var rejectedFrames = false
+        do { try wan.validate(model: wanDescriptor) } catch { rejectedFrames = true }
+        try check(rejectedFrames, "Wan accepted an invalid frame count")
+        wan.frames = 97; wan.wan22TinyVAEDecoder = "tiny"
+        wan.width = 512; wan.height = 512
         let resources = temporary.appendingPathComponent("resources/tiny-vae")
         try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
         let bundledSuper = resources.appendingPathComponent("taew2_2_super.safetensors")

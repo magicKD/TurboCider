@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <limits>
 #include <string>
 #include <stdexcept>
 #include <thread>
@@ -47,6 +48,11 @@ void write_video_rgb24(const std::filesystem::path& output,
                        int fps) {
     require_status(frames && frame_count > 0 && width > 0 && height > 0 && fps > 0,
                    "invalid video export geometry");
+    const uint64_t pixel_count = uint64_t(width) * uint64_t(height);
+    require_status(pixel_count <= uint64_t(std::numeric_limits<int64_t>::max()) / uint64_t(fps) &&
+                   pixel_count <= std::numeric_limits<size_t>::max() / 3 / size_t(frame_count),
+                   "video export geometry exceeds integer bounds");
+    const int64_t bitrate = std::max<int64_t>(1000000, int64_t(pixel_count * uint64_t(fps) / 2));
     if (!output.parent_path().empty())
         std::filesystem::create_directories(output.parent_path());
     std::filesystem::path temporary_path;
@@ -67,7 +73,7 @@ void write_video_rgb24(const std::filesystem::path& output,
             AVVideoWidthKey: @(width),
             AVVideoHeightKey: @(height),
             AVVideoCompressionPropertiesKey: @{
-                AVVideoAverageBitRateKey: @(std::max(1000000, width * height * fps / 2)),
+                AVVideoAverageBitRateKey: @(bitrate),
                 AVVideoAllowFrameReorderingKey: @NO,
             },
         };

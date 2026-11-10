@@ -7,6 +7,7 @@
 #include "../../models/qwen21/viggle_adapter.hpp"
 #include "../../models/qwen21/dmd2_adapter.hpp"
 #include "../../models/wan22/identifiers.hpp"
+#include "../../models/wan22/geometry.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
@@ -544,6 +545,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "ltx-video-0.9.8-distilled" && r.steps == 10) {
         dw = 2 * (int(double(r.width) * .6666666) / 32 * 32);
         dh = 2 * (int(double(r.height) * .6666666) / 32 * 32);
+    } else if (wan22::is_model(r.model)) {
+        const auto canvas = *wan22::canvas_geometry(r.width, r.height, r.frames);
+        dw = canvas.width;
+        dh = canvas.height;
     }
     NSMutableArray *stages = [NSMutableArray array];
     for (auto &s : recipe.stages) {
@@ -853,6 +858,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                                     @(r.ltx098_resize_to_base ? r.height : dh), @(r.frames)];
         report[@"ltx098_resize_to_base"] = @(r.ltx098_resize_to_base);
     }
+    if (wan22::is_model(r.model))
+        report[@"output_shape"] = @[@(r.width), @(r.height), @(r.frames)];
     if (r.model == "qwen-image-2.1") {
         NSMutableArray *blocks = [NSMutableArray array];
         const auto precision = qwen21::staged_quantized_precision(

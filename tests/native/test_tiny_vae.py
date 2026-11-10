@@ -93,26 +93,39 @@ class TinyVAEContracts(unittest.TestCase):
         request["tiny_vae"]["encoder"] = "tiny"
         self.assertNotEqual(self.call(request)[0], 0)
 
-    def test_wan22_extended_resolution_has_geometry_and_memory_guards(self):
+    def test_wan22_even_resolution_is_padded_and_has_integer_guards(self):
         request = dict(model="wan2.2-ti2v-5b-fastwan", operation="video.image", prompt="test",
                        width=768, height=768, steps=3, frames=97, fps=24, audio=False,
                        output=str(self.path.parent / "out.mp4"), execution="gpu", residency="resident",
                        inputs=[dict(kind="image", role="first_frame", path=str(self.path), strength=1)])
-        self.lib.tc_system_json.restype = C.c_void_p
-        pointer = C.c_void_p(self.lib.tc_system_json())
-        try:
-            system = json.loads(C.string_at(pointer).decode())
-        finally:
-            self.lib.tc_string_free(pointer)
-        code, _, error = self.call(request)
-        if system["physical_memory_bytes"] >= (64 << 30):
-            self.assertEqual(code, 0, error)
-        else:
-            self.assertNotEqual(code, 0)
-            self.assertIn("64 GiB", error)
-        request["width"] = 800
-        self.assertNotEqual(self.call(request)[0], 0)
-        request["width"], request["height"] = 736, 510
+        for model, steps in (("wan2.2-ti2v-5b-fastwan", 3), ("wan2.2-ti2v-5b-quanhaol", 4)):
+            request.update(model=model, steps=steps)
+            for width, height in ((800, 768), (896, 896), (1024, 1024), (1280, 720),
+                                  (720, 1280), (1536, 1024), (2560, 1440), (68, 66)):
+                with self.subTest(model=model, width=width, height=height):
+                    request["width"], request["height"] = width, height
+                    code, result, error = self.call(request)
+                    self.assertEqual(code, 0, error)  # Includes full VAE, not a runtime guarantee.
+                    plan = json.loads(result)
+                    self.assertEqual(plan["requested_shape"], [width, height, 97])
+                    self.assertEqual(plan["decoded_shape"], [(width + 31) // 32 * 32, (height + 31) // 32 * 32, 97])
+                    self.assertEqual(plan["output_shape"], [width, height, 97])
+        request["tiny_vae"] = dict(path=str(self.path), encoder="original", decoder="tiny", preview=False)
+        request["allow_approximation"] = True
+        request.update(width=2560, height=1440)
+        self.assertEqual(self.call(request)[0], 0)
+        request.update(width=1280, height=720)
+        _, padded_result, _ = self.call(request)
+        request["height"] = 736
+        _, aligned_result, _ = self.call(request)
+        self.assertEqual(json.loads(padded_result)["memory_estimate_bytes"],
+                         json.loads(aligned_result)["memory_estimate_bytes"])
+        for width, height in ((0, 512), (511, 512), (512, 513), (2_147_483_618, 512),
+                              (1_000_000, 1_000_000), (2_147_483_648, 512)):
+            with self.subTest(width=width, height=height):
+                request["width"], request["height"] = width, height
+                self.assertNotEqual(self.call(request)[0], 0)
+        request.update(width=512, height=512, frames=96)
         self.assertNotEqual(self.call(request)[0], 0)
 
     def test_quanhaol_has_a_separate_four_step_contract(self):

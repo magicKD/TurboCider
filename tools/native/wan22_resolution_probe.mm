@@ -30,11 +30,15 @@ int main(int argc, char **argv) {
                 else if (std::string(argv[i]) == "fused-rope") fused_rope = true;
                 else tc::require(false, "invalid experimental probe option");
             }
-            tc::require(width >= 128 && height >= 128 && width <= 768 && height <= 768 &&
+            tc::require(width >= 128 && height >= 128 && width <= 1280 && height <= 1280 &&
+                            int64_t(width) * int64_t(height) <= int64_t(1024 * 1024) &&
                             width % 32 == 0 && height % 32 == 0 &&
                             (decoder == "super" || decoder == "full") &&
                             (variant == "fastwan" || variant == "quanhaol") && !std::filesystem::exists(output),
                         "invalid test canvas, decoder or existing output directory");
+            if (width > 768 || height > 768)
+                tc::require(decoder == "super" && NSProcessInfo.processInfo.physicalMemory >= (64ull << 30),
+                            "larger diagnostic canvases require Super and at least 64 GiB unified memory");
             NSData *data = [NSData dataWithContentsOfFile:@(argv[2])];
             id jobs = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
             tc::require([jobs isKindOfClass:NSArray.class] && [jobs count] > 0, "invalid jobs JSON");

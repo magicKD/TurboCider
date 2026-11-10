@@ -103,6 +103,21 @@ import Foundation
                   result["video_decoder"] as? String == (useSuper ? "taew2_2_super" : "wan2.2_vae") &&
                   result["model"] as? String == modelID && result["operation"] as? String == "video.image",
                   "Desktop embedded Wan2.2 generation did not succeed")
+        let internalWidth = (width + 31) / 32 * 32, internalHeight = (height + 31) / 32 * 32
+        guard let canvas = result["model_canvas"] as? [String: Int],
+              let crop = result["output_crop"] as? [String: Int],
+              let plan = result["plan"] as? [String: Any] else {
+            throw NativeFailure(message: "Desktop job omitted model-canvas or output-crop metadata")
+        }
+        try check(canvas["width"] == internalWidth && canvas["height"] == internalHeight &&
+                  crop["left"] == (internalWidth - width) / 2 &&
+                  crop["right"] == internalWidth - width - (internalWidth - width) / 2 &&
+                  crop["top"] == (internalHeight - height) / 2 &&
+                  crop["bottom"] == internalHeight - height - (internalHeight - height) / 2 &&
+                  plan["requested_shape"] as? [Int] == [width, height, frames] &&
+                  plan["decoded_shape"] as? [Int] == [internalWidth, internalHeight, frames] &&
+                  plan["output_shape"] as? [Int] == [width, height, frames],
+                  "Desktop job reported incorrect padded or cropped geometry")
         guard let stages = result["stage_seconds"] as? [String: Any],
               let combined = stages["transformer_load_and_denoise"] as? Double,
               let load = stages["transformer_weight_load"] as? Double,
