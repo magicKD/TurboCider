@@ -2,7 +2,7 @@
 
 产品选路和已完成跑分只维护在[加速状态](../../docs/status/acceleration.md)，
 模型计算与生命周期约束见[后端说明](../../native/backends/README.md)。
-本页只整理GPU/ANE相关工具，不改变本目录其他验证入口。
+本页整理 Runtime GPU/ANE 与 SeedVR2 验证入口；其他专项工具保留各自的说明。
 
 ## 代码职责
 
@@ -32,7 +32,7 @@ Qwen原LoRA编辑首步缓存对照用 `--prefill-code-cache-bytes <budget>
 不把预算标记或ineligible误当未执行，也不追认memory fallback为混合。
 完整边界见[首步cache筛选](../../docs/status/local512-qwen-prefill-weight-cache-2026-10-10.md)。
 
-新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。
+新增同类 Runtime ANE 验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。
 screen现有helper重导出和switch兼容接口保留，避免破坏已保存的复核脚本。
 Private W8A8 初筛使用 `--runtime-backend private --private-gpu-io
 --private-data-path w8a8`；tool 明确设置已清理的私有环境，并校验实际
@@ -61,12 +61,39 @@ planned与actual 1024 LoRA标记、实际尺寸/步数/未合并binding，不把
 placement保留历史文件名和冻结图 `--blocks` 接口；runtime只有一个共享图，
 不是每层一个图，且不接受 `--blocks`。不要仅为命名统一移动这些入口。
 
+## SeedVR2 文件证据与实验入口
+
+`seedvr2_evidence.py` 只提供文件 SHA-256 和 JSON 报告写入，不加载模型或
+启动服务。需要这两项功能的脚本直接从这里导入；原
+`seedvr2_framework_screen` 和 `seedvr2_hybrid_screen` 的同名入口继续保留，
+兼容已有复核脚本。
+
+- `seedvr2_framework_screen.py`：完整请求观察，包含媒体导入、VAE、采样和导出；
+  单次观察不等于配对性能资格。
+- `seedvr2_hybrid_screen.py`：等待前序 cohort 完成后执行独立组件筛选；
+  组件结果不等于完整请求或 App 资格。
+- `seedvr2_*_cohort.py`、`seedvr2_*_screen.py`：按各自文档执行来源绑定、
+  质量或性能检查，不能仅因共享报告写入函数就合并它们的验收条件。
+
+共享写入保留既有 JSON 诊断格式、临时文件替换和错误传播。
+`seedvr2_vae_cohort.py` 的严格非有限值拒绝策略单独维护，不由此 helper 替代。
+文件 I/O 的无模型回归可从仓库根运行：
+
+```sh
+python3 -B tests/native/test_seedvr2_evidence.py
+```
+
+该测试不验证图片质量、张量精度、模型速度或设备执行。实际实验仍需各脚本
+要求的本地依赖、权重和设备；历史记录见
+[SeedVR2 实验归档](../../docs/experiments/seedvr2/README.md)。
+
 ## 可复用工具与一次性实验分开
 
 - 产品CLI不启动这些Python工具。导出在 `tools/coreml/`，组件probe在
   `tools/native/`，对应回归在 `tests/native/`。
 - 一次性campaign driver、请求、日志、PNG和编译图留在被忽略的
-  `outputs/`、`results/`；稳定结论进入 `docs/status/`，便携请求进入
+  `outputs/`、`results/`；实验结论进入 `docs/experiments/<topic>/`，实现检查点进入
+  `docs/status/`，便携请求进入
   `examples/requests/`。不把实验的机器路径复制进产品代码或示例。
 - 保留失败候选的报告与有用回归，不把已撤回优化重新加成产品开关。
 - LoRA不得合入base权重、Core ML artifact或runtime slots；不要为了

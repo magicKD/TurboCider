@@ -4,7 +4,6 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
-import sys
 
 from flux9_bf16_framework_screen import generation, check_generations, write_json
 from runtime_ane_common import sha256_file

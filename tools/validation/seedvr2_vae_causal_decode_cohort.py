@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 import statistics
 import subprocess
-from seedvr2_framework_screen import sha256,write_json
+from seedvr2_evidence import sha256,write_json
 from seedvr2_spatial_decode_screen import validate_causal_bank,validate_upscale_causal_bank,CHECKPOINT_SHA
 from export_seedvr2_ffn import tree_identity
 

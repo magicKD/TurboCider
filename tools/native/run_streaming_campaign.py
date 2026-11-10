@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import ctypes as c
-import hashlib
 import json
 import os
 import platform
@@ -35,6 +34,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from streaming_evidence import canonical_json, sha256_bytes, sha256_file
 
 from streaming_source_verification import verify_native_sources
 
@@ -94,24 +95,6 @@ ARTIFACT_CANONICALIZERS = {
 
 class CampaignError(RuntimeError):
     pass
-
-
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode()
-
-
-def sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def read_object(path: Path, label: str) -> dict[str, Any]:

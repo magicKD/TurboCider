@@ -18,6 +18,27 @@ Z-Image 性能分析必须先读取 `z-image-performance-ledger-2026-09-23.json`
 
 新增摘要使用仓库相对路径或明确的路径占位符，避免携带本机用户名、绝对工作目录或私人输入。现有 JSON 报告中的本机工作目录、模型目录、编译诊断路径和 Xcode SDK 路径已归一化；数值、版本、哈希及失败记录保持不变。报告不是可直接执行的运行配置。
 
+## 本次检出中缺失的历史材料
+
+2026-11-07 检查以下四份设计文档时，发现 9 处相对链接指向下列 8 个
+当前检出未包含的历史文件。原路径保留在表中，相关链接改指本节，避免把缺失
+证据展示为可读取的附件；这份清单不表示其余历史证据都完整。
+
+| 原仓库路径 | 引用页面 | 材料范围 |
+| --- | --- | --- |
+| `docs/design/standalone-project.md` | [C++ 引擎设计](../native-cpp-engine.md) | 早期独立运行设计 |
+| `docs/design/validation/cpp-engine-refactor.json` | [C++ 引擎设计](../native-cpp-engine.md) | 原版本、ABBA、功能与首次加载记录 |
+| `docs/design/parallel-acceleration.svg` | [GPU/ANE 并行化](../parallel-acceleration.md) | 原执行图示 |
+| `docs/design/validation/task-aware-acceleration.json` | [任务路由](../task-aware-acceleration.md) | 原路由性能与验收机器记录 |
+| `docs/design/validation/z-image-gguf-streaming-2026-09-09.json` | [量化与 streaming 对照](../quantized-streaming-vpipe-comparison.md) | 原 GGUF 质量、性能和内存记录 |
+| `docs/design/validation/h3-ssd-pinned-prefix-dit-2026-09-08.json` | [量化与 streaming 对照](../quantized-streaming-vpipe-comparison.md) | H3 fresh DiT probe |
+| `docs/design/validation/h3-ssd-pinned-prefix-retained-2026-09-08.json` | [量化与 streaming 对照](../quantized-streaming-vpipe-comparison.md) | H3 retained DiT probe |
+| `docs/design/z-image-gguf.md` | [量化与 streaming 对照](../quantized-streaming-vpipe-comparison.md) | 旧 GGUF 总结 |
+
+这些页面的数值、负面结果、命令和来源叙述继续保留。缺少原始文件的结论不能
+仅凭当前仓库独立复核，也不能作为当前版本的通过证明。本次整理没有恢复、
+重建或用新数据覆盖这些文件；若找到原件，应先核验来源与版本再恢复引用。
+
 ## 路径占位符
 
 | 占位符 | 含义 |
@@ -40,7 +61,7 @@ Z-Image 性能分析必须先读取 `z-image-performance-ledger-2026-09-23.json`
 
 `.gitignore` 不会自动停止跟踪已经提交的文件；如未来误提交原始产物，需要另外从 Git 索引移除，并保留本地文件。
 
-- `cpp-engine-refactor.json`：C++ 边界重构的完整版本对照、首次 Core ML 加载异常、ABBA App 性能和功能回归记录；不含本机绝对路径。
+- `cpp-engine-refactor.json`：C++ 边界重构的完整版本对照、首次 Core ML 加载异常、ABBA App 性能和功能回归记录；不含本机绝对路径。该历史索引条目对应的文件当前缺失，见[缺失材料说明](#本次检出中缺失的历史材料)。
 
 ## 近似路径质量门禁
 

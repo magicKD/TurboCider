@@ -76,12 +76,12 @@ hybrid stages／controller／模型路线仍待接入；owned 编译缓存和生
 小型两层图 Base→LoRA→Base 与 MLX 对照一致；当时请求门关闭，历史记录不转授后续构建资格。
 
 请求内 compact row-scale 缓存的真实 FFN OFF／ON 筛选见
-[2026-10-08 Native scale cache real screen](2026-10-08-native-scale-cache-real-screen.md)。
+[2026-10-08 Native scale cache real screen](../experiments/native-graph/2026-10-08-native-scale-cache-real-screen.md)。
 实际 MLX Data 身份、命中与逐位相同通过；收益随顺序反转，正式均值没有净收益，因此默认关闭且不追加 E2E。
-实现与此前生成数据验证见[Native request scale cache](2026-10-08-native-request-scale-cache.md)；owned 缓存均已清理。
+实现与此前生成数据验证见[Native request scale cache](../experiments/native-graph/2026-10-08-native-request-scale-cache.md)；owned 缓存均已清理。
 
 独立 Native Metal Graph 后端的 register W staging、当前完整构建与首次 Base 配对净收益见
-[2026-10-08 Native register W1](2026-10-08-native-register-w1-base-e2e.md)。
+[2026-10-08 Native register W1](../experiments/native-graph/2026-10-08-native-register-w1-base-e2e.md)。
 同构建 512²、20 步的一组请求省时 9.97%，图片肉眼接近；仅显式 CLI 实验，LoRA／编辑／Z-image／App 及通用资格仍待验收。本轮没有下载模型，owned 编译与 ANE cache 已清理。
 
 `dev` 合并至 `dev-verify` 的冲突处理、新构建/测试、两次 BF16 Z 生图及 GGUF/Private
@@ -120,25 +120,25 @@ M4 Pro 48 GiB 的 Qwen Runtime 分阶段驻留、编译图内存释放和单图�
 
 ## 当前加速结论
 
-2026-10-10 [Qwen原始BF16 encoder+DiT双阶段streaming与GGUF完整40步同库对照](qwen21-bf16-streaming-2026-10-10.md)：
+2026-10-10 [Qwen原始BF16 encoder+DiT双阶段streaming与GGUF完整40步同库对照](../experiments/qwen21-q4km/qwen21-bf16-streaming-2026-10-10.md)：
 实际峰值14.75GB的BF16 stream热请求45.34s，对15.36GB的GGUF混合36.99s，
 后者少18.42%/约1.23×；GGUF纯GPU44.61s仅小幅胜stream，BF16 resident
 43.45s但峰值37.27GB。原BF16 stream/resident三张40步PNG全SHA相同。
 未缩steps/分辨率、未放宽物理reserve；encoder对Unsloth冷/热与Public完整
 目标仍待完成，不将private managed weight预算冒充public RAM cap。
 
-2026-10-10 [Qwen Q4_K_M有界并行导入与局部embedding](qwen21-q4km-encoder-import-2026-10-10.md)：
+2026-10-10 [Qwen Q4_K_M有界并行导入与局部embedding](../experiments/qwen21-q4km/qwen21-q4km-encoder-import-2026-10-10.md)：
 同binary正反序encoder bank导入2.08→.68s（8 workers），完整SHA保留；
 40步cold text2.70–2.96s、混合warm请求36.98s，对GPU44.62s少17.12%。
 六张PNG与改动前SHA一致；新Unsloth cold condition1.48s仍更快，不能
 宣布encoder冷端到端或同预算BF16 streaming完整目标完成。
 
-2026-10-10 [Qwen Q4_K_M实际GPU/ANE正反序与GPU down kernel](qwen21-q4km-hybrid-2026-10-10.md)：
+2026-10-10 [Qwen Q4_K_M实际GPU/ANE正反序与GPU down kernel](../experiments/qwen21-q4km/qwen21-q4km-hybrid-2026-10-10.md)：
 5120通道混合40步热请求约36.97–37.01s，匹配GPU约44.55–44.58s；typed
 source/1280 actual calls/GPU fallback已接通。kernel额外收益约1%，冷encoder
 与同预算BF16 streaming完整要求仍未完成，保持显式实验与安全边界。
 
-2026-10-10 新的[Qwen2.1 Q4_K_M完整目标接续](qwen21-q4km-support-2026-10-10.md)：
+2026-10-10 新的[Qwen2.1 Q4_K_M完整目标接续](../experiments/qwen21-q4km/qwen21-q4km-support-2026-10-10.md)：
 两份固定source已下载验证，混合Q4/Q5/Q6导入、42次实Metal投影与首个完整
 GPU生成已运行；encoder/DiT对Unsloth、GPU/ANE和同预算BF16 streaming仍待
 完成，不将烟测或有缺口的参考采样当最终加速资格。
@@ -305,65 +305,67 @@ GPU/runtime全热为0.998×、预声明较晚窗口1.016×，不改变默认选�
 | FFN/QKV 失败回收、完整 GPU 回退、取消复用及私有图清理 | [生命周期回归](runtime-ane-failure-retirement-2026-10-01.md) |
 | 当前保留级别、性能表、optional、代码职责和未完成项 | [维护入口](acceleration.md) |
 | 2026-09-30 runtime ANE 代码层次、BF16/Q8/QKV 实测进度、整理范围与提交边界 | [当前代码与进度](runtime-ane-current-2026-09-30.md) |
-| 875b库 Qwen 1024² base-only v1：两提示词 v1/v2 ABBA 与 GPU/v1/冻结图正反向三路；Z v1/v2 组件收益不足 | [v1 base 筛选](runtime-ane-v1-base-2026-09-30.md) |
-| 875b库 Z 1024² BF16 base：灯塔/肖像双提示词 GPU/runtime v1 正反向；c704 组件正信号未转成明显整请求收益 | [Z 1024² v1 对照](runtime-ane-z-1024-v1-2026-09-30.md) |
-| 875b库 Z Q8 GGUF 1024² base：灯塔/肖像双提示词 GPU/runtime v1 ABBA、内存与视觉检查 | [Z Q8 1024² 对照](runtime-ane-z-gguf-q8-1024-2026-09-30.md) |
-| runtime compiled graph 私有快照：加载后源图移动的真实预测回归、旧/新构建 ABBA 与新库512²/1024²三路匹配对照 | [图快照与回归](runtime-ane-artifact-lease.md) |
-| Z 短序列真实 BF16 fused QKV：四种 ANE row 分区均慢于 GPU-only，不接入产品 QKV tier | [QKV 组件负结果](runtime-ane-qkv-component.md) |
-| Qwen 1024² base 显式 `runtime_qkv` 产品接入：早期固定一 chunk 单热 1.013×，非当前完整对照 | [QKV 产品初筛](runtime-ane-qwen-qkv-product.md) |
-| 875b 库 Qwen 1024²/40步 QKV auto 正反序四路线：相对 GPU 约 1.001×；auto 只决定一 chunk 开/关，仍不默认启用 | [QKV auto 完整请求](runtime-ane-qwen-qkv-auto.md) |
-| Qwen 长序列真实 BF16 Q 权重：单投影组件在 1024–1536 ANE rows 呈正信号；不能代替组合 QKV 或产品 block | [Q 投影组件筛选](runtime-ane-qwen-q-projection.md) |
-| Qwen 三份真实 Q/K/V 权重在计时前打包，完整组合投影组件相对两种 GPU-only 对照均有正信号；仍缺产品 block/内存资格 | [QKV 组合投影筛选](runtime-ane-qwen-qkv-packed.md) |
-| Qwen Q/K/V 三份独立 checkpoint 权重直接填入单个 runtime MatMul 槽，免常驻打包副本；组件对照 1.411×，产品 block/联合内存仍待验 | [QKV 多源直填](runtime-ane-qwen-qkv-parts.md) |
-| Qwen 1024² base：55e5六配置36请求完成，Q/K融合runtime相对GPU 1.242×、冻结图1.091×；内存和单样本视觉已复核 | [1024² GPU融合组合](runtime-ane-qwen-qk-1024.md) |
+| 875b库 Qwen 1024² base-only v1：两提示词 v1/v2 ABBA 与 GPU/v1/冻结图正反向三路；Z v1/v2 组件收益不足 | [v1 base 筛选](../experiments/runtime-ane/runtime-ane-v1-base-2026-09-30.md) |
+| 875b库 Z 1024² BF16 base：灯塔/肖像双提示词 GPU/runtime v1 正反向；c704 组件正信号未转成明显整请求收益 | [Z 1024² v1 对照](../experiments/runtime-ane/runtime-ane-z-1024-v1-2026-09-30.md) |
+| 875b库 Z Q8 GGUF 1024² base：灯塔/肖像双提示词 GPU/runtime v1 ABBA、内存与视觉检查 | [Z Q8 1024² 对照](../experiments/runtime-ane/runtime-ane-z-gguf-q8-1024-2026-09-30.md) |
+| runtime compiled graph 私有快照：加载后源图移动的真实预测回归、旧/新构建 ABBA 与新库512²/1024²三路匹配对照 | [图快照与回归](../experiments/runtime-ane/runtime-ane-artifact-lease.md) |
+| Z 短序列真实 BF16 fused QKV：四种 ANE row 分区均慢于 GPU-only，不接入产品 QKV tier | [QKV 组件负结果](../experiments/runtime-ane/runtime-ane-qkv-component.md) |
+| Qwen 1024² base 显式 `runtime_qkv` 产品接入：早期固定一 chunk 单热 1.013×，非当前完整对照 | [QKV 产品初筛](../experiments/runtime-ane/runtime-ane-qwen-qkv-product.md) |
+| 875b 库 Qwen 1024²/40步 QKV auto 正反序四路线：相对 GPU 约 1.001×；auto 只决定一 chunk 开/关，仍不默认启用 | [QKV auto 完整请求](../experiments/runtime-ane/runtime-ane-qwen-qkv-auto.md) |
+| Qwen 长序列真实 BF16 Q 权重：单投影组件在 1024–1536 ANE rows 呈正信号；不能代替组合 QKV 或产品 block | [Q 投影组件筛选](../experiments/runtime-ane/runtime-ane-qwen-q-projection.md) |
+| Qwen 三份真实 Q/K/V 权重在计时前打包，完整组合投影组件相对两种 GPU-only 对照均有正信号；仍缺产品 block/内存资格 | [QKV 组合投影筛选](../experiments/runtime-ane/runtime-ane-qwen-qkv-packed.md) |
+| Qwen Q/K/V 三份独立 checkpoint 权重直接填入单个 runtime MatMul 槽，免常驻打包副本；组件对照 1.411×，产品 block/联合内存仍待验 | [QKV 多源直填](../experiments/runtime-ane/runtime-ane-qwen-qkv-parts.md) |
+| Qwen 1024² base：55e5六配置36请求完成，Q/K融合runtime相对GPU 1.242×、冻结图1.091×；内存和单样本视觉已复核 | [1024² GPU融合组合](../experiments/runtime-ane/runtime-ane-qwen-qk-1024.md) |
 | GPU/冻结base/共图LoRA/runtime模板与命令，含1024²实测最快可选组合 | [请求示例索引](../../examples/requests/README.md) |
-| Qwen Q/K融合：三图仍无明显混合优势；base36请求完成，同样优化GPU后runtime1.170×/冻结图1.436×；Z复测与离线设备计划 | [GPU融合组合](runtime-ane-qwen-qk.md) |
-| 输出恢复局部3.69×，但Qwen/Z整请求无增益；撤回并行分支，保留布局/有限性回归 | [输出恢复候选](runtime-ane-output-restore-parallel.md) |
+| Qwen Q/K融合：三图仍无明显混合优势；base36请求完成，同样优化GPU后runtime1.170×/冻结图1.436×；Z复测与离线设备计划 | [GPU融合组合](../experiments/runtime-ane/runtime-ane-qwen-qk.md) |
+| 输出恢复局部3.69×，但Qwen/Z整请求无增益；撤回并行分支，保留布局/有限性回归 | [输出恢复候选](../experiments/runtime-ane/runtime-ane-output-restore-parallel.md) |
 | 后端分层、LoRA/异步生命周期约束、保留代码与离线工具边界 | [代码维护说明](../../native/backends/README.md) |
 | 可复用验证工具、共用校验、一次性实验及运行中代码冻结边界 | [验证工具维护说明](../../tools/validation/README.md) |
-| 请求级内存准入/host scratch扩容与两模型同构建复测；完整driver/wired/低内存资格仍缺 | [内存准入接续](runtime-ane-memory-admission-2026-09-29.md) |
-| f3f6库第二提示词肖像：Z/Qwen 512²三路正反向对照；Z c416/N512组件负结果 | [肖像与Z chunk筛选](runtime-ane-portrait-and-z-chunk-2026-09-29.md) |
-| Qwen 1024² c1664/c1792：单层 c1664 快约2.9%，同库整请求反而慢约0.35%；保留 c1792 | [c1664 整请求筛选](runtime-ane-qwen-c1664-2026-09-29.md) |
-| f3f6库 Qwen 1024² 第二提示词肖像：六 trial 三路同构建对照，runtime 1.237× GPU、1.033× 冻结图；冷图压缩边界保留 | [1024² 肖像对照](runtime-ane-qwen-1024-portrait-2026-09-29.md) |
+| 请求级内存准入/host scratch扩容与两模型同构建复测；完整driver/wired/低内存资格仍缺 | [内存准入接续](../experiments/runtime-ane/runtime-ane-memory-admission-2026-09-29.md) |
+| f3f6库第二提示词肖像：Z/Qwen 512²三路正反向对照；Z c416/N512组件负结果 | [肖像与Z chunk筛选](../experiments/runtime-ane/runtime-ane-portrait-and-z-chunk-2026-09-29.md) |
+| Qwen 1024² c1664/c1792：单层 c1664 快约2.9%，同库整请求反而慢约0.35%；保留 c1792 | [c1664 整请求筛选](../experiments/runtime-ane/runtime-ane-qwen-c1664-2026-09-29.md) |
+| f3f6库 Qwen 1024² 第二提示词肖像：六 trial 三路同构建对照，runtime 1.237× GPU、1.033× 冻结图；冷图压缩边界保留 | [1024² 肖像对照](../experiments/runtime-ane/runtime-ane-qwen-1024-portrait-2026-09-29.md) |
 | 内存准入接入前只读审查、原始缺口与隔离草稿 | [内存准入旧审查](runtime-ane-memory-admission-audit.md) |
-| e55 库 Qwen 1024² v2 正反向对照完成：runtime 1.115×、冻结图 1.147×，含波动/换页边界 | [1024² v2 对照](runtime-ane-qwen-1024-v2.md) |
-| Qwen 1024² base c1792/c320 交错对照完成：165.000 → 153.050 s，1.078×，保留为 optional | [Chunk 与分区](runtime-ane-qwen-chunks.md) |
-| 三图短 batch 0.977×；新库长 resident 全热1.005×/较晚1.018×；ref512 base/A/B/base 共图通过 | [编辑 chunk 与共图](runtime-ane-qwen-edit-chunks.md) |
+| e55 库 Qwen 1024² v2 正反向对照完成：runtime 1.115×、冻结图 1.147×，含波动/换页边界 | [1024² v2 对照](../experiments/runtime-ane/runtime-ane-qwen-1024-v2.md) |
+| Qwen 1024² base c1792/c320 交错对照完成：165.000 → 153.050 s，1.078×，保留为 optional | [Chunk 与分区](../experiments/runtime-ane/runtime-ane-qwen-chunks.md) |
+| 三图短 batch 0.977×；新库长 resident 全热1.005×/较晚1.018×；ref512 base/A/B/base 共图通过 | [编辑 chunk 与共图](../experiments/runtime-ane/runtime-ane-qwen-edit-chunks.md) |
 | 本次收尾范围、代码/文档整理与实际验证结果 | [整理记录](acceleration-cleanup.md) |
-| LoRA GPU-first 初始采样负结果；Qwen 成本后移、Z 小幅变化不足以推广，恢复原顺序 | [初始采样消融](runtime-ane-gpu-first.md) |
+| LoRA GPU-first 初始采样负结果；Qwen 成本后移、Z 小幅变化不足以推广，恢复原顺序 | [初始采样消融](../experiments/runtime-ane/runtime-ane-gpu-first.md) |
 | e55 库原版 LoRA 收尾复测：Qwen 三图 0.922×、Z 1.105×；后续候选的原版基线 | [本次收尾](acceleration-cleanup.md#本次整理) |
-| e55 库 Qwen 三图 FP32/FP16 低秩交错对照：固定分区改善，auto 仍不如 GPU；精度标记修复 | [LoRA 低秩精度](runtime-ane-qwen-lora-rank.md) |
-| 零修正输入复用只完成微图与原版 before；撤出候选，保留状态隔离回归 | [零输入候选](runtime-ane-zero-input.md) |
-| 历史 8d90 库 base 三路双向对照、独立进程采样与换页边界 | [匹配性能与内存](runtime-ane-matched-memory.md) |
-| 整数输出转换仅完成微基准，撤出产品路径，保留穷举回归 | [输出转换候选](runtime-ane-output-convert.md) |
-| 最新稳定层异步 head、base 前后筛选、LoRA ABBA、计时语义与共图回归 | [异步 head](runtime-ane-async-join.md) |
-| 此前 LoRA 屏障合并、固定分区前后对照、两模型 auto ABBA 与共图切换 | [LoRA readiness](runtime-ane-lora-ready.md) |
-| 此前 b554 同库 GPU/v2/冻结图双向对照：共图 base 1.155× / 1.086×，冻结图仍最快 | [v2 匹配对照](runtime-ane-v2-matched.md) |
-| 转换任务归并为最多四组的负结果；原版恢复，未改产品库 | [Staging 任务粒度](runtime-ane-staging-partition.md) |
-| v2 base 不复制未使用 hidden，等价有限性检查与两模型 LoRA 切换 | [v2 base 与 hidden 处理](runtime-ane-v2-base.md) |
-| 图内 tile + token chunk 联合调优，两模型 base 同构建 GPU/runtime/frozen 对照 | [Tile 筛选](runtime-ane-tiles.md) |
+| e55 库 Qwen 三图 FP32/FP16 低秩交错对照：固定分区改善，auto 仍不如 GPU；精度标记修复 | [LoRA 低秩精度](../experiments/runtime-ane/runtime-ane-qwen-lora-rank.md) |
+| 零修正输入复用只完成微图与原版 before；撤出候选，保留状态隔离回归 | [零输入候选](../experiments/runtime-ane/runtime-ane-zero-input.md) |
+| 历史 8d90 库 base 三路双向对照、独立进程采样与换页边界 | [匹配性能与内存](../experiments/runtime-ane/runtime-ane-matched-memory.md) |
+| 整数输出转换仅完成微基准，撤出产品路径，保留穷举回归 | [输出转换候选](../experiments/runtime-ane/runtime-ane-output-convert.md) |
+| 最新稳定层异步 head、base 前后筛选、LoRA ABBA、计时语义与共图回归 | [异步 head](../experiments/runtime-ane/runtime-ane-async-join.md) |
+| 此前 LoRA 屏障合并、固定分区前后对照、两模型 auto ABBA 与共图切换 | [LoRA readiness](../experiments/runtime-ane/runtime-ane-lora-ready.md) |
+| 此前 b554 同库 GPU/v2/冻结图双向对照：共图 base 1.155× / 1.086×，冻结图仍最快 | [v2 匹配对照](../experiments/runtime-ane/runtime-ane-v2-matched.md) |
+| 转换任务归并为最多四组的负结果；原版恢复，未改产品库 | [Staging 任务粒度](../experiments/runtime-ane/runtime-ane-staging-partition.md) |
+| v2 base 不复制未使用 hidden，等价有限性检查与两模型 LoRA 切换 | [v2 base 与 hidden 处理](../experiments/runtime-ane/runtime-ane-v2-base.md) |
+| 图内 tile + token chunk 联合调优，两模型 base 同构建 GPU/runtime/frozen 对照 | [Tile 筛选](../experiments/runtime-ane/runtime-ane-tiles.md) |
 | 统一文生图/1–3 参考图测试、ABBA、结果完成标记与复现边界 | [实验复现指南](runtime-ane-validation.md) |
-| 此前保留修正：gate/up 局部简化、alpha 类型修复、三图 ABBA 与共图切换 | [LoRA 分段修正与回归](runtime-ane-lora-slices.md) |
-| Qwen 1024² base 三路采样初测、视觉检查与内存边界 | [1024² runtime/GPU/frozen](runtime-ane-qwen-1024.md) |
-| Qwen 三参考图 runtime LoRA ABBA、长/短序列调度与串行成本 | [编辑长序列诊断](runtime-ane-qwen-edit.md) |
-| Qwen LoRA GPU 编译边界、固定分区消融与 BF16 测试标量读取修复 | [LoRA 编译边界](runtime-ane-lora-boundary.md) |
-| 整块 on/off 门槛 5%/8% 负结果；恢复 2%/5%，不混淆 FFN/整块测量窗口 | [门槛消融](runtime-ane-block-margin.md) |
-| 输出直接写 MLX 的负结果；撤回候选，保留输出/回调生命周期测试 | [输出复制消融](runtime-ane-output-copy.md) |
-| 长 prefill 四分之一 rows 起步的负结果；恢复一 chunk 起步并实测调节 | [初始分区消融](runtime-ane-initial-share.md) |
-| Z 完整 block on/off、免计时混合、Q4 c352 与 BF16 回归 | [Z 调度接续](runtime-ane-z-block.md) |
-| 真实 Q4_0、padding 兼容修复与整理构建回归 | [Q4 记录](runtime-ane-q4.md) |
-| Qwen 周期采样、两模型同构建 base 对照、LoRA 负结果 | [周期采样](runtime-ane-periodic-sampling-2026-09-29.md) |
-| 完整 GPU block probe、LoRA SHA 校验成本 | [完整块探测](runtime-ane-full-block-probe-2026-09-29.md) |
-| runtime-weight base 集成、token-row、staging、Q8 和多 chunk | [整模型集成](runtime-ane-integration-2026-09-28.md) |
-| runtime graph-v2：完整 LoRA 激活修正、base/A/B/base 共图 | [LoRA 接入](runtime-ane-lora-2026-09-28.md) |
-| Qwen 自适应关闭后恢复完整 GPU block，保留 full/split 缓存 | [unsplit 实验](runtime-ane-unsplit-2026-09-28.md) |
-| Qwen 完整 LoRA，共用冻结 base 图 | [Qwen 实验](qwen21-runtime-lora-fused-2026-09-28.md) |
-| Z 完整 LoRA、可选 direct-FP16 | [Z 实验](z-image-runtime-lora-fused-2026-09-28.md) |
+| 此前保留修正：gate/up 局部简化、alpha 类型修复、三图 ABBA 与共图切换 | [LoRA 分段修正与回归](../experiments/runtime-ane/runtime-ane-lora-slices.md) |
+| Qwen 1024² base 三路采样初测、视觉检查与内存边界 | [1024² runtime/GPU/frozen](../experiments/runtime-ane/runtime-ane-qwen-1024.md) |
+| Qwen 三参考图 runtime LoRA ABBA、长/短序列调度与串行成本 | [编辑长序列诊断](../experiments/runtime-ane/runtime-ane-qwen-edit.md) |
+| Qwen LoRA GPU 编译边界、固定分区消融与 BF16 测试标量读取修复 | [LoRA 编译边界](../experiments/runtime-ane/runtime-ane-lora-boundary.md) |
+| 整块 on/off 门槛 5%/8% 负结果；恢复 2%/5%，不混淆 FFN/整块测量窗口 | [门槛消融](../experiments/runtime-ane/runtime-ane-block-margin.md) |
+| 输出直接写 MLX 的负结果；撤回候选，保留输出/回调生命周期测试 | [输出复制消融](../experiments/runtime-ane/runtime-ane-output-copy.md) |
+| 长 prefill 四分之一 rows 起步的负结果；恢复一 chunk 起步并实测调节 | [初始分区消融](../experiments/runtime-ane/runtime-ane-initial-share.md) |
+| Z 完整 block on/off、免计时混合、Q4 c352 与 BF16 回归 | [Z 调度接续](../experiments/runtime-ane/runtime-ane-z-block.md) |
+| 真实 Q4_0、padding 兼容修复与整理构建回归 | [Q4 记录](../experiments/runtime-ane/runtime-ane-q4.md) |
+| Qwen 周期采样、两模型同构建 base 对照、LoRA 负结果 | [周期采样](../experiments/runtime-ane/runtime-ane-periodic-sampling-2026-09-29.md) |
+| 完整 GPU block probe、LoRA SHA 校验成本 | [完整块探测](../experiments/runtime-ane/runtime-ane-full-block-probe-2026-09-29.md) |
+| Runtime-weight 与共图 LoRA：FFN/QKV、调度、内存、精度、图生命周期与整请求对照 | [五十篇历史实验](../experiments/runtime-ane/README.md) |
+| runtime-weight base 集成、token-row、staging、Q8 和多 chunk | [整模型集成](../experiments/runtime-ane/runtime-ane-integration-2026-09-28.md) |
+| runtime graph-v2：完整 LoRA 激活修正、base/A/B/base 共图 | [LoRA 接入](../experiments/runtime-ane/runtime-ane-lora-2026-09-28.md) |
+| Qwen 自适应关闭后恢复完整 GPU block，保留 full/split 缓存 | [unsplit 实验](../experiments/runtime-ane/runtime-ane-unsplit-2026-09-28.md) |
+| Qwen 完整 LoRA，共用冻结 base 图 | [Qwen 实验](../experiments/runtime-ane/qwen21-runtime-lora-fused-2026-09-28.md) |
+| Z 完整 LoRA、可选 direct-FP16 | [Z 实验](../experiments/runtime-ane/z-image-runtime-lora-fused-2026-09-28.md) |
 | Qwen GPU、编辑、序列切片与已撤回实验 | [路线索引](qwen21-acceleration-routes-2026-09-27.md) |
 | Qwen 冻结 W8A8：512² / 1024² 文生图、参考图编辑与证据边界 | [五篇历史实验](../experiments/qwen21-w8a8/README.md) · [1024² 诊断](../experiments/qwen21-w8a8/qwen21-w8a8-ane-1024-diagnostics.md) |
-| Qwen 20–40 步可选残差缓存 | [DBCache](qwen21-dbcache-2026-09-27.md) |
+| Qwen Q4_K_M 导入、GPU/ANE、encoder/source 生命周期与 BF16 streaming | [七篇历史实验](../experiments/qwen21-q4km/README.md) |
+| Qwen 20–40 步残差缓存、编辑前缀与 DiT 预设历史 | [缓存实验专题](../experiments/qwen21-cache/README.md) |
 | Qwen 矩形画布复用固定行数图 | [矩形画布](qwen21-rectangular-w8a8-2026-09-27.md) |
-| 集成前单层探针，不作为整请求成绩 | [早期组件实验](runtime-ane-component-2026-09-28.md) |
+| 集成前单层探针，不作为整请求成绩 | [早期组件实验](../experiments/runtime-ane/runtime-ane-component-2026-09-28.md) |
 
 ## 本次代码整理与验证
 
@@ -391,7 +393,7 @@ optional 选择统一维护在[决策入口](acceleration.md)，不复制逐轮�
 
 - [Streaming/App 集成](streaming-app-integration-2026-09-27.md)
 - [Z-Image Metal 优化](z-image-metal-2026-09-23.md)
-- [Z-Image INT8 streaming](z-image-int8-streaming-2026-09-20.md)
+- [Z-Image INT8 streaming](../experiments/m5/z-image-int8-streaming-2026-09-20.md)
 - [Encoder prefill 可选路径](../experiments/transformer/2026-09-15-encoder-prefill.md)
 - [ANE 加速分阶段决策](../experiments/transformer/2026-09-15-ane-decisions.md)
 - [2026-09-10 状态快照](current-status-2026-09-10.md)

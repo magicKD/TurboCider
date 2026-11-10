@@ -12,6 +12,8 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+from streaming_evidence import sha256_file
+
 from verify_process_tree_samples import (
     EvidenceError as MemoryEvidenceError,
     verify as verify_memory_evidence,
@@ -99,14 +101,6 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
             raise EvidenceError(f"raw sample {line_number} is not an object")
         rows.append(value)
     return rows
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def semantic_digest(value: dict[str, Any]) -> str:

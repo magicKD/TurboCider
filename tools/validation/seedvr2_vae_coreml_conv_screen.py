@@ -13,7 +13,7 @@ sys.path.insert(0,str(ROOT/"tools/coreml"))
 from export_ltx_gemma_mlp import mapped_tensor, read_header, tensor_info
 from export_seedvr2_ffn import sha256, tree_identity
 from export_seedvr2_vae_conv import CHECKPOINT_SHA, SCHEMA
-from seedvr2_framework_screen import write_json
+from seedvr2_evidence import write_json
 
 
 def reference_3d(pixels,weight):

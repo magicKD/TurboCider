@@ -13,7 +13,7 @@ COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-qwen21-runtime-host
 .PHONY: test-base-benchmark
 .PHONY: test-tiny-vae test-tiny-vae-metal test-tiny-vae-download
-.PHONY: test-h3-download test-ltx-gemma-quality test-mlx-encoder-quality
+.PHONY: test-h3-download test-ltx-gemma-quality test-mlx-encoder-quality test-validation-helpers
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -26,6 +26,7 @@ help:
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
 	@echo 'make test-library                 Verify model library using tiny loopback downloads'
 	@echo 'make test                         Verify repository boundaries and request contracts'
+	@echo 'make test-validation-helpers      Verify SeedVR2 files and H3 VAE metrics (NumPy; no models)'
 	@echo 'make test-base-benchmark          Verify published base evidence and framework boundaries (no inference)'
 	@echo 'make test-streaming-host           Verify layout/executor/LTX metadata with synthetic fixtures'
 	@echo 'make test-streaming-contract       Verify streaming API/snapshot contracts (requires native build)'
@@ -70,6 +71,7 @@ test:
 	@"$(PYTHON)" -B tests/native/test_image_first_step.py
 	@"$(PYTHON)" -B tests/native/test_metal_compile_trace.py
 	@"$(PYTHON)" tests/native/test_qwen21_sequence.py
+	@$(MAKE) test-validation-helpers
 	@$(MAKE) test-acceleration-contract
 	@$(MAKE) test-quantized-host
 	@"$(PYTHON)" tests/repository/test_layout.py
@@ -125,6 +127,10 @@ test:
 	@$(MAKE) test-h3-download
 	@"$(PYTHON)" -B tests/native/test_vdn_mlx_solve.py
 	@"$(PYTHON)" tests/native/test_inventory.py
+# File and metric helpers need only the standard library and NumPy.
+test-validation-helpers:
+	@"$(PYTHON)" -B tests/native/test_seedvr2_evidence.py
+	@"$(PYTHON)" -B tests/native/test_h3_vae_metrics.py
 # Download fixtures use local bytes and mocked HTTP responses, never weights.
 test-h3-download:
 	@"$(PYTHON)" -B tests/native/test_h3_download_common.py
@@ -189,6 +195,7 @@ test-streaming-metal:
 	@"$(PYTHON)" -B tests/native/test_streaming_metal.py
 	@"$(PYTHON)" -B tests/native/test_ltx_streaming_layout.py --metal
 test-streaming-campaign:
+	@"$(PYTHON)" -B tests/native/test_streaming_evidence.py
 	@"$(PYTHON)" -B tests/native/test_streaming_campaign_verifier.py
 test-streaming-catalog-builder:
 	@"$(PYTHON)" -B tests/native/test_streaming_catalog_builder.py

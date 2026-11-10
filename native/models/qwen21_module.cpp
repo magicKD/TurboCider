@@ -1,4 +1,5 @@
 #include "qwen21/pipeline.hpp"
+#include "image_recipe.hpp"
 #include "qwen21/diagnostic_options.hpp"
 #include "qwen21/memory_policy.hpp"
 #include "qwen21/native_route.hpp"
@@ -17,8 +18,7 @@
 namespace tc {
 ModelModule qwen21_module() {
     return {"qwen-image-2.1",
-        [] { return Recipe{"qwen-image-2.1", {{"text_encode", {}}, {"denoise", {"text_encode"}, 40},
-                                            {"vae_decode", {"denoise"}}, {"export", {"vae_decode"}}}, true}; },
+        [] { return model_detail::image_recipe("qwen-image-2.1", 40); },
         [](const Request &r) {
             require(r.qwen21_sampler == "auto" || r.qwen21_sampler == "dmd2", "unknown Qwen21 sampler");
             const bool dmd2 = qwen21::dmd2_requested(r);

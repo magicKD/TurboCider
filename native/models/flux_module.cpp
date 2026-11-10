@@ -1,49 +1,60 @@
 #include "../runtime/session.hpp"
+#include "image_recipe.hpp"
 #include "flux2/flux.hpp"
 #include <cstdlib>
 #include <cstring>
 namespace tc {
+namespace {
+void validate_flux_request(const Request &request, const char *variant) {
+    require(request.width % 16 == 0 && request.height % 16 == 0,
+            "FLUX dimensions must be multiples of 16");
+    require(request.frames == 1, "FLUX requires frames=1");
+    require(request.operation == "image.generate" ||
+                request.operation == "image.transform" ||
+                request.operation == "image.edit",
+            "unsupported FLUX operation");
+    require(request.model_variant == "auto" || request.model_variant == variant,
+            "model_variant does not match the selected FLUX module");
+}
+
+void validate_flux_inputs(const Request &request) {
+    if (request.operation == "image.generate") {
+        require(request.inputs.empty(), "image.generate does not accept image inputs");
+    } else {
+        require(!request.inputs.empty() && request.inputs.size() <= 8,
+                "FLUX requires 1...8 images");
+        if (request.operation == "image.transform")
+            require(request.inputs.size() == 1, "image.transform requires one init_image");
+        for (const auto &input : request.inputs)
+            require(input.kind == "image" &&
+                        input.role == (request.operation == "image.transform" ? "init_image"
+                                                                              : "reference"),
+                    "incorrect FLUX image role");
+    }
+}
+
+void validate_flux_residency_and_loras(const Request &request) {
+    require(request.residency == "resident" || request.residency == "component_staged",
+            "FLUX block streaming is not supported");
+    require(request.loras.size() <= 8, "at most eight LoRA adapters may be active");
+    for (const auto &lora : request.loras) {
+        require(lora.role == "transformer" || lora.role == "text_encoder",
+                "unsupported FLUX LoRA role");
+        require(lora.strength >= -8.0f && lora.strength <= 8.0f,
+                "LoRA strength must be -8...8");
+    }
+}
+} // namespace
+
 ModelModule flux_module() {
     return {"flux2-klein-4b",
             [] {
-                return Recipe{"flux2-klein-4b",
-                              {{"text_encode", {}},
-                               {"denoise", {"text_encode"}, 4},
-                               {"vae_decode", {"denoise"}},
-                               {"export", {"vae_decode"}}},
-                              true};
+                return model_detail::image_recipe("flux2-klein-4b", 4);
             },
             [](const Request &r) {
-                require(r.width % 16 == 0 && r.height % 16 == 0,
-                        "FLUX dimensions must be multiples of 16");
-                require(r.frames == 1, "FLUX requires frames=1");
-                require(r.operation == "image.generate" || r.operation == "image.transform" ||
-                            r.operation == "image.edit",
-                        "unsupported FLUX operation");
-                require(r.model_variant == "auto" || r.model_variant == "flux2-klein-4b",
-                        "model_variant does not match the selected FLUX module");
-                if (r.operation == "image.generate")
-                    require(r.inputs.empty(), "image.generate does not accept image inputs");
-                else {
-                    require(!r.inputs.empty() && r.inputs.size() <= 8,
-                            "FLUX requires 1...8 images");
-                    if (r.operation == "image.transform")
-                        require(r.inputs.size() == 1, "image.transform requires one init_image");
-                    for (auto &input : r.inputs)
-                        require(input.kind == "image" &&
-                                    input.role == (r.operation == "image.transform" ? "init_image"
-                                                                                    : "reference"),
-                                "incorrect FLUX image role");
-                }
-                require(r.residency == "resident" || r.residency == "component_staged",
-                        "FLUX block streaming is not supported");
-                require(r.loras.size() <= 8, "at most eight LoRA adapters may be active");
-                for (const auto &lora : r.loras) {
-                    require(lora.role == "transformer" || lora.role == "text_encoder",
-                            "unsupported FLUX LoRA role");
-                    require(lora.strength >= -8.0f && lora.strength <= 8.0f,
-                            "LoRA strength must be -8...8");
-                }
+                validate_flux_request(r, "flux2-klein-4b");
+                validate_flux_inputs(r);
+                validate_flux_residency_and_loras(r);
             },
             [](const std::filesystem::path &root) { return std::make_unique<Flux>(root, "flux2-klein-4b"); },
             [] {
@@ -71,19 +82,10 @@ ModelModule flux_module() {
 ModelModule flux9_module() {
     return {
         "flux2-klein-9b",
-        [] { return Recipe{"flux2-klein-9b",
-                           {{"text_encode", {}}, {"denoise", {"text_encode"}, 4},
-                            {"vae_decode", {"denoise"}}, {"export", {"vae_decode"}}},
-                           true}; },
+        [] { return model_detail::image_recipe("flux2-klein-9b", 4); },
         [](const Request &r) {
-            require(r.width % 16 == 0 && r.height % 16 == 0,
-                    "FLUX dimensions must be multiples of 16");
-            require(r.frames == 1, "FLUX requires frames=1");
-            require(r.operation == "image.generate" || r.operation == "image.transform" ||
-                        r.operation == "image.edit", "unsupported FLUX operation");
-            require(r.model_variant == "auto" || r.model_variant == "flux2-klein-9b",
-                    "model_variant does not match the selected FLUX module");
-            if (const char *predecode = std::getenv("TURBOCIDER_FLUX9_PREDECODE_AFFINE")) {
+            validate_flux_request(r, "flux2-klein-9b");
+            if ([[maybe_unused]] const char *predecode = std::getenv("TURBOCIDER_FLUX9_PREDECODE_AFFINE")) {
 #ifdef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
                 require(std::strcmp(predecode, "1") == 0 && r.execution == "gpu" &&
                             r.compile_gpu && r.allow_approximation && r.residency == "resident" &&
@@ -95,17 +97,7 @@ ModelModule flux9_module() {
                 require(false, "FLUX9B affine predecode is experimental-only");
 #endif
             }
-            if (r.operation == "image.generate")
-                require(r.inputs.empty(), "image.generate does not accept image inputs");
-            else {
-                require(!r.inputs.empty() && r.inputs.size() <= 8, "FLUX requires 1...8 images");
-                if (r.operation == "image.transform")
-                    require(r.inputs.size() == 1, "image.transform requires one init_image");
-                for (const auto &input : r.inputs)
-                    require(input.kind == "image" &&
-                                input.role == (r.operation == "image.transform" ? "init_image" : "reference"),
-                            "incorrect FLUX image role");
-            }
+            validate_flux_inputs(r);
             if (r.execution == "gpu_ane") {
 #ifdef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
                 const char *candidate = std::getenv("TURBOCIDER_FLUX9_EXPERIMENTAL_HYBRID");
@@ -118,15 +110,7 @@ ModelModule flux9_module() {
                 require(false, "FLUX.2 Klein 9B GPU+ANE partition is not validated");
 #endif
             }
-            require(r.residency == "resident" || r.residency == "component_staged",
-                    "FLUX block streaming is not supported");
-            require(r.loras.size() <= 8, "at most eight LoRA adapters may be active");
-            for (const auto &lora : r.loras) {
-                require(lora.role == "transformer" || lora.role == "text_encoder",
-                        "unsupported FLUX LoRA role");
-                require(lora.strength >= -8.0f && lora.strength <= 8.0f,
-                        "LoRA strength must be -8...8");
-            }
+            validate_flux_residency_and_loras(r);
         },
         [](const std::filesystem::path &root) { return std::make_unique<Flux>(root, "flux2-klein-9b"); },
         [] {

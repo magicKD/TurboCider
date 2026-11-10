@@ -39,6 +39,7 @@ BUILD_SCRIPTS = (
     "tools/native/build_streaming_catalog.py",
     "tools/native/verify_streaming_campaign.py",
     "tools/native/streaming_release_policy.py",
+    "tools/native/streaming_evidence.py",
     "tools/native/verify_streaming_acceptance.py",
     "tools/native/verify_streaming_release_evidence.py",
     "tools/native/verify_streaming_text_capacity.py",

@@ -8,7 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
-from seedvr2_framework_screen import sha256,write_json
+from seedvr2_evidence import sha256,write_json
 from seedvr2_vae_coreml_conv_screen import quality
 
 CHECKPOINT_SHA="20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"

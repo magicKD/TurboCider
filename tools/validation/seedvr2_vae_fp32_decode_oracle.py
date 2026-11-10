@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from seedvr2_framework_screen import sha256, write_json
+from seedvr2_evidence import sha256, write_json
 from seedvr2_oracle import configure_comfy
 
 

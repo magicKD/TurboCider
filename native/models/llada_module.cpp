@@ -1,4 +1,5 @@
 #include "../runtime/session.hpp"
+#include "image_recipe.hpp"
 
 namespace tc {
 
@@ -8,12 +9,7 @@ ModelModule llada_module() {
     return {
         "llada-image-turbo",
         [] {
-            return Recipe{"llada-image-turbo",
-                          {{"text_encode", {}},
-                           {"denoise", {"text_encode"}, 4},
-                           {"vae_decode", {"denoise"}},
-                           {"export", {"vae_decode"}}},
-                          true};
+            return model_detail::image_recipe("llada-image-turbo", 4);
         },
         [](const Request &r) {
             require(r.operation == "image.generate",
@@ -31,8 +27,6 @@ ModelModule llada_module() {
             if (r.execution == "gpu_ane") {
                 require(r.allow_approximation,
                         "LLaDA GPU+ANE requires allow_approximation=true");
-                require(r.operation == "image.generate",
-                        "LLaDA GPU+ANE currently supports text-to-image only");
             }
         },
         create_llada_image,
