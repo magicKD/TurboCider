@@ -616,7 +616,7 @@ struct StudioBehaviorTests {
         studio.changeOperation("video.image")
         try check(studio.draft.operation == "video.image", "LTX I2V operation was not selectable")
         let ltx = try studio.draft.request(output: root.appendingPathComponent("ltx.mp4"))
-        try check(ltx.width == 704 && ltx.height == 448 && ltx.frames == 97 &&
+        try check(ltx.width == 512 && ltx.height == 512 && ltx.frames == 97 &&
                     ltx.steps == 11 && ltx.inputs?.map(\.role) == ["first_frame"],
                   "LTX descriptor defaults or public image-to-video mapping changed")
         studio.draft.residency = "streamed"

@@ -1805,10 +1805,11 @@ final class StudioState: ObservableObject {
         draft.modelID = id
         draft.operation = (model.executor_operations ?? model.operations).first ??
             (model.isVideo ? "video.generate" : "image.generate")
-        // Image work starts small; explicit dimensions in saved drafts/history
-        // remain intact. Video keeps its model-specific supported defaults.
-        draft.width = model.isVideo ? model.default_width : 512
-        draft.height = model.isVideo ? model.default_height : 512
+        // Image and LTX creation start at 512 square. Explicit dimensions in
+        // saved drafts/history remain intact; other videos keep their defaults.
+        let squareDefault = !model.isVideo || id == "ltx-2.5-distilled"
+        draft.width = squareDefault ? 512 : model.default_width
+        draft.height = squareDefault ? 512 : model.default_height
         draft.steps = model.default_steps; draft.frames = model.default_frames
         draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
         draft.audio = model.default_audio ?? false
