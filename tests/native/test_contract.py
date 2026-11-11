@@ -3342,6 +3342,25 @@ class ContractTests(unittest.TestCase):
         self.assertNotEqual(plan({**streamed,
                                  'memory_budget_bytes':7*(1<<30)})[0], 0)
 
+    def test_ltx_first_last_frame_contract(self):
+        images = [dict(kind='image', role=role, path='/tmp/' + role + '.png', strength=1.0)
+                  for role in ('first_frame', 'last_frame')]
+        request = dict(model='ltx-2.5-distilled', operation='video.keyframes',
+                       prompt='A gentle camera move between the two images', inputs=images,
+                       width=512, height=512, frames=33, steps=11, fps=24, execution='gpu',
+                       residency='streamed', memory_budget_bytes=12*(1<<30))
+        code, result, error = plan(request)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(result['operation'], 'video.keyframes')
+        self.assertIn('keyframes_vae_encode', {stage['id'] for stage in result['stages']})
+        for overrides in [dict(inputs=images[:1]), dict(inputs=[]), dict(inputs=images[::-1]),
+                          dict(inputs=images + images[:1]), dict(ltx_backend='cpp_mlx'),
+                          dict(execution='gpu_ane'),
+                          dict(ltx_sol_stage2=True, allow_approximation=True),
+                          dict(inputs=[images[0], {**images[1], 'strength':0.5}])]:
+            with self.subTest(overrides=overrides):
+                self.assertNotEqual(plan({**request, **overrides})[0], 0)
+
     def test_ltx_image_to_video_contract(self):
         request={
             'model':'ltx-2.5-distilled',
@@ -3594,6 +3613,9 @@ class ContractTests(unittest.TestCase):
         converter=ROOT/'native/models/ltx_runtime/ltx_video_convert.cpp'
         self.assertIn('TURBOCIDER_LTX_EXEC_FINALIZER',cli)
         self.assertIn('ltx_exec_finalizer_plan',cli)
+        finalizer_admission = cli[cli.index('static bool ltx_exec_finalizer_plan'):
+                                  cli.index('static void configure_ltx_cli_environment')]
+        self.assertIn('@"video.keyframes"', finalizer_admission)
         self.assertIn('TURBOCIDER_LTX_CONDITIONING_CACHE_DIR',cli)
         self.assertIn('TURBOCIDER_TEST_STREAMING_CATALOG',cli)
         self.assertIn('#ifdef TURBOCIDER_ENABLE_TEST_HOOKS',cli)
@@ -4894,7 +4916,7 @@ class ContractTests(unittest.TestCase):
         model=next(value for value in payload['models']
                    if value['id']=='ltx-2.5-distilled')
         self.assertTrue(model['executor'])
-        self.assertEqual(model['executor_operations'],['video.generate','video.image'])
+        self.assertEqual(model['executor_operations'],['video.generate','video.image','video.keyframes'])
         self.assertEqual(model['default_residency'],'component_staged')
         self.assertTrue(model['native_gemma4_candidate'])
         self.assertTrue(model['native_conditioning_connector'])

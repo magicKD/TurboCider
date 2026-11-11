@@ -82,6 +82,7 @@ build-vision-quality:
 package: build
 	@tools/native/package.sh
 test:
+	@"$(PYTHON)" tests/native/test_ltx_keyframe_positions.py
 	@$(MAKE) test-tiny-vae
 	@"$(PYTHON)" tests/native/test_qwen21_sequence.py
 	@$(MAKE) test-validation-helpers
@@ -326,6 +327,8 @@ test-quantized-host:
 test-runtime-ane: test-runtime-ane-host
 	@TURBOCIDER_TEST_RUNTIME_ANE=1 "$(PYTHON)" -B tests/native/test_ane_runtime.py
 test-app:
+	@$(NATIVE_TEST_OUT)/turbocider-keyframe-workflow-tests
+	@$(NATIVE_TEST_OUT)/turbocider-desktop-media-tests
 	@$(NATIVE_TEST_OUT)/turbocider-prunavaed-app-tests
 	@$(NATIVE_TEST_OUT)/turbocider-tiny-vae-app-tests
 	@$(NATIVE_TEST_OUT)/turbocider-runtime-image-worker-tests

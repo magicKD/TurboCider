@@ -93,7 +93,8 @@ static bool ltx_exec_finalizer_plan(NSString *request) {
  return [value isKindOfClass:NSDictionary.class]&&
         [value[@"model"] isEqual:@"ltx-2.5-distilled"]&&
         ([value[@"operation"] isEqual:@"video.generate"]||
-         [value[@"operation"] isEqual:@"video.image"])&&
+         [value[@"operation"] isEqual:@"video.image"]||
+         [value[@"operation"] isEqual:@"video.keyframes"])&&
         ([value[@"residency"] isEqual:@"component_staged"] ||
          [value[@"residency"] isEqual:@"streamed"]);
 }

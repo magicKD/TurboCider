@@ -99,7 +99,7 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 | FLUX.2 Klein 4B / 9B | 文生图、图片修改、参考图编辑、LoRA；4B 有已验证混合配置 |
 | Z-Image Turbo | 文生图、LoRA、可选 GPU / ANE 混合推理 |
 | MiniMax H3 Turbo | 视频生成、关键帧与参考素材；需要媒体工具 |
-| LTX 2.5 Distilled | 文生视频、图生视频及可选音频输出；受后端与配置限制 |
+| LTX 2.5 Distilled | 文生视频、首帧图生视频、首尾帧视频及可选音频输出；受后端与配置限制 |
 | Wan 2.1 1.3B QAD | 原生三步视频生成；需离线转换产物及已验证预合并 LoRA |
 
 具体可用操作以 `turbocider models` 和请求 `plan` 为准。不同模型的 LoRA、输入和加速选项不能互换。参阅[模型与请求参考](docs/public/USAGE.md#model-capabilities)、[Qwen 指南](docs/public/QWEN_IMAGE_21.md)和[GPU/ANE 加速状态](docs/status/acceleration.md)。

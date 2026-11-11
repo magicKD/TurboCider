@@ -50,6 +50,10 @@ not passing tests; report failures and skips with their reasons.
 | Streaming API contracts | `make test-streaming-contract` | Native build and its dependencies |
 | Runtime ANE host contracts | `make test-runtime-ane-host` | Project environment and host fixtures; no model inference |
 | App state and interaction | `make test-app` | Built Swift test executables, macOS session and clipboard access |
+| Desktop media history and image-to-video handoff | `TURBOCIDER_APP_TARGETS=desktop-media make build-app`, then `build/native/turbocider-desktop-media-tests` | Native build and tiny local image fixtures; no model weights or inference |
+| LTX first/last frame workflow | `build/native/turbocider-keyframe-workflow-tests` | Same desktop-media build; explicit roles, private copies, swap/undo, draft migration, history reuse and cancellation |
+| LTX endpoint positions and worker-stack hashing | `python3 tests/native/test_ltx_keyframe_positions.py`, `python3 tests/native/test_hash_small_stack.py` | Clang; actual native geometry/hash helpers, no model inference |
+| Video thumbnails and playback | `make test-video-preview VIDEO=/absolute/clip.mp4` | Built video-preview tests, a real local MP4 and a macOS session; no inference |
 | Model library and downloads | `make test-library` | Built test executables and tiny local HTTP fixtures |
 | Local API lifecycle | `make test-api` | Built executables, local Unix sockets and child processes |
 | ComfyUI nodes | `make test-comfyui` | Existing torch/NumPy/Pillow environment; use `COMFYUI_PYTHON` for node tests |

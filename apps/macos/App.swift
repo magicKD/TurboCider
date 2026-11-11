@@ -82,7 +82,7 @@ private enum StudioPage: String, CaseIterable, Identifiable {
 private let ciderAccent = Color(red: 0.02, green: 0.70, blue: 0.64)
 private func operationName(_ value: String) -> String {
     ["image.upscale": "图片超分", "image.generate": "文生图", "image.transform": "单图修改", "image.edit": "参考编辑",
-     "video.generate": "文生视频", "video.image": "图生视频", "video.keyframes": "关键帧视频", "video.upscale": "视频超分",
+     "video.generate": "文生视频", "video.image": "图生视频", "video.keyframes": "首尾帧视频", "video.upscale": "视频超分",
      "video.reference": "参考视频"][value] ?? value
 }
 private func stateName(_ value: String) -> String {
@@ -92,6 +92,10 @@ private func phaseName(_ value: String) -> String {
     if let memory = Qwen21MemoryPresentation.phaseTitle(value) { return memory }
     if value.hasPrefix("seedvr2_") { return SeedVR2ProgressPresentation(phase: value, completed: 0, total: 0).title }
     if value == "pack_z_image_suffix" { return "整理 GPU 权重" }
+    if value == "ltx_block" || value == "ltx_step" { return "视频采样" }
+    if value == "connector" { return "准备生成条件" }
+    if value == "latent_upsample" { return "细化视频画面" }
+    if value == "mux" { return "保存视频" }
     if value == "upscale" { return "图像超分" }
     if value == "denoise" { return "采样" }
     if ["image_encode", "vision_encode", "reference_vae_encode"].contains(value) { return "编码参考图" }
@@ -104,19 +108,20 @@ private func phaseName(_ value: String) -> String {
 private struct StudioOutputPreview: View {
     let path: String
     var maxPixel = 1600
-    private var video: Bool { ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) }
+    private var video: Bool { StudioMediaKind(path: path) == .video }
     var body: some View {
-        if video { SafeVideoPreview(path: path) }
+        if video { VideoOutputPreview(path: path).id(path) }
         else { MediaPreview(path: path, maxPixel: maxPixel) }
     }
 }
 
 private struct StudioResultThumbnail: View {
     let path: String
-    private var video: Bool { ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) }
+    var maxPixel = 360
+    private var video: Bool { StudioMediaKind(path: path) == .video }
     var body: some View {
-        if video { Image(systemName: "film").font(.title2).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.primary.opacity(0.06)) }
-        else { MediaPreview(path: path, maxPixel: 140) }
+        if video { VideoThumbnail(path: path, maxPixel: maxPixel) }
+        else { MediaPreview(path: path, maxPixel: maxPixel) }
     }
 }
 
@@ -139,6 +144,7 @@ struct StudioView: View {
     @State private var ignoredStatusID: UUID?
     @State private var dropping = false
     @State private var compareOriginal = false
+    @State private var comparisonInputRole = "first_frame"
     @State private var upscaleSourcePath = ""
     @State private var imageUpscaling = false
     @State private var pendingUpscaleReuseSource: String?
@@ -147,6 +153,8 @@ struct StudioView: View {
     @State private var annotationAsset: StudioAsset?
     @State private var preparationAsset: StudioAsset?
     @State private var showingCanvasSizing = false
+    @State private var showingVideoImages = false
+    @State private var keyframeHistoryRole: StudioKeyframeRole?
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } }
     private var previewAsset: StudioAsset? {
         studio.draft.assets.first { $0.id == previewAssetID } ?? studio.draft.activeAssets.first
@@ -163,10 +171,17 @@ struct StudioView: View {
     private var outputJobs: [NativeJob] { store.jobs.filter { $0.hasOutput } }
     private var outputIDs: [UUID] { outputJobs.map(\.id) }
     private var imageHistoryJobs: [NativeJob] {
-        outputJobs.filter { ["png", "jpg", "jpeg", "webp", "heic", "heif", "tif", "tiff", "bmp", "avif"].contains(URL(fileURLWithPath: $0.request.output).pathExtension.lowercased()) }
+        outputJobs.filter { $0.outputMediaKind == .image }
     }
-    private var imageHistoryIDs: [UUID] { imageHistoryJobs.map(\.id) }
-    private var selectedHistoryIDs: Set<UUID> { resultSelection.ids.intersection(Set(imageHistoryIDs)) }
+    private var historyKind: StudioMediaKind { imageUpscaling ? .image : (StudioMediaKind(rawValue: studio.creationKind) ?? .image) }
+    private var historyJobs: [NativeJob] { outputJobs.filter { $0.outputMediaKind == historyKind } }
+    private var historyIDs: [UUID] { historyJobs.map(\.id) }
+    private var selectedHistoryIDs: Set<UUID> { resultSelection.ids.intersection(Set(historyIDs)) }
+    private var imageInputOperation: String? {
+        if studio.creationKind == "video" { return model?.supports("video.image") == true ? "video.image" : nil }
+        return model?.supports("image.edit") == true ? "image.edit"
+            : model?.supports("image.transform") == true ? "image.transform" : nil
+    }
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
     private var preparingSubmission: Bool { submitting && !store.busy }
     private var assetControlsLocked: Bool { preparingSubmission || studio.imageInputsBusy }
@@ -189,6 +204,10 @@ struct StudioView: View {
             return model?.availableOperations.filter { $0.hasPrefix(studio.creationKind + ".") } ?? []
         }
         if studio.draft.modelID == "qwen-image-2.1" { return ["image.generate", "image.edit"] }
+        if let model, model.isVideo {
+            let operations = model.availableOperations.filter { $0.hasPrefix("video.") }
+            return operations + (operations.contains("video.upscale") || !studio.creationOperations.contains("video.upscale") ? [] : ["video.upscale"])
+        }
         return studio.creationOperations.filter { $0 != "image.upscale" || studio.draft.modelID == "seedvr2-3b" }
     }
     private var generationBlocker: String? {
@@ -203,7 +222,7 @@ struct StudioView: View {
         case "image.transform": return "选择一张原图，描述想修改的内容。"
         case "image.edit": return "添加 1–\(min(studio.imageImportLimit, model?.max_images ?? 8)) 张参考图；提示词中的图片编号与下方顺序一致。"
         case "video.image": return "选择首帧图片，描述镜头与动作。"
-        case "video.keyframes": return "按顺序添加首帧与尾帧，描述画面如何变化。"
+        case "video.keyframes": return "分别选择首帧与尾帧，描述画面如何过渡。尾图参与模型生成，结尾可能有重绘差异。"
         case "video.reference": return "添加参考图，描述人物、场景和动作。"
         case "image.upscale": return "添加源图片，选择输出尺寸，使用 SeedVR2 单步恢复清晰度。原图保留。"
         case "video.upscale": return "添加 2–121 帧的源视频，保留完整帧数和整数源 FPS。输出为无音轨 MP4。"
@@ -302,7 +321,9 @@ struct StudioView: View {
             let current = new.first { $0.id == previewAssetID }
             focusInput(current)
         }
-        .onChange(of: studio.draft.operation) { _, _ in focusInput() }
+        .onChange(of: studio.draft.operation) { _, _ in
+            focusInput(); showingVideoImages = false; keyframeHistoryRole = nil
+        }
         .onChange(of: studio.workspaceResetID) { _, _ in
             focusInput(); annotationAsset = nil; preparationAsset = nil; showingCanvasSizing = false
             showingRecentResults = false; ignoredStatusID = store.jobs.first?.id
@@ -507,9 +528,15 @@ struct StudioView: View {
             GeometryReader { proxy in
                 ScrollView(.vertical) {
                     VStack(spacing: 10) {
-                        mediaStage.frame(maxWidth: .infinity, minHeight: 170, maxHeight: .infinity).layoutPriority(1)
-                        if studio.creationKind == "image", !imageHistoryJobs.isEmpty { resultStrip }
-                        if !studio.draft.assets.isEmpty { inputStrip }
+                        // A poster image has an intrinsic size. Bound the stage
+                        // to the viewport so it cannot push history offscreen.
+                        mediaStage.frame(maxWidth: .infinity)
+                            .frame(height: max(170, proxy.size.height
+                                - (historyJobs.isEmpty ? 0 : 66)
+                                - (studio.draft.operation == "video.keyframes" ? 122 : studio.draft.assets.isEmpty ? 0 : 80))).layoutPriority(1)
+                        if !historyJobs.isEmpty { resultStrip }
+                        if studio.draft.operation == "video.keyframes" { keyframeInputs }
+                        else if !studio.draft.assets.isEmpty { inputStrip }
                     }.frame(minHeight: proxy.size.height)
                 }.accessibilityIdentifier("canvasScrollArea")
             }.frame(minHeight: 170, maxHeight: .infinity)
@@ -534,21 +561,33 @@ struct StudioView: View {
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 } else if let job = selectedJob {
-                    Label(compareOriginal ? "修改前" : "生成结果", systemImage: "photo")
+                    Label(compareOriginal ? (job.request.operation == "video.keyframes"
+                        ? (comparisonInputRole == "last_frame" ? "输入尾帧" : "输入首帧") : "输入素材") : "生成结果", systemImage: job.outputMediaKind.symbol)
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                     if job.request.inputs?.first != nil {
-                        Toggle("对比原图", isOn: $compareOriginal).toggleStyle(.button).font(.caption)
-                            .accessibilityIdentifier("compareOriginal")
+                        if job.request.operation == "video.keyframes" {
+                            Menu("对比首尾帧") {
+                                Button("查看首帧") { comparisonInputRole = "first_frame"; compareOriginal = true }
+                                Button("查看尾帧") { comparisonInputRole = "last_frame"; compareOriginal = true }
+                                Button("查看生成视频") { compareOriginal = false }
+                            }.font(.caption).accessibilityIdentifier("compareKeyframes")
+                        } else {
+                            Toggle(job.outputMediaKind == .video ? "对比输入" : "对比原图", isOn: $compareOriginal).toggleStyle(.button).font(.caption)
+                                .accessibilityIdentifier("compareOriginal")
+                        }
                     }
-                    if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
+                    if job.outputMediaKind == .image {
+                        Button { useResultForVideo(job) } label: { Label("图生视频", systemImage: "video.badge.plus") }
+                            .disabled(historySourceLocked).accessibilityIdentifier("useResultForVideo")
+                            .help("将此图片的副本用作视频首帧")
                         Button { Task {
                             if await studio.editResult(job) { imageUpscaling = false; focusInput(); page = .studio }
                         } } label: { Label("继续编辑", systemImage: "pencil") }
                             .disabled(store.busy || assetControlsLocked).accessibilityIdentifier("editResult")
                     }
                     Menu {
-                        if URL(fileURLWithPath: job.request.output).pathExtension.lowercased() == "png" {
+                        if job.outputMediaKind == .image {
                             Button("超分此图…") { upscaleSourcePath = job.request.output; imageUpscaling = true; page = .upscale }.disabled(store.busy || assetControlsLocked)
                         }
                         Button("另存为…") { exportResult(job.request.output) }
@@ -559,7 +598,9 @@ struct StudioView: View {
                         .menuStyle(.borderlessButton).frame(width: 24).help(resultMetadata(job))
                 } else if let asset = previewAsset {
                     let index = (studio.draft.assets.firstIndex(where: { $0.id == asset.id }) ?? 0) + 1
-                    Label(studio.draft.modelID == "seedvr2-3b" ? (asset.mediaKind == "video" ? "源视频" : "源图片")
+                    Label(studio.draft.operation == "video.keyframes" ? (asset.id == studio.draft.lastImageID ? "视频尾帧" : "视频首帧")
+                          : studio.draft.operation == "video.image" ? "视频首帧"
+                          : studio.draft.modelID == "seedvr2-3b" ? (asset.mediaKind == "video" ? "源视频" : "源图片")
                           : studio.draft.activeAssets.count == 1 ? "编辑原图" : "参考图 \(index)", systemImage: asset.mediaKind == "video" ? "film" : "photo")
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Text(assetTitle(asset)).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
@@ -581,15 +622,17 @@ struct StudioView: View {
             if let data = store.livePreview, store.livePreviewWorkflowID == nil {
                 TinyLivePreview(data: data, step: store.livePreviewStep, total: store.livePreviewTotal)
             } else if let job = selectedJob {
-                let path = compareOriginal ? (job.request.inputs?.first?.path ?? job.request.output) : job.request.output
-                if ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) {
-                    StudioOutputPreview(path: path).frame(maxWidth: .infinity, maxHeight: .infinity)
+                let path = compareOriginal ? ((job.request.operation == "video.keyframes"
+                    ? job.request.inputs?.first(where: { $0.role == comparisonInputRole })?.path
+                    : job.request.inputs?.first?.path) ?? job.request.output) : job.request.output
+                if StudioMediaKind(path: path) == .video {
+                    StudioOutputPreview(path: path).frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("generatedVideo")
                 } else {
                     InteractiveMediaPreview(path: path).accessibilityIdentifier("generatedImage")
                 }
             } else if let asset = previewAsset {
                 if asset.mediaKind == "video" {
-                    SafeVideoPreview(path: asset.path).accessibilityIdentifier("editingVideo")
+                    VideoOutputPreview(path: asset.path).id(asset.path).accessibilityIdentifier("editingVideo")
                 } else {
                     InteractiveMediaPreview(path: asset.path).accessibilityIdentifier("editingImage")
                 }
@@ -597,7 +640,8 @@ struct StudioView: View {
                 VStack(spacing: 12) {
                     Image(systemName: editingImage ? "photo.badge.plus" : "sparkles.rectangle.stack")
                         .font(.system(size: 36, weight: .ultraLight)).foregroundStyle(ciderAccent.opacity(0.75))
-                    Text(studio.draft.operation.hasSuffix("generate") ? "把想法变成画面" : "从一张图片开始").font(.title2.weight(.medium))
+                    Text(studio.draft.operation == "video.keyframes" ? "从首尾两张图片开始"
+                         : studio.draft.operation.hasSuffix("generate") ? "把想法变成画面" : "从一张图片开始").font(.title2.weight(.medium))
                     Text(workflowDescription).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     if studio.supportsImageInputs || studio.supportsVideoInputs {
                         Button(action: chooseImages) { Label(studio.supportsVideoInputs ? "选择源视频" : "选择图片", systemImage: "plus") }.disabled(assetControlsLocked)
@@ -610,46 +654,92 @@ struct StudioView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(dropping ? ciderAccent : Color.primary.opacity(0.06), lineWidth: 1))
     }
     private func resultMetadata(_ job: NativeJob) -> String {
-        if compareOriginal { return "输入原图" }
+        if compareOriginal { return "输入素材" }
         let dimensions = "\(job.request.width) × \(job.request.height)"
-        let detail = job.request.operation == "image.upscale" ? "超分结果" : "种子 \(job.request.seed)"
+        let detail = job.outputMediaKind == .video
+            ? "\(job.request.frames) 帧 · \(job.request.fps ?? 24) FPS · 种子 \(job.request.seed)"
+            : job.request.operation == "image.upscale" ? "超分结果" : "种子 \(job.request.seed)"
         return "\(dimensions) · \(detail)" + (job.routeSummary.map { " · \($0)" } ?? "")
     }
     private var resultStrip: some View {
         HStack(spacing: 8) {
-            Image(systemName: "clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
-                .help("历史图片：生成、编辑与超分结果").accessibilityLabel("历史图片")
+            Label("历史\(historyKind.title)", systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
+                .fixedSize().help("点击预览；⌘ 点击多选，Shift 连续选择")
             ScrollView(.horizontal) { LazyHStack(spacing: 8) {
-                ForEach(imageHistoryJobs) { job in
-                    resultThumbnail(job, height: 52, orderedIDs: imageHistoryIDs, keepsCreationMode: true).frame(width: 56)
+                ForEach(historyJobs) { job in
+                    resultThumbnail(job, height: 52, orderedIDs: historyIDs, keepsCreationMode: true).frame(width: historyKind == .video ? 84 : 56)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(selectedJob?.id == job.id ? ciderAccent : Color.primary.opacity(0.1), lineWidth: selectedJob?.id == job.id ? 2 : 1))
                         .contextMenu {
-                            Button("查看图片") { selected = job.id; compareOriginal = false }
+                            Button("查看\(historyKind.title)") { selected = job.id; compareOriginal = false }
+                            if job.outputMediaKind == .image {
+                                Button("用作视频首帧") { useResultForVideo(job) }.disabled(historySourceLocked)
+                            }
                             if imageUpscaling {
                                 Button("用作超分原图") { useHistoryAsUpscaleSource(job) }
                                     .disabled(historySourceLocked)
                                     .accessibilityIdentifier("useHistoryAsUpscaleSource-\(job.id)")
                             }
                             Button("复用参数") { reuseParameters(job) }.disabled(store.busy || assetControlsLocked)
-                            Button("删除\(historyDeletionIDs(for: job).count > 1 ? "所选图片" : "图片")（移到废纸篓）", role: .destructive) { trashResults(historyDeletionIDs(for: job)) }.disabled(store.busy)
+                            Button("删除\(historyDeletionIDs(for: job).count > 1 ? "所选" : "")\(historyKind.title)（移到废纸篓）", role: .destructive) { trashResults(historyDeletionIDs(for: job)) }.disabled(store.busy)
                         }.help("\(operationName(job.request.operation ?? "image.generate")) · \(job.request.width) × \(job.request.height) · 种子 \(job.request.seed)\n单击查看；⌘ 点击多选，Shift 连续选择")
-                        .accessibilityIdentifier("historyImage-\(job.id)")
+                        .accessibilityIdentifier("\(historyKind == .video ? "historyVideo" : "historyImage")-\(job.id)")
                 }
             }.padding(2) }.frame(height: 56).accessibilityIdentifier("historyThumbnails")
             if selectedHistoryIDs.count > 1 {
                 Menu("\(selectedHistoryIDs.count) 项") {
                     Button("取消选择") { resultSelection.clear() }
-                    Button("删除所选 \(selectedHistoryIDs.count) 张图片", role: .destructive) { trashResults(selectedHistoryIDs) }.disabled(store.busy)
+                    Button("删除所选 \(selectedHistoryIDs.count) 个\(historyKind.title)", role: .destructive) { trashResults(selectedHistoryIDs) }.disabled(store.busy)
                 }.menuStyle(.borderlessButton).fixedSize().font(.caption).accessibilityIdentifier("historySelectionActions")
             }
-        }.frame(height: 56).accessibilityIdentifier("imageHistoryStrip")
+        }.frame(height: 56).accessibilityIdentifier(historyKind == .video ? "videoHistoryStrip" : "imageHistoryStrip")
     }
     private func historyDeletionIDs(for job: NativeJob) -> Set<UUID> {
         selectedHistoryIDs.contains(job.id) ? selectedHistoryIDs : [job.id]
     }
     private var historySourceLocked: Bool {
         store.busy || submitting || studio.imageInputsBusy || api.running || api.changing
+    }
+    private func useResultForVideo(_ job: NativeJob) {
+        guard !historySourceLocked else { return }
+        studio.beginVideoFromResult(job) {
+            showingVideoImages = false
+            imageUpscaling = false; focusInput(); page = .studio
+        }
+    }
+    private var videoImageHistoryButton: some View {
+        Button {
+            keyframeHistoryRole = studio.draft.operation == "video.keyframes"
+                ? (studio.draft.firstKeyframe == nil ? .first : .last) : nil
+            showingVideoImages = true
+        } label: { Label("从历史图片选择", systemImage: "photo.on.rectangle") }
+            .font(.caption).disabled(historySourceLocked || imageHistoryJobs.isEmpty)
+            .accessibilityIdentifier("chooseVideoImageHistory")
+            .popover(isPresented: $showingVideoImages) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("选择视频\(keyframeHistoryRole?.title ?? "首帧")").font(.headline)
+                    Text("使用生成、编辑或超分结果的副本，原图片会保留。").font(.caption).foregroundStyle(.secondary)
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96))], spacing: 10) {
+                            ForEach(imageHistoryJobs) { job in
+                                Button {
+                                    if studio.draft.operation == "video.keyframes", let role = keyframeHistoryRole {
+                                        importKeyframe(URL(fileURLWithPath: job.request.output), role: role)
+                                    } else { useResultForVideo(job) }
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        MediaPreview(path: job.request.output, maxPixel: 240).frame(height: 88)
+                                        Text(job.request.prompt).font(.caption2).lineLimit(1)
+                                    }.frame(maxWidth: .infinity).contentShape(Rectangle())
+                                }.buttonStyle(.plain).disabled(historySourceLocked)
+                                    .help(job.request.prompt).accessibilityLabel("用作视频\(keyframeHistoryRole?.title ?? "首帧")：\(job.request.prompt)")
+                                    .accessibilityIdentifier("videoSourceImage-\(job.id)")
+                            }
+                        }.padding(2)
+                    }
+                    Button("关闭") { showingVideoImages = false }.frame(maxWidth: .infinity, alignment: .trailing)
+                }.padding(16).frame(width: 390, height: 350)
+            }
     }
     private func useHistoryAsUpscaleSource(_ job: NativeJob) {
         guard imageUpscaling, !historySourceLocked, job.hasOutput else { return }
@@ -699,10 +789,13 @@ struct StudioView: View {
                 }
                 Text(studio.draft.modelID == "seedvr2-3b" ? "单步恢复 · 无需提示词" : studio.draft.qwen21TurboSummary ?? "\(studio.draft.steps) 步")
                     .font(.caption).foregroundStyle(.secondary)
-                if studio.draft.assets.count > studio.draft.activeAssets.count {
-                    Button("使用已添加图片") { studio.changeOperation("image.edit"); focusInput() }
-                        .font(.caption).disabled(store.busy || assetControlsLocked || model?.supports("image.edit") != true)
+                if studio.draft.assets.count > studio.draft.activeAssets.count,
+                   studio.creationKind != "video" || studio.draft.activeAssets.isEmpty {
+                    Button(studio.creationKind == "video" ? "使用图片生成视频" : "使用已添加图片") {
+                        if let operation = imageInputOperation { studio.changeOperation(operation); focusInput() }
+                    }.font(.caption).disabled(store.busy || assetControlsLocked || imageInputOperation == nil)
                 }
+                if ["video.image", "video.keyframes"].contains(studio.draft.operation) { videoImageHistoryButton }
                 Spacer(minLength: 0)
                 if studio.creationKind != "video" && studio.draft.modelID != "seedvr2-3b" {
                     Menu {
@@ -745,6 +838,12 @@ struct StudioView: View {
                         Button("应用 Turbo 设置") { studio.applyQwen21TurboPreset() }
                             .font(.caption).disabled(assetControlsLocked || api.running || api.changing)
                             .accessibilityIdentifier("repairTurboSettings")
+                    }
+                    else if studio.draft.operation == "video.keyframes", studio.draft.firstKeyframe == nil {
+                        Button("选择首帧") { chooseKeyframe(.first) }.font(.caption).disabled(assetControlsLocked)
+                    }
+                    else if studio.draft.operation == "video.keyframes", studio.draft.lastKeyframe == nil {
+                        Button("选择尾帧") { chooseKeyframe(.last) }.font(.caption).disabled(assetControlsLocked)
                     }
                     else if studio.supportsImageInputs, studio.draft.operation != "image.generate", studio.draft.activeAssets.isEmpty {
                         Button("添加图片", action: chooseImages).font(.caption).disabled(assetControlsLocked)
@@ -789,6 +888,77 @@ struct StudioView: View {
             }
         }
     }
+    private func importKeyframe(_ url: URL, role: StudioKeyframeRole) {
+        guard !historySourceLocked else { return }
+        studio.beginKeyframeImport(url, role: role) {
+            showingVideoImages = false; keyframeHistoryRole = nil
+            focusInput(studio.draft.keyframe(role))
+        }
+    }
+    private func chooseKeyframe(_ role: StudioKeyframeRole) {
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = "选择视频\(role.title)图片，另一帧会保留。"
+        if panel.runModal() == .OK, let url = panel.url { importKeyframe(url, role: role) }
+    }
+    private var keyframeInputs: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                keyframeCard(.first)
+                Button { studio.swapKeyframes(); focusInput() } label: { Image(systemName: "arrow.left.arrow.right") }
+                    .buttonStyle(.borderless).help("交换首帧与尾帧").accessibilityLabel("交换首尾帧")
+                    .accessibilityIdentifier("swapKeyframes")
+                    .disabled(historySourceLocked || studio.draft.firstKeyframe == nil || studio.draft.lastKeyframe == nil)
+                keyframeCard(.last)
+            }
+            Text(studio.draft.modelID == "ltx-2.5-distilled"
+                 ? "两张图片按输出画幅缩放；尾帧是生成引导，结尾可能有重绘差异。"
+                 : "H3 可仅设置首帧；尾帧可选。设置两张图片时，会生成它们之间的过渡。")
+                .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(height: 112).accessibilityElement(children: .contain).accessibilityIdentifier("keyframeInputs")
+    }
+    private func keyframeCard(_ role: StudioKeyframeRole) -> some View {
+        let asset = studio.draft.keyframe(role)
+        let frame = role == .first ? 1 : max(1, studio.draft.frames)
+        let time = Double(frame - 1) / Double(max(1, studio.draft.fps))
+        return HStack(spacing: 8) {
+            Button {
+                if let asset { focusInput(asset) } else { chooseKeyframe(role) }
+            } label: {
+                Group {
+                    if let asset { MediaPreview(path: asset.path, maxPixel: 180) }
+                    else { Image(systemName: "photo.badge.plus").font(.title2).foregroundStyle(.secondary) }
+                }.frame(width: 60, height: 60).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }.buttonStyle(.plain).disabled(historySourceLocked)
+                .accessibilityLabel("\(asset == nil ? "选择" : "查看")\(role.title)")
+                .accessibilityIdentifier("keyframePreview-\(role.rawValue)")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(role.title).font(.caption.weight(.semibold))
+                Text("第 \(frame) 帧 · \(String(format: "%.2f", time)) 秒").font(.caption2).foregroundStyle(.secondary)
+                Menu(asset == nil ? "选择图片" : "更换图片") {
+                    Button("从文件选择…") { chooseKeyframe(role) }
+                    Button("从历史图片选择…") { keyframeHistoryRole = role; showingVideoImages = true }
+                        .disabled(imageHistoryJobs.isEmpty)
+                    Menu("已添加的图片") {
+                        ForEach(studio.draft.assets.filter { $0.mediaKind == "image" }) { item in
+                            Button(item.name) { studio.selectKeyframeAsset(item.id, role: role); focusInput(studio.draft.keyframe(role)) }
+                                .disabled(item.id == (role == .first ? studio.draft.lastImageID : studio.draft.initImageID))
+                        }
+                    }.disabled(studio.draft.assets.isEmpty)
+                    if asset != nil {
+                        Divider()
+                        Button("移除\(role.title)", role: .destructive) { studio.removeKeyframe(role); focusInput() }
+                    }
+                }.menuStyle(.borderlessButton).fixedSize().font(.caption)
+                    .disabled(historySourceLocked).accessibilityIdentifier("chooseKeyframe-\(role.rawValue)")
+            }
+            Spacer(minLength: 0)
+        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(asset == nil ? Color.primary.opacity(0.1) : ciderAccent.opacity(0.45)))
+            .help(asset?.name ?? "尚未选择\(role.title)")
+    }
     private var inputStrip: some View {
         HStack(spacing: 10) {
             ScrollView(.horizontal) {
@@ -807,7 +977,7 @@ struct StudioView: View {
                                 focusInput(asset)
                             } label: {
                                 Group {
-                                    if asset.mediaKind == "video" { SafeVideoPreview(path: asset.path) }
+                                    if asset.mediaKind == "video" { VideoThumbnail(path: asset.path, maxPixel: 160) }
                                     else { MediaPreview(path: asset.path, maxPixel: 160) }
                                 }.frame(width: 54, height: 54).clipShape(RoundedRectangle(cornerRadius: 6))
                             }.buttonStyle(.plain).accessibilityLabel("查看参考图 \(index + 1)")
@@ -909,6 +1079,12 @@ struct StudioView: View {
                     }
                 }
                 Text(studio.draft.accelerationHint).font(.caption).foregroundStyle(.secondary)
+                if studio.draft.modelID == "ltx-2.5-distilled", !studio.draft.usesPublicStreaming,
+                   studio.draft.residency != "streamed" {
+                    Button("开启默认流式加载") { studio.setLTXResidency("streamed") }
+                        .disabled(store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+                        .accessibilityIdentifier("enableLTXStreaming")
+                }
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
             }
             Divider()
@@ -1008,11 +1184,17 @@ struct StudioView: View {
                         .help(studio.draft.modelID == "ltx-2.5-distilled" ? "联合采样音频与视频，输出包含 48 kHz 立体声 AAC 的 MP4。" : "生成包含音频轨道的视频。")
                 } else { Text("当前执行器输出无音轨视频。").font(.caption).foregroundStyle(.secondary) }
             }
-            if ["image.transform", "video.image"].contains(studio.draft.operation) {
+            if ["image.transform", "video.image"].contains(studio.draft.operation) ||
+               (studio.draft.modelID == "ltx-2.5-distilled" && studio.draft.operation == "video.keyframes") {
                 Divider()
-                HStack { Text(studio.draft.operation == "video.image" ? "首帧保留强度" : "原图保留强度"); Spacer(); Text(studio.draft.strength, format: .number.precision(.fractionLength(2))).monospacedDigit() }.font(.caption)
-                Slider(value: $studio.draft.strength, in: 0...1, step: 0.05).accessibilityLabel("原图保留强度")
-                Text("值越大，保留原图越多；1 仅进行 VAE 重建，0 使用完整采样。实际采样步数随强度变化。").font(.caption2).foregroundStyle(.secondary)
+                HStack { Text(studio.draft.operation == "video.keyframes" ? "首尾帧约束强度" : studio.draft.operation == "video.image" ? "首帧保留强度" : "原图保留强度"); Spacer(); Text(studio.draft.strength, format: .number.precision(.fractionLength(2))).monospacedDigit() }.font(.caption)
+                Slider(value: $studio.draft.strength, in: 0...1, step: 0.05)
+                    .accessibilityLabel(studio.draft.operation == "video.keyframes" ? "首尾帧约束强度"
+                                        : studio.draft.operation == "video.image" ? "首帧保留强度" : "原图保留强度")
+                Text(studio.draft.operation.hasPrefix("video.")
+                     ? "值越大，输入帧的约束越强；其余画面仍由模型生成，不要求把强度调低才会产生运动。"
+                     : "值越大，保留原图越多；1 仅进行 VAE 重建，0 使用完整采样。实际采样步数随强度变化。")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Divider()
             Text("种子").font(.subheadline)
@@ -1027,7 +1209,8 @@ struct StudioView: View {
                 let qwenLoRA = studio.draft.modelID == "qwen-image-2.1" && !studio.draft.activeLoRAs.isEmpty && !studio.draft.usesRuntimeANE
                 Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE && !qwenLoRA }, set: { studio.setANEEnabled($0) }))
                     .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true ||
-                        studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA || studio.draft.usesQwen21InstalledRecipe)
+                        studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA || studio.draft.usesQwen21InstalledRecipe ||
+                        (studio.draft.modelID == "ltx-2.5-distilled" && studio.draft.operation == "video.keyframes"))
                     .accessibilityIdentifier("enableANE")
                 Text(studio.draft.usesQwen21InstalledRecipe ? "此 Qwen 安装使用 GPU。" :
                      studio.draft.aneConfigurationNotice ?? (qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。"))).font(.caption2).foregroundStyle(.secondary)
@@ -1125,7 +1308,7 @@ struct StudioView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
                     if studio.draft.publicStreamingModel {
-                        Picker(studio.draft.modelID == "ltx-2.5-distilled" ? "预设加载档位" : "流式内存档位", selection: Binding(
+                        Picker(studio.draft.modelID == "ltx-2.5-distilled" ? "校准内存预设（可选）" : "流式内存档位", selection: Binding(
                             get: { studio.draft.streaming.selection },
                             set: { studio.setStreamingSelection($0) })) {
                             ForEach(StudioStreamingSelection.allCases) { value in
@@ -1136,9 +1319,13 @@ struct StudioView: View {
                                     .disabled(unavailable)
                             }
                         }
-                        .disabled(store.busy || submitting)
+                        .disabled(store.busy || submitting ||
+                                  (studio.draft.modelID == "ltx-2.5-distilled" && studio.draft.operation == "video.keyframes"))
                         .accessibilityIdentifier("publicStreamingSelection")
-                        if studio.streamingOptionsLoading {
+                        if studio.draft.modelID == "ltx-2.5-distilled", studio.draft.operation == "video.keyframes" {
+                            Text("首尾帧使用下方的 GPU 加载方式，暂不支持校准内存档位。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        } else if studio.streamingOptionsLoading {
                             Text("正在检查当前模型与本机物理内存的可用档位…")
                                 .font(.caption2).foregroundStyle(.secondary)
                         } else if studio.draft.streaming.selection != .off,
@@ -1163,7 +1350,10 @@ struct StudioView: View {
                             }
                         } else if studio.draft.streaming.selection == .off {
                             let recommendation = studio.recommendedStreamingSelection
-                            if studio.draft.modelID == "z-image-turbo", studio.draft.residency == "streamed" {
+                            if studio.draft.modelID == "ltx-2.5-distilled", studio.draft.residency == "streamed" {
+                                Text("分块流式加载已开启；这里的关闭仅指未选择额外的校准预设。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else if studio.draft.modelID == "z-image-turbo", studio.draft.residency == "streamed" {
                                 Text("当前使用下方的实验流式设置；未启用校准档位。")
                                     .font(.caption2).foregroundStyle(.secondary)
                             } else if recommendation != .off {
@@ -1225,7 +1415,7 @@ struct StudioView: View {
                             Text("自动（C/Metal）").tag("auto")
                             Text("C/Metal").tag("c_metal")
                             Text("C++/MLX（实验）").tag("cpp_mlx")
-                        }
+                        }.disabled(studio.draft.operation == "video.keyframes")
                         Toggle("GPU 快速 A/V 调度", isOn: $studio.draft.ltxFastAV)
                             .controlSize(.small)
                         Text("Fast A/V 会并行音频分支并合并命令缓冲区；已通过 97 帧 latent 一致性门禁。")
@@ -1241,7 +1431,7 @@ struct StudioView: View {
                             Text("Stage-2 Sol 近似").tag("sol")
                             Text("Sol + 256 行文本（最快候选）").tag("fast_approx")
                         }
-                        .disabled(store.busy || submitting)
+                        .disabled(store.busy || submitting || studio.draft.operation == "video.keyframes")
                         Text("近似模式只修改 Stage-2；需要多 prompt/seed 质量回归，720p 自动限制为画质优先。")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
@@ -1315,13 +1505,13 @@ struct StudioView: View {
                         LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
                     } else if studio.draft.modelID == "ltx-2.5-distilled" && !studio.draft.usesPublicStreaming {
-                        Picker("模型加载", selection: $studio.draft.residency) {
-                            Text("按层加载 · 12 GiB").tag("streamed")
+                        Picker("模型加载", selection: Binding(get: { studio.draft.residency }, set: { studio.setLTXResidency($0) })) {
+                            Text("分块流式 · 12 GiB（默认）").tag("streamed")
                             Text("常驻").tag("resident")
                             Text("分阶段释放").tag("component_staged")
                         }.disabled(store.busy || submitting).accessibilityIdentifier("ltxResidency")
                         if studio.draft.residency == "streamed" {
-                            Text("12 GiB 用于采样阶段规划，并非应用内存硬上限。支持 GPU 文生视频、C/Metal 首帧图生视频及同步音频。M5 及以上在 macOS 26.4 及以上自动使用 W8A8。")
+                            Text("按预算保留部分权重并预取后续块，支持文生视频、图生视频、首尾帧与同步音频。12 GiB 是采样预算，文本编码、VAE 和系统内存另计，不能保证没有 swap。任务使用独立进程，结束或取消后释放。")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     } else if studio.draft.modelID == "seedvr2-3b" {
@@ -1493,7 +1683,7 @@ struct StudioView: View {
     private var tasksPage: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("任务与历史").font(.largeTitle.weight(.medium))
-            Text("删除任务记录保留结果文件；删除图片会移到废纸篓。").foregroundStyle(.secondary)
+            Text("删除任务记录保留结果文件；删除图片或视频会移到废纸篓。").foregroundStyle(.secondary)
             HStack {
                 Button(selectedTasks == store.deletableJobIDs && !selectedTasks.isEmpty ? "取消全选" : "全选") {
                     selectedTasks = selectedTasks == store.deletableJobIDs ? [] : store.deletableJobIDs
@@ -1529,9 +1719,9 @@ struct StudioView: View {
                         Button("复用参数") { reuseParameters(job) }.disabled(assetControlsLocked)
                         if job.hasOutput {
                             Button("查看结果") { showResult(job) }
-                            Button("删除图片", role: .destructive) { trashResult(job) }.disabled(store.busy)
+                            Button("删除\(job.outputMediaKind.title)", role: .destructive) { trashResult(job) }.disabled(store.busy)
                         }
-                        if job.outputDeleted == true { Text("图片已删除").foregroundStyle(.secondary) }
+                        if job.outputDeleted == true { Text("\(job.outputMediaKind.title)已删除").foregroundStyle(.secondary) }
                         Button("删除任务记录", role: .destructive) { deleteTasks([job.id]) }
                             .disabled(!store.deletableJobIDs.contains(job.id)).accessibilityIdentifier("deleteJob")
                     }.buttonStyle(.borderless).accessibilityElement(children: .contain)
@@ -1562,11 +1752,13 @@ struct StudioView: View {
             Text("单击选择，Ctrl/⌘ 点击多选，Shift 点击连续选择；双击查看结果。").foregroundStyle(.secondary)
             resultSelectionControls
             ScrollView {
-                if outputJobs.isEmpty { ContentUnavailableView("还没有生成结果", systemImage: "photo", description: Text("在创作中生成第一张图像。")) }
+                if outputJobs.isEmpty { ContentUnavailableView("还没有生成结果", systemImage: "photo", description: Text("在创作中生成图片或视频。")) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], spacing: 18) {
                     ForEach(outputJobs) { job in
                         VStack(alignment: .leading, spacing: 8) {
                             resultThumbnail(job, height: 180)
+                            Label(operationName(job.request.operation ?? (job.outputMediaKind.rawValue + ".generate")), systemImage: job.outputMediaKind.symbol)
+                                .font(.caption2).foregroundStyle(.secondary)
                             Text(job.request.prompt).font(.caption).lineLimit(2)
                             HStack {
                                 Text("种子 \(job.request.seed)").font(.caption2).foregroundStyle(.secondary)
@@ -1580,6 +1772,10 @@ struct StudioView: View {
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(resultSelection.ids.contains(job.id) ? ciderAccent : .clear, lineWidth: 2))
                             .contextMenu {
                                 Button("查看结果") { showResult(job) }
+                                if job.outputMediaKind == .image {
+                                    Button("用作视频首帧") { useResultForVideo(job) }.disabled(historySourceLocked)
+                                }
+                                Button("复用参数") { reuseParameters(job) }.disabled(store.busy || assetControlsLocked)
                                 Button(resultDeletionTitle(for: job), role: .destructive) { trashResults(resultDeletionIDs(for: job)) }.disabled(store.busy)
                             }
                     }
@@ -1594,13 +1790,14 @@ struct StudioView: View {
             Button("全选") { resultSelection.selectAll(outputIDs) }.disabled(outputIDs.isEmpty).accessibilityIdentifier("selectAllOutputs")
             Button("取消选择") { resultSelection.clear() }.disabled(resultSelection.ids.isEmpty)
             Spacer()
-            Button("删除所选图片", role: .destructive) { trashResults(resultSelection.ids) }
+            Button("删除所选结果", role: .destructive) { trashResults(resultSelection.ids) }
                 .disabled(store.busy || resultSelection.ids.isEmpty).help("将所选结果移到废纸篓")
                 .accessibilityIdentifier("trashSelectedOutputs")
         }
     }
     private func resultThumbnail(_ job: NativeJob, height: CGFloat, orderedIDs: [UUID]? = nil, keepsCreationMode: Bool = false) -> some View {
-        StudioResultThumbnail(path: job.request.output).frame(height: height).frame(maxWidth: .infinity)
+        StudioResultThumbnail(path: job.request.output, maxPixel: max(160, Int(height * 2)))
+            .frame(height: height).frame(maxWidth: .infinity)
             .accessibilityHidden(true)
             .overlay(alignment: .topTrailing) {
                 if resultSelection.ids.contains(job.id) {
@@ -1608,7 +1805,7 @@ struct StudioView: View {
                 }
             }
             .overlay {
-                ResultSelectionTarget(label: "选择图片：\(job.request.prompt)，种子 \(job.request.seed)", selected: resultSelection.ids.contains(job.id)) { flags, clicks in
+                ResultSelectionTarget(label: "选择\(job.outputMediaKind.title)：\(job.request.prompt)，种子 \(job.request.seed)", selected: resultSelection.ids.contains(job.id)) { flags, clicks in
                     let toggle = !flags.intersection([.control, .command]).isEmpty
                     resultSelection.select(job.id, orderedIDs: orderedIDs ?? outputIDs, toggle: toggle, range: flags.contains(.shift))
                     if resultSelection.ids.contains(job.id) { selected = job.id; compareOriginal = false; showingRecentResults = false }
@@ -1634,7 +1831,7 @@ struct StudioView: View {
     }
     private func resultDeletionTitle(for job: NativeJob) -> String {
         let count = resultDeletionIDs(for: job).count
-        return count > 1 ? "删除所选 \(count) 个结果（移到废纸篓）" : "删除图片（移到废纸篓）"
+        return count > 1 ? "删除所选 \(count) 个结果（移到废纸篓）" : "删除\(job.outputMediaKind.title)（移到废纸篓）"
     }
     private func deleteTasks(_ ids: Set<UUID>) {
         do { try store.deleteJobs(ids); selectedTasks.subtract(ids) }

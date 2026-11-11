@@ -255,6 +255,11 @@ enum Qwen21DiTCacheMode: String, CaseIterable, Identifiable {
         }
     }
 }
+enum StudioKeyframeRole: String, CaseIterable {
+    case first, last
+    var title: String { self == .first ? "首帧" : "尾帧" }
+}
+
 struct StudioDraft: Codable, Sendable {
     var modelID = "flux2-klein-4b"
     var modelPaths: [String: String] = [:]
@@ -272,6 +277,7 @@ struct StudioDraft: Codable, Sendable {
     var ltxFastAV = true
     var ltxVideoAttentionBatch = false
     var ltxAccelerationMode = "quality"
+    var ltxStreamingDefaultVersion = 1
     var seedText = "42"
     var randomSeed = false
     var strength = 0.75
@@ -310,12 +316,14 @@ struct StudioDraft: Codable, Sendable {
     var loras: [StudioLoRA] = []
     var modelLoRAs: [String: [StudioLoRA]] = [:]
     var initImageID: UUID?
+    var lastImageID: UUID?
+    var keyframeBindingsVersion = 1
     init() {}
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
-        case ltxVideoVAE, ltxPrunaVAEPath
+        case ltxVideoVAE, ltxPrunaVAEPath, ltxStreamingDefaultVersion
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
-        case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
+        case assets, loras, initImageID, lastImageID, keyframeBindingsVersion, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21DiTW8A8, qwen21DiTSmoothQuantConvRot, qwen21ReferenceSize
         case qwen21WeightCacheBudget, qwen21WeightCacheCustomMiB
         case tinyVAEPaths, tinyVAEEncoder, tinyVAEDecoder, tinyPreview, tinyPreviewInterval
@@ -378,9 +386,23 @@ struct StudioDraft: Codable, Sendable {
         loras = try c.decodeIfPresent([StudioLoRA].self, forKey: .loras) ?? loras
         modelLoRAs = try c.decodeIfPresent([String: [StudioLoRA]].self, forKey: .modelLoRAs) ?? [:]
         initImageID = try c.decodeIfPresent(UUID.self, forKey: .initImageID)
-        // Old sampling budgets are not calibrated full-request targets. Keep
-        // the existing experimental residency choice; the separate public
-        // selector stays Off until explicitly selected by the user.
+        lastImageID = try c.decodeIfPresent(UUID.self, forKey: .lastImageID)
+        if operation == "video.keyframes", try c.decodeIfPresent(Int.self, forKey: .keyframeBindingsVersion) == nil {
+            let images = assets.filter { $0.mediaKind == "image" }
+            initImageID = images.first?.id; lastImageID = images.dropFirst().first?.id
+        }
+        ltxStreamingDefaultVersion = try c.decodeIfPresent(Int.self, forKey: .ltxStreamingDefaultVersion) ?? 0
+        if ltxStreamingDefaultVersion < 1 {
+            applyLTXStreamingDefault()
+        }
+        // Sampling budgets are separate from calibrated full-request targets.
+        // Keep public preset selection explicit while enabling LTX block streaming.
+    }
+    mutating func applyLTXStreamingDefault() {
+        guard modelID == "ltx-2.5-distilled", !usesPublicStreaming,
+              profilePath.isEmpty, ["gpu", "auto"].contains(acceleration?.policy ?? "gpu") else { return }
+        residency = "streamed"
+        ltxStreamingDefaultVersion = 1
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
     func qwen21WeightCacheBytes() throws -> UInt64 {
@@ -661,6 +683,12 @@ struct StudioDraft: Codable, Sendable {
         if qwen21TurboLoRA != nil { return "GPU · BF16 · LoRA 运行时加载" }
         if usesANE, aneLoRARequiresGPU { return "GPU · LoRA 运行时加载" }
         let policy = acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")
+        if modelID == "ltx-2.5-distilled", ["gpu", "auto"].contains(policy) {
+            if usesPublicStreaming { return "GPU · 校准内存预设 · \(streaming.selection.label)" }
+            if residency == "streamed" { return "GPU · 分块流式加载已开启 · 12 GiB 采样预算" }
+            if residency == "component_staged" { return "GPU · 分阶段加载 · 采样时仍加载完整权重" }
+            return "GPU · 常驻加载 · 较高内存占用"
+        }
         if policy == "gpu", hasQwen21ConvrotCheckpoint {
             return residency == "streamed" ? "GPU · ConvRot · 流式加载" : "GPU · ConvRot"
         }
@@ -757,6 +785,9 @@ struct StudioDraft: Codable, Sendable {
         if let kind { result["kind"] = kind }
         return result
     }
+    var firstKeyframe: StudioAsset? { assets.first { $0.id == initImageID && $0.mediaKind == "image" } }
+    var lastKeyframe: StudioAsset? { assets.first { $0.id == lastImageID && $0.id != initImageID && $0.mediaKind == "image" } }
+    func keyframe(_ role: StudioKeyframeRole) -> StudioAsset? { role == .first ? firstKeyframe : lastKeyframe }
     var activeAssets: [StudioAsset] {
         switch operation {
         case "image.upscale": return assets.filter { $0.id == initImageID && $0.mediaKind == "image" }
@@ -764,7 +795,8 @@ struct StudioDraft: Codable, Sendable {
         case "image.transform": return assets.filter { $0.id == initImageID && $0.mediaKind == "image" }
         case "image.edit": return assets.filter { $0.mediaKind == "image" }
         case "video.image": return assets.filter { $0.id == initImageID && $0.mediaKind == "image" }
-        case "video.reference", "video.keyframes": return assets.filter { $0.mediaKind == "image" }
+        case "video.keyframes": return [firstKeyframe, lastKeyframe].compactMap { $0 }
+        case "video.reference": return assets.filter { $0.mediaKind == "image" }
         default: return []
         }
     }
@@ -840,6 +872,15 @@ struct StudioDraft: Codable, Sendable {
             if ltxBackend == "cpp_mlx" && operation == "video.image" {
                 throw NativeFailure(message: "LTX C++/MLX 当前只支持文生视频；图生视频请选择 C/Metal。")
             }
+            if operation == "video.keyframes" {
+                guard firstKeyframe != nil, lastKeyframe != nil else {
+                    throw NativeFailure(message: "首尾帧视频需要分别选择一张首帧和一张尾帧图片。")
+                }
+                guard ltxBackend != "cpp_mlx", ltxAccelerationMode == "quality", !usesPublicStreaming,
+                      profilePath.isEmpty, (acceleration?.policy ?? "gpu") == "gpu" else {
+                    throw NativeFailure(message: "LTX 首尾帧当前使用 GPU、C/Metal 和画质优先设置；请关闭公共流式档位与 ANE。")
+                }
+            }
             if ltxAccelerationMode != "quality" {
                 guard ltxBackend != "cpp_mlx" else {
                     throw NativeFailure(message: "LTX Sol 近似加速当前只支持 C/Metal。")
@@ -894,6 +935,7 @@ struct StudioDraft: Codable, Sendable {
         }
         if operation == "video.image" && activeAssets.count != 1 { throw NativeFailure(message: "视频首帧模式需要一张首帧图片。") }
         if operation == "video.keyframes" && !(1...2).contains(activeAssets.count) { throw NativeFailure(message: "关键帧模式需要一张首帧，或首尾两张图片。") }
+        if operation == "video.keyframes", firstKeyframe == nil { throw NativeFailure(message: "请先选择首帧图片。") }
         if activeAssets.contains(where: { $0.mediaKind == "image" }) {
             guard model.inputs?.contains("image") != false else {
                 throw NativeFailure(message: "当前模型不支持图片输入。")
@@ -1094,17 +1136,18 @@ struct StudioDraft: Codable, Sendable {
                 request.ane_manifest = nil
             }
         }
-        request.inputs = activeAssets.enumerated().map { index, asset in
+        request.inputs = activeAssets.map { asset in
             let role: String
             switch operation {
             case "image.upscale", "video.upscale": role = "source"
             case "image.transform": role = "init_image"
             case "video.image": role = "first_frame"
-            case "video.keyframes": role = index == 0 ? "first_frame" : "last_frame"
+            case "video.keyframes": role = asset.id == initImageID ? "first_frame" : "last_frame"
             default: role = "reference"
             }
             return NativeInput(kind: asset.mediaKind, role: role, path: asset.path,
-                               strength: (operation == "image.transform" || operation == "video.image") ? strength : nil)
+                               strength: (operation == "image.transform" || operation == "video.image" ||
+                                   (modelID == "ltx-2.5-distilled" && operation == "video.keyframes")) ? strength : nil)
         }
         request.loras = activeLoRAs.isEmpty ? nil : activeLoRAs.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty { request.lora_strategy = "inference_time" }
@@ -1385,7 +1428,7 @@ final class StudioState: ObservableObject {
     private let creationFile: URL
     private var creationDraft: StudioDraft?
     private var saveTask: Task<Void, Never>?
-    private var undoAssets: [([StudioAsset], UUID?)] = []
+    private var undoAssets: [([StudioAsset], UUID?, UUID?)] = []
     /// Importing may suspend while a provider or disk is slow. Only inputs that
     /// change the destination editing context invalidate a staged copy; typing
     /// a prompt or adjusting sampling settings remains safe during that wait.
@@ -1396,10 +1439,11 @@ final class StudioState: ObservableObject {
         var operation: String
         var assets: [StudioAsset]
         var initImageID: UUID?
+        var lastImageID: UUID?
     }
     private var assetImportContext: AssetImportContext {
         AssetImportContext(workspaceResetID: workspaceResetID, modelID: draft.modelID, modelPath: draft.modelPath,
-                           operation: draft.operation, assets: draft.assets, initImageID: draft.initImageID)
+                           operation: draft.operation, assets: draft.assets, initImageID: draft.initImageID, lastImageID: draft.lastImageID)
     }
     private func validateAssetImportContext(_ context: AssetImportContext, additionalImages: Int = 0) throws {
         try Task.checkCancellation()
@@ -1430,6 +1474,7 @@ final class StudioState: ObservableObject {
             var configuration = draft.acceleration ?? StudioAcceleration()
             configuration.policy = "gpu"; configuration.automaticVersion = 1; draft.acceleration = configuration
         }
+        if draft.ltxStreamingDefaultVersion < 1 { draft.applyLTXStreamingDefault() }
         if draft.modelPath.isEmpty {
             draft.modelPaths["flux2-klein-4b"] = ProcessInfo.processInfo.environment["TURBOCIDER_FLUX_MODEL"]
                 ?? UserDefaults.standard.string(forKey: "modelPath.flux2-klein-4b")
@@ -1556,6 +1601,20 @@ final class StudioState: ObservableObject {
             draft.zImageStreamingBudgetGiB = 8
         }
     }
+    func setLTXResidency(_ value: String) {
+        guard draft.modelID == "ltx-2.5-distilled",
+              ["streamed", "resident", "component_staged"].contains(value) else { return }
+        draft.ltxStreamingDefaultVersion = 1
+        draft.residency = value
+        if value == "streamed" {
+            draft.streaming = StudioStreamingState()
+            draft.profilePath = ""
+            var config = draft.acceleration ?? StudioAcceleration()
+            config.policy = "gpu"; draft.acceleration = config
+            message = "已开启分块流式加载，采样预算 12 GiB；提示词、首尾帧与生成参数已保留。"
+        }
+        save()
+    }
     private func scheduleSave() {
         saved = false; saveTask?.cancel()
         saveTask = Task { [weak self] in
@@ -1626,6 +1685,9 @@ final class StudioState: ObservableObject {
         workspaceResetID = UUID()
     }
     func setANEEnabled(_ enabled: Bool) {
+        guard !enabled || draft.modelID != "ltx-2.5-distilled" || draft.operation != "video.keyframes" else {
+            message = "LTX 首尾帧当前仅支持 GPU 分块流式加载。"; return
+        }
         guard !enabled || !draft.usesQwen21InstalledRecipe else {
             message = "此 Qwen 安装使用 GPU，当前 App 没有适用的 ANE 配置。"
             return
@@ -1636,6 +1698,13 @@ final class StudioState: ObservableObject {
         config.automaticVersion = 1
         draft.profilePath = ""
         draft.acceleration = config
+        if draft.modelID == "ltx-2.5-distilled" {
+            if enabled, draft.residency == "streamed" || draft.usesPublicStreaming {
+                draft.streaming = StudioStreamingState()
+                draft.residency = "component_staged"
+                message = "LTX 的 ANE 配置暂不支持分块流式加载，已切换为分阶段加载，内存占用可能增加。"
+            } else if !enabled { draft.applyLTXStreamingDefault() }
+        }
     }
     @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {
         guard !imageInputsBusy, [1024, 512].contains(size) else { return false }
@@ -1800,6 +1869,20 @@ final class StudioState: ObservableObject {
         draft.operation = operation
         if operationChanged { draft.normalizeQwen21CheckpointRecipe() }
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
+        if operation == "video.keyframes" {
+            let images = draft.assets.filter { $0.mediaKind == "image" }
+            if draft.firstKeyframe == nil { draft.initImageID = images.first?.id }
+            if draft.lastKeyframe == nil { draft.lastImageID = images.first { $0.id != draft.initImageID }?.id }
+            if operationChanged, draft.modelID == "ltx-2.5-distilled" { draft.strength = 1.0 }
+            if draft.modelID == "ltx-2.5-distilled" {
+                let wasPublic = draft.usesPublicStreaming
+                draft.streaming = StudioStreamingState(); draft.profilePath = ""
+                var acceleration = draft.acceleration ?? StudioAcceleration()
+                acceleration.policy = "gpu"; draft.acceleration = acceleration
+                draft.ltxBackend = "c_metal"; draft.ltxAccelerationMode = "quality"
+                if operationChanged || wasPublic { draft.residency = "streamed" }
+            }
+        }
         synchronizeUpscaleSource()
     }
     func selectInstallation(modelID: String, path: String) {
@@ -1858,9 +1941,8 @@ final class StudioState: ObservableObject {
         draft.qwen21DiTSmoothQuantConvRot = false
         draft.qwen21ReferenceSize = 1024
         draft.residency = model.default_residency ?? "resident"
-        if id == "ltx-2.5-distilled", draft.operation == "video.generate",
-           !draft.audio, ProcessInfo.processInfo.physicalMemory <= UInt64(32) << 30 {
-            draft.residency = "streamed"
+        if id == "ltx-2.5-distilled" {
+            draft.residency = "streamed"; draft.ltxStreamingDefaultVersion = 1
         }
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")
@@ -1872,11 +1954,12 @@ final class StudioState: ObservableObject {
             draft.assets.removeAll(); draft.initImageID = nil
         }
     }
-    func rememberAssets() { undoAssets.append((draft.assets, draft.initImageID)); undoAssets = Array(undoAssets.suffix(20)) }
+    func rememberAssets() { undoAssets.append((draft.assets, draft.initImageID, draft.lastImageID)); undoAssets = Array(undoAssets.suffix(20)) }
     func remove(_ id: UUID) {
         guard !imageInputsBusy, draft.assets.contains(where: { $0.id == id }) else { return }
         rememberAssets(); draft.assets.removeAll { $0.id == id }
-        if draft.initImageID == id { draft.initImageID = draft.assets.first?.id }
+        if draft.initImageID == id { draft.initImageID = draft.operation == "video.keyframes" ? nil : draft.assets.first?.id }
+        if draft.lastImageID == id { draft.lastImageID = nil }
     }
     func move(_ id: UUID, offset: Int) {
         guard !imageInputsBusy, offset != 0, let index = draft.assets.firstIndex(where: { $0.id == id }), draft.assets.indices.contains(index + offset) else { return }
@@ -1936,7 +2019,7 @@ final class StudioState: ObservableObject {
     func undoAssetChange() {
         guard !imageInputsBusy else { return }
         if let previous = undoAssets.popLast() {
-            draft.assets = previous.0; draft.initImageID = previous.1
+            draft.assets = previous.0; draft.initImageID = previous.1; draft.lastImageID = previous.2
             message = "已撤销素材修改，恢复之前的图片顺序与原图选择。"
         }
     }
@@ -2036,6 +2119,106 @@ final class StudioState: ObservableObject {
             return false
         }
     }
+    /// Stage a private copy before switching workflows. Failed/cancelled imports
+    /// must leave the current model, references and prompt intact.
+    @discardableResult
+    func useResultForVideo(_ job: NativeJob) async -> Bool {
+        // Like addFiles, this also runs inside the already-latched import task.
+        guard !importing, job.hasOutput, job.outputMediaKind == .image else { return false }
+        let candidates = models.filter { $0.supports("video.image") }
+        guard let model = candidates.first(where: { $0.id == draft.modelID })
+                ?? candidates.first(where: { !(draft.modelPaths[$0.id] ?? "").isEmpty })
+                ?? candidates.first else {
+            message = "当前引擎没有可用的图生视频执行器，请前往模型中心查看。"
+            return false
+        }
+        let context = assetImportContext, previousPrompt = draft.prompt
+        let fromImage = creationKind != "video"
+        importing = true; defer { importing = false }
+        var staged: [StudioAsset] = []
+        do {
+            try Task.checkCancellation()
+            let asset = try await importer.importFile(URL(fileURLWithPath: job.request.output))
+            staged = [asset]
+            try validateAssetImportContext(context)
+            rememberAssets()
+            if draft.modelID != model.id { applyModel(model) }
+            // Public streaming tiers accept text-only workloads. LTX's MLX
+            // backend also lacks first-frame encoding; keep the handoff runnable.
+            let wasPublicStreaming = draft.usesPublicStreaming
+            let needsVideoSettings = wasPublicStreaming || (model.id == "ltx-2.5-distilled" && draft.ltxBackend == "cpp_mlx")
+            draft.streaming = StudioStreamingState()
+            if model.id == "ltx-2.5-distilled" {
+                if draft.ltxBackend == "cpp_mlx" { draft.ltxBackend = "c_metal" }
+                draft.applyLTXStreamingDefault()
+            }
+            draft.assets = [asset]; draft.initImageID = asset.id; draft.lastImageID = nil
+            draft.operation = "video.image"
+            if fromImage, draft.prompt == previousPrompt { draft.prompt = "" }
+            message = "已将图片副本设为视频首帧，请描述动作与镜头。原结果已保留，素材替换可撤销。"
+                + (needsVideoSettings ? "已切换为支持首帧的生成设置。" : "")
+                + (draft.modelPath.isEmpty ? "请先在模型中心配置视频模型。" : "")
+            save()
+            return true
+        } catch {
+            await importer.discard(staged)
+            message = imageImportErrorMessage(error)
+            return false
+        }
+    }
+    @discardableResult
+    func beginVideoFromResult(_ job: NativeJob, completion: @escaping @MainActor () -> Void) -> Bool {
+        beginImageImport {
+            if await self.useResultForVideo(job) { completion() }
+        }
+    }
+    func selectKeyframeAsset(_ id: UUID, role: StudioKeyframeRole) {
+        guard !imageInputsBusy, draft.operation == "video.keyframes",
+              draft.assets.contains(where: { $0.id == id && $0.mediaKind == "image" }) else { return }
+        let other = role == .first ? draft.lastImageID : draft.initImageID
+        guard id != other else { message = "同一素材不能同时占据两个槽位，请导入另一份副本，或交换首尾帧。"; return }
+        rememberAssets()
+        if role == .first { draft.initImageID = id } else { draft.lastImageID = id }
+        message = nil; save()
+    }
+    func swapKeyframes() {
+        guard !imageInputsBusy, draft.operation == "video.keyframes",
+              let first = draft.firstKeyframe, let last = draft.lastKeyframe else { return }
+        rememberAssets()
+        draft.initImageID = last.id; draft.lastImageID = first.id
+        message = "已交换首尾帧，请核对画面过渡方向。"; save()
+    }
+    func removeKeyframe(_ role: StudioKeyframeRole) {
+        guard let asset = draft.keyframe(role) else { return }
+        remove(asset.id); save()
+    }
+    @discardableResult
+    func importKeyframe(_ url: URL, role: StudioKeyframeRole) async -> Bool {
+        guard !importing, draft.operation == "video.keyframes", supportsImageInputs else { return false }
+        let context = assetImportContext
+        importing = true; defer { importing = false }
+        var staged: [StudioAsset] = []
+        do {
+            try Task.checkCancellation()
+            let asset = try await importer.importFile(url)
+            staged = [asset]
+            try validateAssetImportContext(context)
+            rememberAssets()
+            if let old = draft.keyframe(role), let index = draft.assets.firstIndex(where: { $0.id == old.id }) {
+                draft.assets[index] = asset
+            } else { draft.assets.append(asset) }
+            if role == .first { draft.initImageID = asset.id } else { draft.lastImageID = asset.id }
+            message = "已设置\(role.title)图片副本，另一帧与生成参数已保留，可撤销。"
+            save(); return true
+        } catch {
+            await importer.discard(staged)
+            message = imageImportErrorMessage(error); return false
+        }
+    }
+    @discardableResult
+    func beginKeyframeImport(_ url: URL, role: StudioKeyframeRole, completion: @escaping @MainActor () -> Void) -> Bool {
+        beginImageImport { if await self.importKeyframe(url, role: role) { completion() } }
+    }
     var supportsImageInputs: Bool {
         guard let model = models.first(where: { $0.id == draft.modelID }), model.executor, model.inputs?.contains("image") != false, (model.max_images ?? 8) > 0 else { return false }
         return (model.executor_operations ?? model.operations).contains {
@@ -2066,6 +2249,7 @@ final class StudioState: ObservableObject {
     // Keep the existing eight-asset staging area for smaller-input models,
     // while allowing the complete ten-reference Qwen21 input contract.
     var imageImportLimit: Int {
+        if draft.operation == "video.keyframes" { return draft.assets.count + 2 - draft.activeAssets.count }
         if draft.modelID == "qwen-image-2.1", !draft.activeLoRAs.isEmpty || draft.qwen21DiTCache != "off" || draft.usesQwen21FastReferenceEncoding { return 3 }
         return max(8, models.first(where: { $0.id == draft.modelID })?.max_images ?? 8)
     }
@@ -2273,7 +2457,12 @@ final class StudioState: ObservableObject {
     }
     private func attach(_ assets: [StudioAsset]) {
         rememberAssets(); draft.assets.append(contentsOf: assets)
-        if draft.initImageID == nil { draft.initImageID = assets.first?.id }
+        if draft.operation == "video.keyframes" {
+            for asset in assets where asset.mediaKind == "image" {
+                if draft.firstKeyframe == nil { draft.initImageID = asset.id }
+                else if draft.lastKeyframe == nil && asset.id != draft.initImageID { draft.lastImageID = asset.id }
+            }
+        } else if draft.initImageID == nil { draft.initImageID = assets.first?.id }
         if draft.modelID == "seedvr2-3b", let source = assets.last {
             draft.initImageID = source.id
             draft.width = max(64, min(2048, source.width * 2) / 16 * 16)
@@ -2375,10 +2564,21 @@ final class StudioState: ObservableObject {
         draft.loras = (request.loras ?? []).map { StudioLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         draft.modelLoRAs[request.model] = draft.loras
         draft.loraStrategy = request.lora_strategy ?? "auto"
-        draft.initImageID = draft.assets.first?.id; draft.strength = request.inputs?.first?.strength ?? 0.75
+        draft.initImageID = draft.assets.first?.id
+        draft.lastImageID = nil
+        if draft.operation == "video.keyframes", let inputs = request.inputs {
+            draft.initImageID = zip(inputs, draft.assets).first { $0.0.role == "first_frame" }?.1.id
+            draft.lastImageID = zip(inputs, draft.assets).first { $0.0.role == "last_frame" }?.1.id
+        }
+        draft.strength = request.inputs?.first?.strength ?? 0.75
+        draft.applyLTXStreamingDefault()
         draft.normalizeQwen21CheckpointRecipe(preferStreaming: false)
         undoAssets = []
         message = "已恢复此任务的模型、输入顺序与生成参数，请核对后重新生成。"
+        if request.model == "ltx-2.5-distilled", draft.residency == "streamed",
+           request.residency != "streamed", !draft.usesPublicStreaming {
+            message = (message ?? "") + "已按当前默认设置启用分块流式加载，避免恢复旧的常驻内存策略。"
+        }
         save()
         workspaceResetID = UUID()
     }
@@ -2441,7 +2641,7 @@ final class StudioState: ObservableObject {
             draft.operation = model.supports(operation) ? operation : model.availableOperations.first ?? operation
             draft.normalizeQwen21CheckpointRecipe(preferStreaming: wasEditing)
         }
-        draft.prompt = ""; draft.assets = []; draft.initImageID = nil
+        draft.prompt = ""; draft.assets = []; draft.initImageID = nil; draft.lastImageID = nil
         undoAssets = []; lastSeed = nil
         message = nil
         workspaceResetID = UUID()

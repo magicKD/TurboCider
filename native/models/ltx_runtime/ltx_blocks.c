@@ -1552,6 +1552,7 @@ static int create_block_rope_from_positions(
 
 static int create_block_rope(ltx_gpu *gpu, const block_weights *weights,
                              uint32_t video_rows, uint32_t audio_rows,
+                             int endpoint_guide,
                              block_rope *rope,
                              char *error, size_t error_size) {
     uint32_t frames = 0;
@@ -1568,9 +1569,12 @@ static int create_block_rope(ltx_gpu *gpu, const block_weights *weights,
         (size_t)video_rows * 3u * sizeof(float));
     float *audio_positions = malloc((size_t)audio_rows * sizeof(float));
     if (!video_positions || !audio_positions ||
-        !ltx_compute_video_positions(
+        !(endpoint_guide ? ltx_compute_endpoint_video_positions(
             video_positions, (uint64_t)video_rows * 3u,
-            frames, height, width, 24.0f, error, error_size) ||
+            frames, height, width, 24.0f, error, error_size) :
+          ltx_compute_video_positions(
+            video_positions, (uint64_t)video_rows * 3u,
+            frames, height, width, 24.0f, error, error_size)) ||
         !ltx_compute_audio_positions(
             audio_positions, audio_rows, audio_rows, error, error_size)) {
         free(video_positions);
@@ -4428,6 +4432,7 @@ cleanup:
  * raw conditioning files, generated-media files or child process boundary. */
 struct ltx_native_denoiser {
     ltx_native_options options;
+    const uint16_t *endpoint_guide;
     tc_memory_schedule_hooks_v1 schedule_hooks;
     char *owned_strings[10];
     ltx_workload workload;
@@ -4488,6 +4493,10 @@ static void ltx_native_activate_geometry(ltx_native_denoiser *ctx) {
         (uint32_t)g->stage2_video_tokens,
         g->frames, g->output_height, g->output_width
     };
+    if (ctx->options.endpoint_guide_count) {
+        active_geometry.stage1_rows += g->stage1_latent_height * g->stage1_latent_width;
+        active_geometry.stage2_rows += g->stage2_latent_height * g->stage2_latent_width;
+    }
 }
 
 #ifdef LTX_ENABLE_ANE_MLP
@@ -4660,6 +4669,16 @@ static ltx_native_denoiser *ltx_native_create_internal(const ltx_native_options 
     ltx_native_denoiser *ctx=calloc(1,sizeof(*ctx));if(!ctx){snprintf(error,error_size,"allocation failed");return NULL;}
     ltx_st_header header={0};ltx_st_mapping mapping={0};
     ctx->options=*options;
+    if (options->endpoint_guide_count > 1u ||
+        (options->endpoint_guide_count &&
+         (exact_options || options->memory_hooks || options->schedule_hooks ||
+          options->sol_stage1 || options->sol_stage2 || options->sparse_mode ||
+          options->mlp_directories[0] || options->mlp_directories[1] ||
+          options->v2a_directories[0] || options->v2a_directories[1] ||
+          options->kv_directory || options->qkv_directories[0] || options->qkv_directories[1]))) {
+        snprintf(error, error_size, "LTX endpoint guides require the GPU dense legacy route");
+        goto failed;
+    }
     if (options->schedule_hooks) {
         if (!tc_memory_schedule_hooks_valid_v1(
                 options->schedule_hooks)) {
@@ -4801,7 +4820,8 @@ static ltx_native_denoiser *ltx_native_create_internal(const ltx_native_options 
         const uint32_t max_refill_slots = options->max_refill_slots ?
             options->max_refill_slots : LTX_MAX_REFILL_SLOTS;
         const uint64_t geometry_bytes =
-            (uint64_t)options->width * options->height * options->frames * 128u;
+            (uint64_t)options->width * options->height *
+            ((uint64_t)options->frames + (options->endpoint_guide_count ? 8u : 0u)) * 128u;
         ctx->streaming_budget_bytes = options->memory_budget_bytes ?
             options->memory_budget_bytes : (12ull << 30) + geometry_bytes;
         ctx->streaming_activation_reserve_bytes =
@@ -5117,10 +5137,19 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
      * use the same conditioned sampler as resident execution. The exact/public
      * route retains its separate text-only admission below. */
     ltx_workload *g=&ctx->workload;
-    uint32_t rows=(uint32_t)(stage==1?g->stage1_video_tokens:g->stage2_video_tokens);
+    const uint32_t base_rows=(uint32_t)(stage==1?g->stage1_video_tokens:g->stage2_video_tokens);
+    const uint32_t plane=stage==1?g->stage1_latent_height*g->stage1_latent_width:g->stage2_latent_height*g->stage2_latent_width;
+    const uint16_t *last_frame=ctx->endpoint_guide;
+    if ((last_frame != NULL) != (ctx->options.endpoint_guide_count == 1u) ||
+        (last_frame && !first_frame) || base_rows > UINT32_MAX - (last_frame ? plane : 0u)) {
+        snprintf(error,error_size,"LTX endpoint guide layout mismatch");return 0;
+    }
+    const uint32_t guide_rows=last_frame?plane:0u;
+    uint32_t rows=base_rows+guide_rows;
     uint32_t audio_rows=g->audio_tokens,vd=ltx_transformer_io_video_hidden_dim(ctx->io),ad=ltx_transformer_io_audio_hidden_dim(ctx->io);
     uint32_t vp=ltx_transformer_io_video_patch_dim(ctx->io),ap=ltx_transformer_io_audio_patch_dim(ctx->io);
-    if(video_elements!=(size_t)rows*vp||audio_elements!=(size_t)audio_rows*ap){snprintf(error,error_size,"LTX latent tensor size mismatch");return 0;}
+    if(video_elements!=(size_t)base_rows*vp||audio_elements!=(size_t)audio_rows*ap||
+       (uint64_t)rows*vp>UINT32_MAX){snprintf(error,error_size,"LTX latent tensor size mismatch");return 0;}
     size_t stage1_sigma_count = 0u;
     size_t current_sigma_count = 0u;
     (void)ltx_distilled_stage1_sigmas(&stage1_sigma_count);
@@ -5223,18 +5252,30 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
 #endif
     ltx_gpu *gpu=ctx->gpu;block_rope rope={0};block_workspace workspace={0};
     ltx_gpu_buffer *buffers[9]={0};int ok=0;
-    buffers[0]=ltx_gpu_buffer_new_copy(gpu,video,video_elements*2,error,error_size);
+    const size_t sampling_elements=(size_t)rows*vp;
+    const size_t guide_elements=(size_t)guide_rows*vp;
+    uint16_t *guided_video=last_frame?calloc(sampling_elements,sizeof(uint16_t)):NULL;
+    uint16_t *guided_clean=last_frame?malloc((size_t)2u*plane*vp*sizeof(uint16_t)):NULL;
+    ltx_gpu_buffer *clean=NULL;
+    if (last_frame) {
+        if (!guided_video || !guided_clean) {
+            snprintf(error,error_size,"out of memory creating endpoint guides");goto cleanup;
+        }
+        memcpy(guided_video+guide_elements,video,video_elements*2u);
+        memcpy(guided_clean,last_frame,guide_elements*2u);
+        memcpy(guided_clean+guide_elements,first_frame,guide_elements*2u);
+    }
+    buffers[0]=ltx_gpu_buffer_new_copy(gpu,last_frame?guided_video:video,sampling_elements*2,error,error_size);
     buffers[1]=ltx_gpu_buffer_new_copy(gpu,audio,audio_elements*2,error,error_size);
     buffers[2]=ltx_gpu_buffer_new_copy(gpu,video_text_host,(size_t)text_rows*vd*2,error,error_size);
     buffers[3]=ltx_gpu_buffer_new_copy(gpu,audio_text_host,(size_t)text_rows*ad*2,error,error_size);
     buffers[4]=mask_host?ltx_gpu_buffer_new_copy(gpu,mask_host,text_rows*2,error,error_size):NULL;
     buffers[5]=ltx_gpu_buffer_new(gpu,(size_t)rows*vd*2,error,error_size);
     buffers[6]=ltx_gpu_buffer_new(gpu,(size_t)audio_rows*ad*2,error,error_size);
-    buffers[7]=ltx_gpu_buffer_new(gpu,video_elements*2,error,error_size);
+    buffers[7]=ltx_gpu_buffer_new(gpu,sampling_elements*2,error,error_size);
     buffers[8]=ltx_gpu_buffer_new(gpu,audio_elements*2,error,error_size);
-    ltx_gpu_buffer *clean=NULL;
-    uint32_t prefix=first_frame?(stage==1?g->stage1_latent_height*g->stage1_latent_width:g->stage2_latent_height*g->stage2_latent_width):0;
-    if(first_frame)clean=ltx_gpu_buffer_new_copy(gpu,first_frame,(size_t)prefix*vp*2,error,error_size);
+    uint32_t prefix=first_frame?plane+guide_rows:0;
+    if(first_frame)clean=ltx_gpu_buffer_new_copy(gpu,last_frame?guided_clean:first_frame,(size_t)prefix*vp*2,error,error_size);
     for(unsigned i=0;i<9;++i)if((i!=4||mask_host)&&!buffers[i])goto cleanup;
     if(first_frame&&!clean)goto cleanup;
 #ifdef LTX_ENABLE_ANE_MLP
@@ -5294,7 +5335,7 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
 #endif
     /* Workspace shape depends on the active ANE K/V and QKV partitions, so
      * attach and validate those artifacts before allocating stage buffers. */
-    if(!create_block_rope(gpu,&ctx->weights[0],rows,audio_rows,&rope,error,error_size)||!create_workspace(gpu,rows,vd,ctx->weights[0].video_mlp.hidden_dim,ctx->weights[0].video_self.heads,audio_rows,ad,text_rows,&workspace,error,error_size))goto cleanup;
+    if(!create_block_rope(gpu,&ctx->weights[0],rows,audio_rows,last_frame!=NULL,&rope,error,error_size)||!create_workspace(gpu,rows,vd,ctx->weights[0].video_mlp.hidden_dim,ctx->weights[0].video_self.heads,audio_rows,ad,text_rows,&workspace,error,error_size))goto cleanup;
     size_t count=0;const float *sigmas=stage==1?ltx_distilled_stage1_sigmas(&count):ltx_distilled_stage2_sigmas(&count);
     ltx_rng video_rng,audio_rng;ltx_rng_seed(&video_rng,seed+(stage==1?10000u:2u),0);ltx_rng_seed(&audio_rng,seed+2u,0);
     block_stream_source stream_source = {
@@ -5323,8 +5364,12 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
         if (ok) ctx->exact_stream->finished = 1;
     }
     if (ok && ctx->exact_stream) ok = ltx_native_exact_source_current(ctx, error, error_size);
-    if(ok)ok=ltx_gpu_buffer_read(buffers[0],video,video_elements*2,error,error_size)&&ltx_gpu_buffer_read(buffers[1],audio,audio_elements*2,error,error_size);
+    if(ok) {
+        ok=ltx_gpu_buffer_read(buffers[0],last_frame?guided_video:video,sampling_elements*2,error,error_size)&&ltx_gpu_buffer_read(buffers[1],audio,audio_elements*2,error,error_size);
+        if (ok && last_frame) memcpy(video,guided_video+guide_elements,video_elements*2u);
+    }
 cleanup:
+    free(guided_video);free(guided_clean);
     if (!ok && ctx->exact_stream) ctx->exact_stream->poisoned = 1;
     if (!ok && ctx->exact_stream && !ltx_exact_release_safe(ctx->exact_stream)) {
         ctx->exact_stream->quarantine_workspace = workspace;
@@ -5357,6 +5402,22 @@ cleanup:
             TC_MEMORY_INDEX_NONE, TC_MEMORY_BRANCH_COMMON,
             TC_MEMORY_INDEX_NONE, 0, error, error_size))
         ok = 0;
+    return ok;
+}
+
+int ltx_native_run_keyframes(ltx_native_denoiser *ctx,int stage,uint64_t seed,
+    uint16_t *video,size_t video_elements,uint16_t *audio,size_t audio_elements,
+    const uint16_t *video_text,const uint16_t *audio_text,const uint16_t *mask,
+    uint32_t text_rows,const uint16_t *first_frame,const uint16_t *last_frame,
+    float strength,ltx_native_progress progress,void *opaque,char *error,size_t error_size) {
+    if (!ctx || !first_frame || !last_frame || ctx->endpoint_guide ||
+        ctx->options.endpoint_guide_count != 1u) {
+        snprintf(error,error_size,"invalid LTX first/last-frame input");return 0;
+    }
+    ctx->endpoint_guide=last_frame;
+    int ok=ltx_native_run(ctx,stage,seed,video,video_elements,audio,audio_elements,
+        video_text,audio_text,mask,text_rows,first_frame,strength,progress,opaque,error,error_size);
+    ctx->endpoint_guide=NULL;
     return ok;
 }
 

@@ -410,7 +410,8 @@ static std::string sha256_file(const std::filesystem::path& path) {
     if (!stream.good()) return {};
     CC_SHA256_CTX context;
     if (CC_SHA256_Init(&context) != 1) return {};
-    std::array<char, 1 << 20> buffer{};
+    // Desktop generation runs on a dispatch worker with a small thread stack.
+    std::vector<char> buffer(1 << 20);
     while (stream.good()) {
         stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         std::streamsize count = stream.gcount();
@@ -2478,17 +2479,25 @@ public:
         require(!request.prompt.empty() && !request.output.empty(),
                 "prompt and output are required");
         require(request.output.ends_with(".mp4"), "LTX output must be .mp4");
-        const bool image_to_video = request.operation == "video.image";
+        const bool endpoint_keyframes = request.operation == "video.keyframes";
+        const bool image_to_video = request.operation == "video.image" || endpoint_keyframes;
         require(request.operation == "video.generate" || image_to_video,
-                "native LTX candidate supports video.generate or video.image");
+                "native LTX candidate supports video.generate, video.image or video.keyframes");
         if (!image_to_video) {
             require(request.inputs.empty(),
                     "video.generate does not accept media inputs");
         } else {
-            require(request.inputs.size() == 1 &&
+            require(request.inputs.size() == (endpoint_keyframes ? 2u : 1u) &&
                         request.inputs.front().kind == "image" &&
                         request.inputs.front().role == "first_frame",
-                    "video.image requires one first_frame image");
+                    "LTX conditioning requires first_frame, then last_frame for keyframes");
+            if (endpoint_keyframes) {
+                require(request.inputs[1].kind == "image" && request.inputs[1].role == "last_frame" &&
+                            request.inputs[1].strength == request.inputs[0].strength,
+                        "LTX keyframes require last_frame with the same strength as first_frame");
+                require(std::filesystem::is_regular_file(request.inputs[1].path),
+                        "LTX last-frame image is missing: " + request.inputs[1].path);
+            }
             require(std::filesystem::is_regular_file(request.inputs.front().path),
                     "LTX first-frame image is missing: " +
                         request.inputs.front().path);
@@ -2522,6 +2531,11 @@ public:
         const std::string effective_execution =
             request.execution == "auto" ? "gpu" : request.execution;
         const bool use_mlx = ltx_mlx_requested(request);
+        if (endpoint_keyframes)
+            require(!use_mlx && effective_execution == "gpu" &&
+                        !request.ltx_sol_stage1 && !request.ltx_sol_stage2 &&
+                        !request.ltx_sparse_mode && !request.ltx_stage2_text_rows,
+                    "LTX first/last-frame conditioning requires GPU C/Metal dense sampling");
         if (exact_streaming) {
             require(!use_mlx &&
                         (request.ltx_backend == "c_metal" ||
@@ -2682,6 +2696,8 @@ public:
 
         std::vector<uint16_t> stage1_clean_prefix;
         std::vector<uint16_t> stage2_clean_prefix;
+        std::vector<uint16_t> stage1_clean_tail;
+        std::vector<uint16_t> stage2_clean_tail;
         const float first_frame_strength = image_to_video ?
             request.inputs.front().strength : 0.0f;
         if (image_to_video) {
@@ -2698,7 +2714,8 @@ public:
              * encoder's weights in unified memory. */
             video_vae_.reset();
             ltx_mlx_video_vae_clear_cache();
-            event("video_vae_encode", 0, 2);
+            const int encode_count = endpoint_keyframes ? 4 : 2;
+            event("video_vae_encode", 0, encode_count);
             std::unique_ptr<ltx_mlx_video_vae,
                             decltype(&ltx_mlx_video_vae_free)> encoder(
                 ltx_mlx_video_vae_create_encoder(
@@ -2716,7 +2733,7 @@ public:
                 workload.stage1_latent_height,
                 workload.stage1_latent_width,
                 error, sizeof(error));
-            event("video_vae_encode", 1, 2);
+            event("video_vae_encode", 1, encode_count);
             stage2_clean_prefix = encode_ltx_first_frame(
                 encoder.get(), request.inputs.front().path,
                 workload.stage2_latent_width * 32u,
@@ -2724,7 +2741,20 @@ public:
                 workload.stage2_latent_height,
                 workload.stage2_latent_width,
                 error, sizeof(error));
-            event("video_vae_encode", 2, 2);
+            event("video_vae_encode", 2, encode_count);
+            if (endpoint_keyframes) {
+                stage1_clean_tail = encode_ltx_first_frame(
+                    encoder.get(), request.inputs[1].path,
+                    workload.stage1_latent_width * 32u, workload.stage1_latent_height * 32u,
+                    workload.stage1_latent_height, workload.stage1_latent_width, error, sizeof(error));
+                checkpoint(cancel);
+                event("video_vae_encode", 3, encode_count);
+                stage2_clean_tail = encode_ltx_first_frame(
+                    encoder.get(), request.inputs[1].path,
+                    workload.stage2_latent_width * 32u, workload.stage2_latent_height * 32u,
+                    workload.stage2_latent_height, workload.stage2_latent_width, error, sizeof(error));
+                event("video_vae_encode", 4, encode_count);
+            }
         }
 
         if (conditioning.directory.empty()) {
@@ -2927,6 +2957,7 @@ public:
             (ane_config.identity.empty() ? "dense" : ane_config.identity) +
             ":residency=" + request.residency +
             ":memory_budget=" + std::to_string(request.memory_budget_bytes) +
+            ":endpoint_guide=" + (endpoint_keyframes ? "1" : "0") +
             ":mlx_cache=" + std::to_string(mlx_cache_capacity) +
             ":convrot_group=" + std::to_string(mlx_convrot_group_size) +
             ":convrot_compute=" + ltx_convrot_compute_recipe() +
@@ -3046,6 +3077,7 @@ public:
                 mlx_denoiser_key_ = denoiser_key;
             } else {
                 ltx_native_options options{};
+                options.endpoint_guide_count = endpoint_keyframes ? 1u : 0u;
                 options.checkpoint = selected_checkpoint.c_str();
                 options.shader_source = shader_path_.c_str();
                 options.width = request.width;
@@ -3317,6 +3349,12 @@ public:
                 conditioning.mask.data(), conditioning.rows,
                 nullptr, 0.0f, Progress::receive, &progress,
                 error, sizeof(error));
+        } else if (endpoint_keyframes) {
+            stage1_ok = ltx_native_run_keyframes(denoiser_.get(), 1, request.seed,
+                video.data(), video.size(), audio.data(), audio.size(),
+                conditioning.video.data(), conditioning.audio.data(), conditioning.mask.data(),
+                conditioning.rows, stage1_clean_prefix.data(), stage1_clean_tail.data(),
+                first_frame_strength, Progress::receive, &progress, error, sizeof(error));
         } else {
             stage1_ok = ltx_native_run(denoiser_.get(), 1, request.seed,
                 video.data(), video.size(), audio.data(), audio.size(),
@@ -3328,6 +3366,7 @@ public:
                 Progress::receive, &progress, error, sizeof(error));
         }
         if (progress.failure) std::rethrow_exception(progress.failure);
+        checkpoint(cancel);
         require(stage1_ok, error);
         progress.finish_steps();
         dump_ltx_bf16(request.dump, "stage1_video", video.data(), video.size());
@@ -3486,6 +3525,12 @@ public:
                 conditioning.mask.data(), stage2_text_rows,
                 nullptr, 0.0f, Progress::receive, &progress,
                 error, sizeof(error));
+        } else if (endpoint_keyframes) {
+            stage2_ok = ltx_native_run_keyframes(denoiser_.get(), 2, request.seed,
+                video.data(), video.size(), audio.data(), audio.size(),
+                conditioning.video.data(), conditioning.audio.data(), conditioning.mask.data(),
+                stage2_text_rows, stage2_clean_prefix.data(), stage2_clean_tail.data(),
+                first_frame_strength, Progress::receive, &progress, error, sizeof(error));
         } else {
             stage2_ok = ltx_native_run(denoiser_.get(), 2, request.seed,
                 video.data(), video.size(), audio.data(), audio.size(),
@@ -3497,6 +3542,7 @@ public:
                 Progress::receive, &progress, error, sizeof(error));
         }
         if (progress.failure) std::rethrow_exception(progress.failure);
+        checkpoint(cancel);
         require(stage2_ok, error);
         progress.finish_steps();
         dump_ltx_bf16(request.dump, "stage2_video", video.data(), video.size());
@@ -3821,6 +3867,13 @@ public:
                 @"steps": @(request.steps),
                 @"seed": @(request.seed),
                 @"plan": to_dictionary(plan),
+                @"first_frame_conditioning": @(image_to_video),
+                @"last_frame_conditioning": @(endpoint_keyframes),
+                @"image_conditioning_mode": endpoint_keyframes ? @"first_replace_last_guide" :
+                    (image_to_video ? @"first_replace" : @"none"),
+                @"conditioned_pixel_frames": endpoint_keyframes ? @[@0, @(request.frames - 1)] :
+                    (image_to_video ? @[@0] : @[]),
+                @"first_frame_strength": image_to_video ? (id)@(first_frame_strength) : (id)[NSNull null],
                 @"convrot_compute_recipe": @(ltx_convrot_compute_recipe().c_str()),
                 @"denoiser_implementation": use_mlx ? @"cpp_mlx" : @"c_metal",
                 @"c_metal_convrot_w8a8_total_projections": @(streaming_after.convrot_w8a8_projections),
@@ -4225,6 +4278,11 @@ public:
                   @"audio_clipped_samples": request.audio ?
                       (id)@(audio_info.clipped_samples) : (id)[NSNull null],
                   @"first_frame_conditioning": @(image_to_video),
+                  @"last_frame_conditioning": @(endpoint_keyframes),
+                  @"image_conditioning_mode": endpoint_keyframes ? @"first_replace_last_guide" :
+                      (image_to_video ? @"first_replace" : @"none"),
+                  @"conditioned_pixel_frames": endpoint_keyframes ? @[@0, @(request.frames - 1)] :
+                      (image_to_video ? @[@0] : @[]),
                   @"first_frame_strength": image_to_video ?
                       (id)@(first_frame_strength) : (id)[NSNull null],
                   @"conditioning_cache_hit": @(conditioning.cache_hit),

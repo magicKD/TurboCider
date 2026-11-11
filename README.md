@@ -86,7 +86,7 @@ For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`.
 | FLUX.2 Klein 4B / 9B | Text-to-image, transforms, reference editing and LoRA; qualified hybrid profiles for 4B |
 | Z-Image Turbo | Text-to-image, LoRA and optional GPU / ANE execution |
 | MiniMax H3 Turbo | Video generation, keyframes and references; media tools required |
-| LTX 2.5 Distilled | Text-to-video, image-to-video and optional audio output; backend/configuration limits apply |
+| LTX 2.5 Distilled | Text-to-video, first-frame image-to-video, first/last-frame video and optional audio; backend/configuration limits apply |
 | Wan 2.1 1.3B QAD | Native three-step video generation; offline-converted assets and verified premerged LoRA required |
 
 `turbocider models` and request `plan` report the executable capabilities. LoRA, input and acceleration options vary by model. See the [model and request reference](docs/public/USAGE.md#model-capabilities), [Qwen guide](docs/public/QWEN_IMAGE_21.md) and [GPU/ANE acceleration status](docs/status/acceleration.md).

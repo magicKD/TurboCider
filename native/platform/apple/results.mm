@@ -826,7 +826,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"executor_operations" : (r.model == "minimax-h3-vdn" ||
                                       r.model.starts_with("minimax-h3-fasth3-mlx-int6")) ? @[ @"video.generate" ] :
             r.model == "seedvr2-3b" ? @[ @"image.upscale", @"video.upscale" ] :
-            r.model == "ltx-2.5-distilled" ? @[ @"video.generate", @"video.image" ] :
+            r.model == "ltx-2.5-distilled" ? @[ @"video.generate", @"video.image", @"video.keyframes" ] :
             (r.model == "wan2.1-1.3b-qad" ? @[ @"video.generate" ] : [NSNull null]),
         @"limitation" : recipe.executable
             ? @"capabilities depend on model artifacts and configured hardware"

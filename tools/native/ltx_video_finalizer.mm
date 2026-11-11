@@ -329,6 +329,8 @@ std::string json_result(const std::filesystem::path& output,
             // Copy only presentation telemetry. Public receipts/authority are
             // supplied exclusively by the separately verified fd envelope.
             for (NSString* key in @[@"steps", @"seed", @"plan", @"convrot_compute_recipe",
+                    @"first_frame_conditioning", @"last_frame_conditioning",
+                    @"image_conditioning_mode", @"conditioned_pixel_frames", @"first_frame_strength",
                     @"denoiser_implementation", @"denoise_step_seconds",
                     @"c_metal_convrot_w8a8_total_projections",
                     @"c_metal_convrot_w8a8_total_quantizations",

@@ -71,6 +71,11 @@ import CryptoKit
             result = dict(schema_version=1, model=request['model'], operation=request['operation'],
                           output=path, width=out['width'], height=out['height'],
                           steps=sampling['steps'], seed=sampling['seed'], warmup=False)
+            if request['operation'] == 'video.keyframes':
+                result.update(first_frame_conditioning=True, last_frame_conditioning=True,
+                    image_conditioning_mode='first_replace_last_guide', conditioned_pixel_frames=[0,out['frames']-1])
+                if mode == 'missing_tail': del result['last_frame_conditioning']
+                if mode == 'wrong_endpoint': result['conditioned_pixel_frames'] = [0,out['frames']]
             if mode == 'old_path': result['output'] = \(finalLiteral)
             if mode == 'wrong_seed': result['seed'] += 1
             if mode.startswith('missing_') and mode[8:] in ('steps', 'seed', 'warmup'):
@@ -179,6 +184,23 @@ import CryptoKit
         try original.write(to: output)
         _ = try await LTXWorker.generate(model: root, request: request, executable: executable, onEvent: { _ in })
         try require(try Data(contentsOf: output) == data, "Legacy worker did not publish a verified video")
+        var keyframes = streamed
+        keyframes.operation = "video.keyframes"
+        keyframes.inputs = [NativeInput(kind: "image", role: "first_frame", path: "/fixture/first.png", strength: 1),
+                            NativeInput(kind: "image", role: "last_frame", path: "/fixture/last.png", strength: 1)]
+        for mode in ["missing_tail", "wrong_endpoint"] {
+            try original.write(to: output)
+            try worker(mode)
+            var rejected = false
+            do { _ = try await LTXWorker.generate(model: root, request: keyframes, executable: executable, onEvent: { _ in }) }
+            catch { rejected = error.localizedDescription.contains("worker_result_mismatch") }
+            try require(rejected && (try Data(contentsOf: output)) == original, "Keyframe worker published a mismatched endpoint receipt")
+        }
+        try worker("valid")
+        let keyframeResult = try await LTXWorker.generate(model: root, request: keyframes, executable: executable, onEvent: { _ in })
+        let endpointReceipt = try JSONSerialization.jsonObject(with: keyframeResult) as! [String: Any]
+        try require(endpointReceipt["conditioned_pixel_frames"] as? [Int] == [0,8] &&
+                    (try Data(contentsOf: output)) == data, "Streamed keyframes did not publish a verified endpoint video")
         try original.write(to: output)
         try worker("cancel")
         let cancellationRequest = request

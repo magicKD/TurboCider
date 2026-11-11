@@ -204,11 +204,12 @@ static ExecutionPlan make_plan_impl(
             if (stage.id == "denoise") stage.dependencies.push_back("reference_vae_encode");
         }
     }
-    if (r.model == "ltx-2.5-distilled" && r.operation == "video.image") {
-        recipe.stages.insert(recipe.stages.begin(), {"first_frame_vae_encode", {}});
+    if (r.model == "ltx-2.5-distilled" && (r.operation == "video.image" || r.operation == "video.keyframes")) {
+        const std::string encode_stage = r.operation == "video.keyframes" ? "keyframes_vae_encode" : "first_frame_vae_encode";
+        recipe.stages.insert(recipe.stages.begin(), {encode_stage, {}});
         for (auto &stage : recipe.stages)
             if (stage.id == "av_stage1")
-                stage.dependencies.push_back("first_frame_vae_encode");
+                stage.dependencies.push_back(encode_stage);
     }
     /* LTX audio finalization and first-frame I2V are native Session paths.
      * Request-time validation remains fail-closed for missing/invalid audio
@@ -222,7 +223,7 @@ static ExecutionPlan make_plan_impl(
         plan.memory_estimate_bytes = (28ull << 30) + uint64_t(r.width) * r.height * 12288;
     else if (r.model == "ltx-2.5-distilled") {
         const uint64_t geometry =
-            uint64_t(r.width) * r.height * r.frames * 128;
+            uint64_t(r.width) * r.height * (r.frames + (r.operation == "video.keyframes" ? 8u : 0u)) * 128;
         if (r.residency == "streamed")
             plan.memory_estimate_bytes =
                 (r.memory_constrained.enabled ? (25ull << 29) : (26ull << 30)) +

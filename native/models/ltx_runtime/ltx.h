@@ -47,6 +47,13 @@ int ltx_compute_video_positions(float *positions, uint64_t position_values,
 int ltx_compute_audio_positions(float *positions, uint64_t position_values,
                                 uint32_t tokens,
                                 char *error, size_t error_size);
+/* Last-image guide followed by the normal causal video grid. The guide is a
+ * single pixel-frame interval at frames-1, never a replacement of the last
+ * eight-frame VAE latent. First-frame replacement remains on the video grid. */
+int ltx_compute_endpoint_video_positions(float *positions, uint64_t values,
+                                uint32_t latent_frames, uint32_t height,
+                                uint32_t width, float fps,
+                                char *error, size_t error_size);
 int ltx_compute_timestep_embedding_bf16(
                                 uint16_t *embedding,
                                 uint64_t embedding_values,

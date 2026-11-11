@@ -56,8 +56,8 @@ APP_VIEWS=(
 )
 APP_TARGETS="${TURBOCIDER_APP_TARGETS:-all}"
 case "$APP_TARGETS" in
- all|seedvr2|upscale-presentation|tiny-vae|prunavaed) ;;
- *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae or prunavaed\n' >&2; exit 2 ;;
+ all|seedvr2|upscale-presentation|tiny-vae|prunavaed|desktop-media) ;;
+ *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae, prunavaed or desktop-media\n' >&2; exit 2 ;;
 esac
 if [[ "$APP_TARGETS" == prunavaed ]]; then
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PrunaVAEAppTests.swift -o "$OUT/turbocider-prunavaed-app-tests"
@@ -103,6 +103,13 @@ if [[ "$APP_ONLY" == 1 ]]; then
  printf 'Built Swift App and model-library helper; test targets skipped\n'
  exit 0
 fi
+if [[ "$APP_TARGETS" == desktop-media ]]; then
+ "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/DesktopMediaWorkflowTests.swift -o "$OUT/turbocider-desktop-media-tests"
+ "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/KeyframeWorkflowTests.swift -o "$OUT/turbocider-keyframe-workflow-tests"
+ "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O apps/macos/VideoPreview.swift tests/integration/VideoPreviewTests.swift -o "$OUT/turbocider-video-preview-tests"
+ printf 'Built desktop media workflow, video preview tests and App\n'
+ exit 0
+fi
 if [[ "$APP_TARGETS" == seedvr2 ]]; then
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/SeedVR2AppTests.swift -o "$OUT/turbocider-seedvr2-app-tests"
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ModelHubPresentationTests.swift -o "$OUT/turbocider-model-hub-tests"
@@ -112,6 +119,8 @@ fi
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/StudioBehaviorTests.swift tests/integration/StudioStreamingQueryTests.swift -o "$OUT/turbocider-studio-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ImageUpscalerTests.swift -o "$OUT/turbocider-upscaler-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/HistoryManagementTests.swift tests/integration/PublicImageJobTests.swift -o "$OUT/turbocider-history-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/DesktopMediaWorkflowTests.swift -o "$OUT/turbocider-desktop-media-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/KeyframeWorkflowTests.swift -o "$OUT/turbocider-keyframe-workflow-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/AppSmoke.swift -o "$OUT/turbocider-app-smoke"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LifecycleTest.swift -o "$OUT/turbocider-lifecycle-test"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/StudioModelTests.swift -o "$OUT/turbocider-studio-model-tests"

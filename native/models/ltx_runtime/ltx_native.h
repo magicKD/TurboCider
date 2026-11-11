@@ -80,6 +80,8 @@ typedef struct {
     /* Optional owner-thread semantic schedule callback. The native runtime
      * copies this POD during create; workers and Metal callbacks never emit. */
     const tc_memory_schedule_hooks_v1 *schedule_hooks;
+    /* One single-frame tail guide; zero keeps the original T2V/I2V layout. */
+    uint32_t endpoint_guide_count;
 } ltx_native_options;
 typedef struct {
     int enabled;
@@ -173,6 +175,11 @@ int ltx_native_run(ltx_native_denoiser*,int stage,uint64_t seed,
     const uint16_t *video_text,const uint16_t *audio_text,const uint16_t *mask,
     uint32_t text_rows,const uint16_t *first_frame,float strength,
     ltx_native_progress,void*,char*,size_t);
+int ltx_native_run_keyframes(ltx_native_denoiser*,int stage,uint64_t seed,
+    uint16_t *video,size_t video_elements,uint16_t *audio,size_t audio_elements,
+    const uint16_t *video_text,const uint16_t *audio_text,const uint16_t *mask,
+    uint32_t text_rows,const uint16_t *first_frame,const uint16_t *last_frame,
+    float strength,ltx_native_progress,void*,char*,size_t);
 /* Exact Stage-1 -> Stage-2 transition: video-latent denormalization on the
  * native Metal context, MLX spatial x2 upsampling, then renormalization. */
 int ltx_native_upsample_stage2(

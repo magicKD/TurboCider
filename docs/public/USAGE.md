@@ -292,7 +292,7 @@ contracts do not load MLX. Use the model screen for matched timings; see the
 | `z-image-turbo-gguf` | Native MLX text-to-image | Resident; supported tensor types only; default 9 steps |
 | `llada-image-turbo` | Native text-to-image | Editing and independent LoRA are not qualified; hybrid remains explicit |
 | `minimax-h3-turbo` | Native video generation, keyframes and references | Correct installation and provenance required for the selected operation |
-| `ltx-2.5-distilled` | Text-to-video, without audio | Image input and audio remain gated |
+| `ltx-2.5-distilled` | Text-to-video, first-frame image-to-video, first/last-frame video and optional audio | Operation, backend, model-asset and memory-route limits apply |
 | `wan2.1-1.3b-qad` | Native text-to-video | 832×480, 3 steps, 16 fps, 5–81 frames in the form 4n+1; no audio |
 
 Run `turbocider models` to check exact IDs and operations in your build.
@@ -342,8 +342,15 @@ rows 32760, hidden width 1536, intermediate width 8960 and ANE/GPU split
 
 ### LTX video
 
-The public executor accepts `video.generate` with `audio=false` and defaults
-to `component_staged`. The native finalizer decodes in a clean process to avoid
+The native executor accepts `video.generate`, `video.image` and `video.keyframes`,
+and the App defaults to GPU `streamed` loading with a 12 GiB sampling budget
+for all three operations. Older GPU drafts and history reuse adopt this
+default; an explicit loading choice saved by the current App is retained.
+This budget covers denoiser planning, not the whole process or the operating
+system, and does not guarantee zero swap. Calibrated full-request presets are
+an optional, separately validated selection; leaving that selector off does
+not disable block streaming. Audio output requires the verified audio
+components. The native finalizer decodes in a clean process to avoid
 inheriting the denoiser's allocator state. Conditioning can be reused on disk
 when model, tokenizer and prompt identity match.
 
@@ -361,16 +368,47 @@ Example request, with a unique output path:
   "steps": 11,
   "audio": false,
   "execution": "gpu",
-  "residency": "component_staged",
+  "residency": "streamed",
+  "memory_budget_bytes": 12884901888,
   "seed": 42,
   "output": "/absolute/outputs/lake-42.mp4"
 }
 ```
 
-Audio-asset inspection through `tc_ltx_audio_preflight_json` does not enable
-audio generation. Verified assets and a qualified end-to-end executor are
-different conditions. Do not interpret individual decoder tests as full
-audio/video readiness.
+For `video.image`, supply one image input with `role: "first_frame"`. For
+`video.keyframes`, supply exactly two ordered image inputs with roles
+`first_frame` and `last_frame`, both with the same `strength` (default 1.0 in
+the App). The endpoints are decoded pixel frames 0 and `frames - 1`:
+
+```json
+{
+  "operation": "video.keyframes",
+  "inputs": [
+    {"kind": "image", "role": "first_frame", "path": "/absolute/opening.png", "strength": 1.0},
+    {"kind": "image", "role": "last_frame", "path": "/absolute/ending.png", "strength": 1.0}
+  ]
+}
+```
+
+First/last-frame video uses GPU C/Metal with dense sampling. Legacy resident,
+component-staged and streamed residency are supported; public calibrated
+streaming tiers, constrained memory plans, ANE partitions, MLX and Sol are
+not admitted for this operation. Width/height must be multiples of 64,
+frames must be `8n + 1` (at least 9), FPS is 24, and the schedule is 8+3 steps.
+The App displays separate endpoint slots, permits file/history selection and
+swapping, preserves roles across draft/history reuse, and copies source images.
+
+The first image replaces the first video latent; the last image is a separate
+single-frame guide at the final pixel-frame time in both sampling stages. The
+guide tokens are removed before spatial upsampling and decoding. The ending
+can be redrawn by the model: this is neither frame pasting nor a pixel-exact
+endpoint guarantee. Arbitrary interior keyframes supported by the
+[upstream conditioning API](https://github.com/Lightricks/LTX-2/blob/main/packages/ltx-pipelines/docs/conditioning.md)
+are not exposed by this two-endpoint operation.
+
+Complete-clip endpoint quality and peak memory/swap qualification remain pending.
+Current validation covers endpoint bindings, native position geometry,
+request/worker contracts and desktop workflows, plus partial native sampling.
 
 ### H3 residency
 

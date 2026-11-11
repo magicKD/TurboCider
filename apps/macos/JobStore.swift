@@ -111,6 +111,7 @@ struct NativeJob: Codable, Identifiable, Sendable {
         }
     }
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
+    var outputMediaKind: StudioMediaKind { StudioMediaKind(path: request.output) }
     var routeSummary: String? {
         if let runtimeReceipt { return runtimeReceipt.label }
         if UpscaleVariant.from(modelID: request.model) != nil, request.operation == "image.upscale" {
@@ -1096,21 +1097,34 @@ final class NativeJobStore: ObservableObject {
             try persist()
             return jobs[i]
         } catch {
+            var failure = error
+            var quarantined = recordProcessQuarantine(failure)
+            let cancellationRequested = error is CancellationError || cancelRequested
+            if cancellationRequested, !quarantined, request.model == "ltx-2.5-distilled", !workerCleanupPending, let engine {
+                // A manually selected resident session can retain all denoiser
+                // weights after a native cancellation. Release it after return.
+                do { _ = try await engine.unload() }
+                catch {
+                    if recordProcessQuarantine(error) { failure = error; quarantined = true }
+                }
+                self.engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
+            }
+            let cancelled = cancellationRequested && !quarantined
             if let i = jobs.firstIndex(where: { $0.id == id }) {
                 jobs[i].elapsed = Self.seconds(start.duration(to: .now))
-                jobs[i].error = error.localizedDescription
+                jobs[i].error = failure.localizedDescription
                 if imageTransaction?.published == true {
                     // The finalizing receipt is already durable. Do not turn a
                     // published image into a failed/cancelled job if final save fails.
                     jobs[i].state = "finalizing"
-                    storageError = error.localizedDescription
+                    storageError = failure.localizedDescription
                 } else if workerCleanupPending {
                     imageTransaction?.retainForWorkerCleanup()
                     jobs[i].state = "cleanup_pending"
                     do { try persist() } catch { storageError = error.localizedDescription }
                 } else {
                     imageTransaction?.discardRecovery()
-                    jobs[i].state = error is CancellationError ? "cancelled" : "failed"
+                    jobs[i].state = cancelled ? "cancelled" : "failed"
                     do { try persist() } catch { storageError = error.localizedDescription }
                 }
             }
@@ -1118,10 +1132,11 @@ final class NativeJobStore: ObservableObject {
                 sessionState = "图片已发布 · 历史记录待恢复"
             } else if workerCleanupPending {
                 sessionState = "等待工作进程清理"
-            } else if !recordProcessQuarantine(error) {
+            } else if !quarantined {
                 sessionState = engine == nil ? "未加载" : "会话就绪 · 可重试"
             }
-            throw error
+            if cancelled, !workerCleanupPending, imageTransaction?.published != true { throw CancellationError() }
+            throw failure
         }
     }
     private static func seconds(_ duration: Duration) -> Double {

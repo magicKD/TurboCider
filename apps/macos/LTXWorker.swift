@@ -218,6 +218,10 @@ enum LTXWorker {
             let seed: Int
             let warmup: Bool
             let ltx_video_vae: String?
+            let first_frame_conditioning: Bool?
+            let last_frame_conditioning: Bool?
+            let image_conditioning_mode: String?
+            let conditioned_pixel_frames: [Int]?
             let public_streaming: NativeStreamingResultSummary?
         }
         let result: Result
@@ -233,6 +237,13 @@ enum LTXWorker {
               result.height == output.height, result.steps == request.sampling.steps,
               result.seed == request.sampling.seed else {
             throw NativeFailure(message: "worker_result_mismatch: 视频结果与本次请求不一致。")
+        }
+        if request.operation == "video.keyframes" {
+            guard result.first_frame_conditioning == true, result.last_frame_conditioning == true,
+                  result.image_conditioning_mode == "first_replace_last_guide",
+                  result.conditioned_pixel_frames == [0, output.frames - 1] else {
+                throw NativeFailure(message: "worker_result_mismatch: 首尾帧执行信息与本次请求不一致。")
+            }
         }
         guard let selector = request.execution.streaming else { return }
         guard let actual = result.public_streaming else {

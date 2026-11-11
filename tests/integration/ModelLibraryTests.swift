@@ -58,8 +58,8 @@ import Foundation
             throw NativeFailure(message: "Native catalog is incomplete")
         }
         try check(ltx.acceptsImageInputs &&
-                  ltx.availableOperations == ["video.generate", "video.image"],
-                  "LTX browser did not expose validated image-to-video")
+                  ltx.availableOperations == ["video.generate", "video.image", "video.keyframes"],
+                  "LTX browser did not expose image-to-video and endpoint keyframes")
         try check(!z.acceptsImageInputs && z.availableOperations == ["image.generate"], "Z-Image browser accepts images")
         try check(flux.acceptsImageInputs && h3.acceptsImageInputs, "Validated reference inputs are hidden")
         try check(ltx.canGenerateAudio && !z.canGenerateAudio &&

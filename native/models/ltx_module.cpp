@@ -60,14 +60,28 @@ ModelModule ltx_module() {
                         "LTX two-stage dimensions must be multiples of 64");
                 require(r.steps == 11, "LTX requires the 8+3 schedule");
                 require(r.frames >= 9 && r.frames % 8 == 1, "LTX requires frames=8n+1");
-                require(r.operation == "video.generate" || r.operation == "video.image",
+                require(r.operation == "video.generate" || r.operation == "video.image" || r.operation == "video.keyframes",
                         "unsupported LTX operation");
                 if (r.operation == "video.generate")
                     require(r.inputs.empty(), "video.generate does not accept media inputs");
-                else
+                else if (r.operation == "video.image")
                     require(r.inputs.size() == 1 && r.inputs[0].kind == "image" &&
                                 r.inputs[0].role == "first_frame",
                             "LTX image-to-video requires one first_frame");
+                else {
+                    require(r.inputs.size() == 2 && r.inputs[0].kind == "image" &&
+                                r.inputs[1].kind == "image" && r.inputs[0].role == "first_frame" &&
+                                r.inputs[1].role == "last_frame",
+                            "LTX keyframes require two ordered images: first_frame and last_frame");
+                    require(r.inputs[0].strength == r.inputs[1].strength,
+                            "LTX first/last frames require the same conditioning strength");
+                    require(r.execution == "gpu" || r.execution == "auto",
+                            "LTX first/last frames currently require GPU execution");
+                    require(!r.ltx_sol_stage1 && !r.ltx_sol_stage2 && r.ltx_sparse_mode == 0 &&
+                                r.ltx_stage2_text_rows == 0 && !r.streaming_selector &&
+                                !r.streaming.active() && !r.memory_constrained.enabled,
+                            "LTX first/last frames require dense sampling without public streaming or constrained memory plans");
+                }
                 require(r.fps == 24, "LTX distilled contract requires 24 fps");
                 require(r.ltx_video_vae == "conv" || r.ltx_video_vae == "prunavaed",
                         "LTX video VAE must be conv or prunavaed");
@@ -156,9 +170,9 @@ ModelModule ltx_module() {
                 ModelDescriptor d;
                 d.id = "ltx-2.5-distilled"; d.name = "LTX 2.5 Distilled";
                 d.executable = true;
-                d.operations = {"video.generate", "video.image"};
-                d.executor_operations = {"video.generate", "video.image"};
-                d.inputs = {"text", "image"}; d.roles = {"first_frame"}; d.max_images = 1;
+                d.operations = {"video.generate", "video.image", "video.keyframes"};
+                d.executor_operations = d.operations;
+                d.inputs = {"text", "image"}; d.roles = {"first_frame", "last_frame"}; d.max_images = 2;
                 d.output = "video"; d.steps = 11; d.frames = 97; d.width = 704; d.height = 448; d.fps = 24;
                 d.default_audio = false; d.default_residency = "component_staged";
                 d.supports_lora = true; d.runtime_lora = false; d.lora_mode = "premerged-manifest";
@@ -171,6 +185,7 @@ ModelModule ltx_module() {
                 d.audio_capability = "latent_to_48khz_aac_candidate";
                 d.parallel_strategy = "dual Metal queues for AV plus ANE MLP/KV/QKV partitions";
                 d.candidate_limitations = {
+                    "video.keyframes accepts exactly first_frame and last_frame with a shared strength; GPU C/Metal dense sampling only; the last frame is model guidance, not a pasted output frame; arbitrary interior keyframes are not yet exposed",
                     "broader prompt-suite qualification remains pending",
                     "native Audio VAE/base-vocoder/BWE and AVFoundation AAC mux require the pinned ModelScope provenance manifest; the 5-second multi-prompt quality suite remains pending",
                     "LoRA requires an offline-premerged checkpoint and verified sidecar manifest",

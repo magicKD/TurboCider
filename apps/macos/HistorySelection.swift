@@ -1,5 +1,17 @@
 import Foundation
 
+enum StudioMediaKind: String {
+    case image, video
+
+    init(path: String) {
+        self = ["mp4", "mov", "m4v", "avi", "webm", "mkv"].contains(
+            URL(fileURLWithPath: path).pathExtension.lowercased()) ? .video : .image
+    }
+
+    var title: String { self == .video ? "视频" : "图片" }
+    var symbol: String { self == .video ? "film" : "photo" }
+}
+
 /// Selection follows the displayed order, keeping a stable anchor while Shift
 /// extends or shrinks a range. Control/Command toggles individual items.
 struct HistorySelection {

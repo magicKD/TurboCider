@@ -36,7 +36,7 @@ static std::string sha256_file(const std::filesystem::path& path) {
     if (!stream.good()) return {};
     CC_SHA256_CTX context;
     if (CC_SHA256_Init(&context) != 1) return {};
-    std::array<char, 1 << 20> buffer{};
+    std::vector<char> buffer(1 << 20);
     while (stream.good()) {
         stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         const auto count = stream.gcount();

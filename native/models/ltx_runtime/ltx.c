@@ -217,6 +217,27 @@ int ltx_workload_init(ltx_workload *workload, uint32_t width,
     return 1;
 }
 
+int ltx_compute_endpoint_video_positions(float *positions, uint64_t values,
+        uint32_t latent_frames, uint32_t height, uint32_t width, float fps,
+        char *error, size_t error_size) {
+    const uint64_t plane = (uint64_t)height * width;
+    if (!positions || latent_frames < 2u || !plane ||
+        (uint64_t)latent_frames + 1u > UINT64_MAX / plane / 3u ||
+        values < ((uint64_t)latent_frames + 1u) * plane * 3u ||
+        !isfinite(fps) || fps <= 0.0f)
+        return ltx_fail(error, error_size, "invalid endpoint position geometry");
+    if (!ltx_compute_video_positions(positions, plane * 3u,
+            1u, height, width, fps, error, error_size) ||
+        !ltx_compute_video_positions(positions + plane * 3u,
+            values - plane * 3u, latent_frames, height, width, fps,
+            error, error_size)) return 0;
+    const float time = ((float)(latent_frames - 1u) *
+        LTX_VIDEO_TEMPORAL_COMPRESSION + 0.5f) / fps;
+    for (uint64_t row = 0; row < plane; ++row)
+        positions[row * 3u] = time;
+    return 1;
+}
+
 int ltx_compute_video_positions(float *positions, uint64_t position_values,
                                 uint32_t latent_frames,
                                 uint32_t latent_height,
