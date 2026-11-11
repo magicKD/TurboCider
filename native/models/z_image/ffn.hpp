@@ -7,7 +7,8 @@ namespace tc::z_image {
 // Keep the original numerical boundaries, including each projection's bias
 // and LoRA handling. Only the identical gate/up ConvRot input dependency is
 // shared. The down projection still rotates the post-SwiGLU activation.
-// Explicit opt-in until full-request performance/quality qualification.
+// ConvRot INT8 uses this exact dependency sharing by default; callers can
+// opt out when diagnosing a regression.
 inline Tensor feed_forward(const Tensor &x, const Weights &weights,
                            const std::string &prefix, bool share_convrot) {
     if (share_convrot && weights.convrot(prefix + ".w1") &&

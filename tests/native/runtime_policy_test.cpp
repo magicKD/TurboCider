@@ -366,6 +366,16 @@ int main() {
     assert(optimized.z_image_stream_prefetch(true, true, 10ull << 30) == 1);
     assert(optimized.z_image_stream_prefetch(true, false, 6ull << 30) == 1);
     assert(optimized.z_image_stream_prefetch(false, true, 6ull << 30) == 1);
+    const auto &m5_16 = device_optimizations("Apple M5", 16ull << 30);
+    assert(std::string_view(m5_16.id) == "m5-16-z-int8-gpu-stream-v1");
+    assert(m5_16.z_image_int8_streaming && m5_16.supports_z_image_streaming(true));
+    assert(!m5_16.z_image_suffix_streaming && !m5_16.z_image_hybrid_segments &&
+           !m5_16.z_image_memory_lifecycle && !m5_16.z_image_smallest_partition &&
+           !m5_16.external_automatic_partitions && !m5_16.coreml_output_copy &&
+           !m5_16.qwen21_layer_streaming);
+    assert(m5_16.z_image_stream_prefetch(true, false, 6ull << 30) == 1);
+    assert(m5_16.z_image_stream_prefetch(true, false, 8ull << 30) == 1);
+    assert(rejects_stream([&] { m5_16.z_image_stream_prefetch(true, false, 6ull << 30, "2"); }));
     for (const char *value : {"1", "2", "4", "8"})
         assert(optimized.z_image_stream_prefetch(true, true, 6ull << 30, value) == unsigned(value[0] - '0'));
     for (const char *value : {"", "0", "9", "12", "auto"})
@@ -373,6 +383,7 @@ int main() {
     for (const auto &device : std::vector<DeviceInfo>{
              {"Apple M4 Pro", 24ull << 30}, {"Apple M4 Pro", 64ull << 30},
              {"Apple M4 Max", 64ull << 30}, {"Apple M5", 24ull << 30},
+             {"Apple M5", (16ull << 30) - 1}, {"Apple M5", (16ull << 30) + 1},
              {"Apple M5 Max", 24ull << 30}, {"Apple M5 Pro", 48ull << 30},
              {"Apple M5 Pro", 16ull << 30}, {"Apple M5 Pro", 64ull << 30},
              {"Apple M5 Pro", (24ull << 30) - 1}, {"Apple M5 Pro", (24ull << 30) + 1},

@@ -1,0 +1,166 @@
+{
+  "date": "2026-10-28",
+  "hardware": "MacBook Air Apple M5 16 GB",
+  "macos": "26.4",
+  "workload": "Z-Image Turbo INT8 ConvRot DiT + Q4 text encoder, GPU, resident, 512x512, 8 steps, 1 PNG per request",
+  "library_sha256": "84b5d1b0aa4c53a9284a8b46ac0e6fd4eaa0329e5f4965f17a2fd92f7d363264",
+  "source": "current working tree with uncommitted changes",
+  "model_path": "/Users/kate/Library/Application Support/TurboCider/Models/installations/EBC46B37-D4A2-43E7-8C91-39DCEC902227",
+  "sample_count": 7,
+  "cold_wall_range_seconds": [
+    16.878902041120455,
+    17.333814583020285
+  ],
+  "warm_wall_median_seconds": 38.361920750001445,
+  "warm_wall_range_seconds": [
+    20.808425959199667,
+    47.931730167008936
+  ],
+  "warm_images_per_minute_at_median": 1.5640509866805286,
+  "rows": [
+    {
+      "process": "run-a",
+      "request_index": 0,
+      "cold": true,
+      "wall_seconds": 17.333814583020285,
+      "timings_seconds": {
+        "denoise": 12.054326292,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 17.312035,
+        "text_encode": 0.814851084,
+        "vae_decode": 1.916873375
+      },
+      "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "encoder_runtime_precision": "bf16",
+      "prompt_cache_hit": false,
+      "actual_denoise_steps": 8,
+      "output": "image-0.png"
+    },
+    {
+      "process": "run-a",
+      "request_index": 1,
+      "cold": false,
+      "wall_seconds": 22.631996958050877,
+      "timings_seconds": {
+        "denoise": 19.148516083,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 22.630845791,
+        "text_encode": 1.583e-06,
+        "vae_decode": 3.440852042
+      },
+      "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "encoder_runtime_precision": "bf16",
+      "prompt_cache_hit": true,
+      "actual_denoise_steps": 8,
+      "output": "image-1.png"
+    },
+    {
+      "process": "run-a",
+      "request_index": 2,
+      "cold": false,
+      "wall_seconds": 20.808425959199667,
+      "timings_seconds": {
+        "denoise": 17.5989115,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 20.802366834,
+        "text_encode": 8.33e-07,
+        "vae_decode": 3.15615075
+      },
+      "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "encoder_runtime_precision": "bf16",
+      "prompt_cache_hit": true,
+      "actual_denoise_steps": 8,
+      "output": "image-2.png"
+    },
+    {
+      "process": "run-a",
+      "request_index": 3,
+      "cold": false,
+      "wall_seconds": 47.931730167008936,
+      "timings_seconds": {
+        "denoise": 40.913238916,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 47.926870542,
+        "text_encode": 1e-06,
+        "vae_decode": 6.971784542
+      },
+      "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "encoder_runtime_precision": "bf16",
+      "prompt_cache_hit": true,
+      "actual_denoise_steps": 8,
+      "output": "image-3.png"
+    },
+    {
+      "process": "run-b",
+      "request_index": 0,
+      "cold": true,
+      "wall_seconds": 16.878902041120455,
+      "timings_seconds": {
+        "denoise": 12.097681958,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 16.80881575,
+        "text_encode": 0.462829,
+        "vae_decode": 1.821274
+      },
+      "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "encoder_runtime_precision": "bf16",
+      "prompt_cache_hit": false,
+      "actual_denoise_steps": 8,
+      "output": "image-0.png"
+    },
+    {
+      "process": "run-b",
+      "request_index": 1,
+      "cold": false,
+      "wall_seconds": 38.74600016605109,
+      "timings_seconds": {
+        "denoise": 34.52645825,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 38.742595167,
+        "text_encode": 1.125e-06,
+        "vae_decode": 4.170196625
+      },
+      "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "encoder_runtime_precision": "bf16",
+      "prompt_cache_hit": true,
+      "actual_denoise_steps": 8,
+      "output": "image-1.png"
+    },
+    {
+      "process": "run-b",
+      "request_index": 2,
+      "cold": false,
+      "wall_seconds": 38.361920750001445,
+      "timings_seconds": {
+        "denoise": 32.724177333,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 38.361082167,
+        "text_encode": 3.083e-06,
+        "vae_decode": 5.595207375
+      },
+      "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+      "runtime_precision": "int8_tensorwise_convrot_g256",
+      "encoder_runtime_precision": "bf16",
+      "prompt_cache_hit": true,
+      "actual_denoise_steps": 8,
+      "output": "image-2.png"
+    }
+  ],
+  "notes": [
+    "Warm requests reuse text conditioning for the same prompt within each process, but execute all 8 denoising steps and PNG export.",
+    "Thermal and memory pressure were not independently measured during requests."
+  ]
+}

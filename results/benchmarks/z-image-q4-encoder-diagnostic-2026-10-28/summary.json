@@ -1,0 +1,265 @@
+{
+  "hardware": {
+    "abi": 1,
+    "engine_version": "0.2.0-native-dev",
+    "gpu": "Apple M5",
+    "gpu_available": true,
+    "mlx_version": "0.32.0",
+    "optimization_profile": {
+      "coreml_output_copy": false,
+      "external_automatic_partitions": false,
+      "id": "legacy",
+      "qwen21_layer_streaming": false,
+      "z_image_hybrid_segments": false,
+      "z_image_int8_streaming": false,
+      "z_image_memory_lifecycle": false,
+      "z_image_smallest_partition": false,
+      "z_image_suffix_streaming": false
+    },
+    "os": "Version 26.4 (Build 25E246)",
+    "physical_memory_bytes": 17179869184,
+    "python_runtime_required": false,
+    "recommended_working_set_bytes": 12713115648,
+    "runtime_dependencies": [
+      "libmlx",
+      "Metal",
+      "Foundation",
+      "ImageIO"
+    ],
+    "z_image_mpp_swiglu_default": false,
+    "z_image_small_shape_metal_default": false,
+    "z_image_virtual_norm_default": false
+  },
+  "library_sha256": "84b5d1b0aa4c53a9284a8b46ac0e6fd4eaa0329e5f4965f17a2fd92f7d363264",
+  "actual_route": "INT8 ConvRot DiT + MLX affine Q4 text encoder, GPU resident, 512x512, 9 steps",
+  "model_root": "/Users/kate/Library/Application Support/TurboCider/Models/installations/EBC46B37-D4A2-43E7-8C91-39DCEC902227",
+  "profile": [
+    {
+      "request": 1,
+      "blocks": 288,
+      "step_seconds": [
+        2.195500583,
+        1.61696925,
+        1.619352913,
+        1.5909192509999999,
+        1.576691166,
+        1.576911082,
+        1.581418376,
+        1.599118621,
+        1.587462748
+      ],
+      "phase_total_seconds": {
+        "modulation": 0.134424669,
+        "attention_norm_mod": 0.518753969,
+        "qkv_projection": 3.133087113,
+        "qkv_norm_rope_layout": 0.175910005,
+        "sdpa": 0.613534877,
+        "attention_out_projection": 1.152719,
+        "residual_feed_norm": 0.178362334,
+        "ffn_gate_up_projection": 5.448022089,
+        "ffn_gate_swiglu": 0.299016338,
+        "ffn_down_projection": 3.174454788,
+        "final_gate_norm": 0.115406376
+      },
+      "phase_median_ms": {
+        "modulation": 0.3041045,
+        "attention_norm_mod": 0.30624999999999997,
+        "qkv_projection": 10.497792,
+        "qkv_norm_rope_layout": 0.585771,
+        "sdpa": 2.1195625,
+        "attention_out_projection": 3.8611665,
+        "residual_feed_norm": 0.4859165,
+        "ffn_gate_up_projection": 18.313541500000003,
+        "ffn_gate_swiglu": 1.0111255000000001,
+        "ffn_down_projection": 10.657166499999999,
+        "final_gate_norm": 0.38343700000000003
+      },
+      "layer_median_ms": {
+        "noise_refiner.0": 52.203917000000004,
+        "noise_refiner.1": 45.618667,
+        "layers.0": 57.930833,
+        "layers.1": 48.57475,
+        "layers.2": 48.916791,
+        "layers.3": 48.635708,
+        "layers.4": 48.425208,
+        "layers.5": 48.82825,
+        "layers.6": 48.289,
+        "layers.7": 48.443625,
+        "layers.8": 47.960417,
+        "layers.9": 48.118,
+        "layers.10": 48.751333,
+        "layers.11": 48.556208,
+        "layers.12": 48.773083,
+        "layers.13": 49.956583,
+        "layers.14": 48.89,
+        "layers.15": 48.589875,
+        "layers.16": 48.864875000000005,
+        "layers.17": 48.618625,
+        "layers.18": 48.878625,
+        "layers.19": 49.254208,
+        "layers.20": 48.638041,
+        "layers.21": 49.775042,
+        "layers.22": 48.648875000000004,
+        "layers.23": 49.235667,
+        "layers.24": 49.247958000000004,
+        "layers.25": 49.64925,
+        "layers.26": 48.281208,
+        "layers.27": 48.149042,
+        "layers.28": 48.100708,
+        "layers.29": 47.951375
+      }
+    },
+    {
+      "request": 2,
+      "blocks": 288,
+      "step_seconds": [
+        6.399871958,
+        1.710674124,
+        1.62585054,
+        1.824213248,
+        2.130465792,
+        2.032536043,
+        1.73853975,
+        1.636781626,
+        2.038801085
+      ],
+      "phase_total_seconds": {
+        "modulation": 0.284548456,
+        "attention_norm_mod": 1.382706247,
+        "qkv_projection": 4.653730588,
+        "qkv_norm_rope_layout": 0.195886448,
+        "sdpa": 0.638491498,
+        "attention_out_projection": 1.721314368,
+        "residual_feed_norm": 0.167997875,
+        "ffn_gate_up_projection": 7.493843077,
+        "ffn_gate_swiglu": 0.315116411,
+        "ffn_down_projection": 4.159911156,
+        "final_gate_norm": 0.123493916
+      },
+      "phase_median_ms": {
+        "modulation": 0.34835400000000005,
+        "attention_norm_mod": 0.3097705,
+        "qkv_projection": 10.9375,
+        "qkv_norm_rope_layout": 0.599375,
+        "sdpa": 2.1609999999999996,
+        "attention_out_projection": 4.086209,
+        "residual_feed_norm": 0.49887499999999996,
+        "ffn_gate_up_projection": 19.048707999999998,
+        "ffn_gate_swiglu": 1.0353955,
+        "ffn_down_projection": 11.1636665,
+        "final_gate_norm": 0.3965005
+      },
+      "layer_median_ms": {
+        "noise_refiner.0": 50.333833,
+        "noise_refiner.1": 53.880667,
+        "layers.0": 70.47745800000001,
+        "layers.1": 51.697917000000004,
+        "layers.2": 50.419208,
+        "layers.3": 50.17025,
+        "layers.4": 50.889041000000006,
+        "layers.5": 49.904416,
+        "layers.6": 49.779416,
+        "layers.7": 51.241166,
+        "layers.8": 49.721000000000004,
+        "layers.9": 53.651709,
+        "layers.10": 50.226458,
+        "layers.11": 49.971708,
+        "layers.12": 53.708958,
+        "layers.13": 51.606792,
+        "layers.14": 56.053041,
+        "layers.15": 52.37475,
+        "layers.16": 50.662834,
+        "layers.17": 54.4995,
+        "layers.18": 50.611000000000004,
+        "layers.19": 51.9605,
+        "layers.20": 50.934792,
+        "layers.21": 51.594959,
+        "layers.22": 56.387959,
+        "layers.23": 50.923417,
+        "layers.24": 52.058666,
+        "layers.25": 50.699917,
+        "layers.26": 51.255708,
+        "layers.27": 50.293875,
+        "layers.28": 50.304541,
+        "layers.29": 50.882583000000004
+      }
+    }
+  ],
+  "memory_runs": [
+    {
+      "wall_seconds": 18.177203208906576,
+      "prompt_cache_hit": false,
+      "text_encode_seconds": 0.462159375,
+      "denoise_seconds": 13.71019,
+      "step_intervals_seconds": [
+        1.5876485840417445,
+        1.5013509998098016,
+        1.5035995410289615,
+        1.5101114590652287,
+        1.5077565829269588,
+        1.5202140000183135,
+        1.5231679170392454,
+        1.5261236659716815,
+        1.5301338341087103
+      ],
+      "process_disk_delta_bytes": {
+        "diskio_bytesread": 9560961024,
+        "diskio_byteswritten": 299008
+      },
+      "system_vm_delta_bytes": {
+        "Swapins": 104316928,
+        "Swapouts": 1437990912,
+        "Pageins": 9329623040,
+        "Compressions": 10533060608,
+        "Decompressions": 2700591104
+      },
+      "process_memory": {
+        "resident_size_bytes": 73351168,
+        "phys_footprint_bytes": 12181603528,
+        "lifetime_max_phys_footprint_bytes": 12326749360,
+        "diskio_bytesread_bytes": 9592496128,
+        "diskio_byteswritten_bytes": 299008
+      }
+    },
+    {
+      "wall_seconds": 35.38441625004634,
+      "prompt_cache_hit": true,
+      "text_encode_seconds": 4.2667e-05,
+      "denoise_seconds": 31.902907709,
+      "step_intervals_seconds": [
+        18.503086125012487,
+        2.5786765420343727,
+        1.5177539160940796,
+        1.5367944589816034,
+        1.5436812909319997,
+        1.5456696669571102,
+        1.5476690421346575,
+        1.5507267080247402,
+        1.5788149998988956
+      ],
+      "process_disk_delta_bytes": {
+        "diskio_bytesread": 5940678656,
+        "diskio_byteswritten": 299008
+      },
+      "system_vm_delta_bytes": {
+        "Swapins": 6607126528,
+        "Swapouts": 8057978880,
+        "Pageins": 310919168,
+        "Compressions": 20661387264,
+        "Decompressions": 15257124864
+      },
+      "process_memory": {
+        "resident_size_bytes": 49725440,
+        "phys_footprint_bytes": 12165760200,
+        "lifetime_max_phys_footprint_bytes": 12326749360,
+        "diskio_bytesread_bytes": 15533436928,
+        "diskio_byteswritten_bytes": 610304
+      }
+    }
+  ],
+  "notes": [
+    "Profiler inserts GPU completion boundaries and changes scheduling; use per-layer times to find costly operations, not as uninstrumented latency.",
+    "VM counters are system-wide; per-process disk read corroborates paging but does not attribute all VM events to this process.",
+    "No local NVFP4 or GGUF Q4 DiT checkpoint was found on this Mac."
+  ]
+}

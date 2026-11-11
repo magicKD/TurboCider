@@ -1250,21 +1250,26 @@ struct StudioView: View {
                     if studio.draft.modelID == "z-image-turbo", studio.draft.zImageRequiresResident, !studio.draft.usesPublicStreaming {
                         LabeledContent("模型驻留", value: "常驻")
                         Text(studio.draft.zImageVariant?.id == "int8-convrot"
-                             ? "INT8 流式加载仅在 Apple M5 Pro、24 GiB 内存的机器上启用；当前设备使用常驻加载。"
+                             ? "INT8 流式加载仅在 Apple M5、16 GiB 或 Apple M5 Pro、24 GiB 的机器上启用；当前设备使用常驻加载。"
                              : "此权重版本使用常驻加载。")
                             .font(.caption2).foregroundStyle(.secondary)
                     } else if studio.draft.modelID == "z-image-turbo" && !studio.draft.usesPublicStreaming {
-                        Picker("模型驻留", selection: $studio.draft.residency) {
+                        Picker("模型驻留", selection: Binding(get: { studio.draft.residency }, set: { value in
+                            studio.setZImageResidency(value)
+                        })) {
                             Text("常驻").tag("resident")
                             Text("流式加载（实验）").tag("streamed")
                         }.disabled(store.busy || submitting).accessibilityIdentifier("zImageResidency")
                         if studio.draft.residency == "streamed" {
                             Picker("采样内存预算", selection: $studio.draft.zImageStreamingBudgetGiB) {
-                                ForEach([6, 8, 10, 12], id: \.self) { Text("\($0) GiB").tag($0) }
+                                ForEach(studio.draft.zImageVariant?.id == "int8-convrot" &&
+                                        AccelerationDiscovery.optimizationEnabled("z_image_int8_streaming") &&
+                                        !AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming")
+                                        ? [6, 8] : [6, 8, 10, 12], id: \.self) { Text("\($0) GiB").tag($0) }
                             }.disabled(store.busy || submitting)
                             Text(AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming")
                                  ? "支持 Comfy BF16 / INT8 ConvRot，不支持 LoRA。本机已启用 M5 ANE 流式优化：只加载 GPU 负责的 MLP 权重，首次准备需要整理权重。预算不包含 ANE，也不是整个应用的内存硬上限。"
-                                 : "支持 Comfy BF16、纯 GPU、不使用 LoRA。提前读取下一层以降低内存占用；速度取决于磁盘。预算用于采样阶段规划，并非整个应用的内存硬上限。")
+                                 : "支持 Comfy BF16 / INT8 ConvRot、纯 GPU、不使用 LoRA。提前读取下一层以降低内存占用；速度取决于磁盘。预算用于采样阶段规划，并非整个应用的内存硬上限。")
                                 .font(.caption2).foregroundStyle(.secondary)
                             if studio.draft.zImageVariant?.id == "int8-convrot" {
                                 Text("INT8 权重能全部放入预算时会自动保留，避免重复读取。")

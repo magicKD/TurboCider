@@ -69,6 +69,11 @@ ModelModule z_image_module() {
                 require(r.loras.empty(), "Z-Image streaming with LoRA is not yet supported");
                 require(r.memory_budget_bytes == 0 || r.memory_budget_bytes >= (6ull << 30),
                         "Z-Image streaming budget must be at least 6 GiB");
+                const auto &device = device_info().optimizations();
+                require(std::string_view(device.id) != "m5-16-z-int8-gpu-stream-v1" ||
+                            r.memory_budget_bytes == 0 || r.memory_budget_bytes == (6ull << 30) ||
+                            r.memory_budget_bytes == (8ull << 30),
+                        "Z-Image INT8 streaming on Apple M5 16 GiB supports 6 or 8 GiB budgets");
             }
             require(r.loras.size() <= 8, "at most eight Z-Image LoRA adapters may be active");
             for (const auto &lora : r.loras) {
@@ -107,7 +112,7 @@ ModelModule z_image_module() {
             d.parallel_strategy = "GPU computes attention first, then the compiled MLP suffix overlaps the Core ML ANE gated-MLP prefix; base 4096-channel M4 Max route is automatic";
             d.candidate_limitations = {
                 "text-to-image only",
-                "streamed residency is experimental: Comfy BF16, explicit GPU, no LoRA; INT8 ConvRot streaming, multi-layer prefetch and GPU+ANE compact suffix streaming require Apple M5 Pro with exactly 24 GiB",
+                "streamed residency is experimental: Comfy BF16 or INT8 ConvRot on qualified Apple M5 16 GiB GPU or M5 Pro 24 GiB; multi-layer prefetch and GPU+ANE compact suffix streaming remain M5 Pro 24 GiB only; no LoRA",
                 "inference_time LoRA defaults to GPU; the explicit 4096-channel frozen-base GPU/Core ML graph has a measured 512px eight-step speedup for one adapter, not a general quality or hardware guarantee",
                 "automatic GPU+ANE is limited to the base model on Apple M4 Max 64 GB with the measured 4096-channel 32-block manifest",
                 "the repeated warm 1024x1024 base workload measured about 1.21x end-to-end versus the optimized GPU path",

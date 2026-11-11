@@ -232,8 +232,23 @@ def locked_worker(a):
         "system_state": system_state_metadata(),
         "platform": {"macos": platform.mac_ver()[0], "kernel": platform.release(),
                      "machine": platform.machine()}, "runs": []}
+    sequence = []
+    if a.convrot_shared_sequence:
+        sequence = a.convrot_shared_sequence.split(",")
     try:
-        for i in range(4 if a.probe_route_switch else a.runs + 1 + int(a.parity)):
+        total_requests = (len(sequence) if sequence else
+                          (4 if a.probe_route_switch else a.runs + 1 + int(a.parity)))
+        for i in range(total_requests):
+            if sequence:
+                # z_ffn reads this switch while constructing every block, so a
+                # single resident engine can alternate the exact two routes.
+                # That removes process-to-process packing and thermal drift
+                # from a ConvRot shared-rotation comparison.
+                route_mode = sequence[i]
+                if route_mode == "default":
+                    os.environ.pop("TURBOCIDER_Z_CONVROT_SHARED_GATE_UP", None)
+                else:
+                    os.environ["TURBOCIDER_Z_CONVROT_SHARED_GATE_UP"] = "0"
             quality = not a.probe_route_switch and i == a.runs + 1
             use_ane = bool(a.ane_manifest) and (not a.probe_route_switch or i % 2 == 1)
             route = "gpu_ane" if use_ane else "gpu"
@@ -257,6 +272,8 @@ def locked_worker(a):
             row = {"warmup": i == 0, "parity": quality, "request": request,
                    "wall_seconds": time.monotonic() - start, "error": error,
                    "metrics": json.loads(text) if text else None}
+            if sequence:
+                row["convrot_shared_gate_up"] = route_mode
             if a.probe_route_switch:
                 row["route"] = route
                 row["warmup"] = True  # Diagnostic reloads, never a speed qualification.
@@ -335,6 +352,8 @@ def main():
     p.add_argument("--virtual-norm-threads", type=int, choices=(128, 256, 512),
                    help="experimental physical threads preserving the 960-thread reduction order")
     p.add_argument("--worker", choices=("baseline", "fused"))
+    p.add_argument("--convrot-shared-sequence",
+                   help="worker-only comma-separated default/legacy sequence; first request is warmup")
     a = p.parse_args()
     try:
         validate_presence_flags(os.environ)
@@ -403,6 +422,12 @@ def main():
                      or a.gate_norm_virtual_threads or a.cache_context
                      or a.mpp_qkv_prepare):
         p.error("worker mode requires kernel environment variables, not experiment flags")
+    if a.convrot_shared_sequence:
+        if not a.worker or a.probe_route_switch or a.parity:
+            p.error("--convrot-shared-sequence requires a normal worker without parity/route-switch probes")
+        modes = a.convrot_shared_sequence.split(",")
+        if len(modes) < 3 or any(mode not in ("default", "legacy") for mode in modes):
+            p.error("--convrot-shared-sequence needs at least three default/legacy entries")
     a.output = a.output.resolve()
     a.output.mkdir(parents=True, exist_ok=True)
     if a.worker:

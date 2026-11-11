@@ -10,11 +10,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ConvRotFfnContractTests(unittest.TestCase):
-    def test_research_opt_in_is_explicit(self):
+    def test_shared_rotation_is_default_with_explicit_opt_out(self):
         source = (ROOT / "native/models/z_image/z_image.cpp").read_text()
         self.assertIn('std::getenv("TURBOCIDER_Z_CONVROT_SHARED_GATE_UP")', source)
-        self.assertIn('shared && std::strcmp(shared, "1") == 0', source)
-        self.assertIn('return z_image::feed_forward(x, w, prefix, shared &&', source)
+        self.assertIn('!shared || std::strcmp(shared, "0") != 0', source)
+        self.assertIn('return z_image::feed_forward(x, w, prefix, share_convrot)', source)
 
     @unittest.skipUnless(os.environ.get("TURBOCIDER_TEST_GPU") == "1", "explicit Metal opt-in required")
     def test_native_shared_rotation_exact(self):

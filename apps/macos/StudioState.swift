@@ -613,7 +613,7 @@ struct StudioDraft: Codable, Sendable {
         }
         return "当前 LoRA 采用运行时加载，生成时使用 GPU。冻结 ANE 分区需要与 LoRA 文件和强度匹配，并采用支持的合并策略。"
     }
-    var usesPublicStreaming: Bool { streaming.selection.targetBytes != nil }
+    var usesPublicStreaming: Bool { publicStreamingModel && streaming.selection.targetBytes != nil }
     var modelPath: String { modelPaths[modelID] ?? "" }
     var zImageVariant: ZImageVariant? {
         modelID == "z-image-turbo" && !modelPath.isEmpty
@@ -631,7 +631,7 @@ struct StudioDraft: Codable, Sendable {
         }
         if ZImageInstallation.requiresResident(variantID: zImageVariant?.id, systemJSON: systemJSON) {
             return zImageVariant?.id == "int8-convrot"
-                ? "当前设备的 INT8 权重仅支持常驻加载；INT8 流式加载需要 Apple M5 Pro、24 GiB 内存。"
+                ? "当前设备的 INT8 权重仅支持常驻加载；INT8 流式加载需要 Apple M5、16 GiB 或 Apple M5 Pro、24 GiB。"
                 : "当前权重版本仅支持常驻加载。"
         }
         if !activeLoRAs.isEmpty {
@@ -680,11 +680,14 @@ struct StudioDraft: Codable, Sendable {
         return "当前任务 · GPU；尚无匹配此尺寸、操作与步数的混合收益验证"
     }
     var publicStreamingModel: Bool {
-        ["ltx-2.5-distilled", "minimax-h3-turbo", "z-image-turbo", "flux2-klein-9b", "flux2-klein-4b"].contains(modelID)
+        // The public catalog currently accepts Z-Image BF16 only. INT8 ConvRot
+        // uses the device-qualified GPU residency route below instead.
+        if modelID == "z-image-turbo", zImageVariant?.id == "int8-convrot" { return false }
+        return ["ltx-2.5-distilled", "minimax-h3-turbo", "z-image-turbo", "flux2-klein-9b", "flux2-klein-4b"].contains(modelID)
     }
     func publicStreamingRequest(output: URL,
                                 random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> (legacy: NativeRequest, v2: NativeRequestV2?) {
-        guard let target = streaming.selection.targetBytes else {
+        guard usesPublicStreaming, let target = streaming.selection.targetBytes else {
             return (try request(output: output, random: random), nil)
         }
         guard publicStreamingModel else {
@@ -852,8 +855,12 @@ struct StudioDraft: Codable, Sendable {
             }
             if residency == "streamed" {
                 if let conflict = zImageStreamingConflict() { throw NativeFailure(message: conflict) }
-                guard [6, 8, 10, 12].contains(zImageStreamingBudgetGiB) else {
-                    throw NativeFailure(message: "请选择 6、8、10 或 12 GiB 的流式内存预算。")
+                let m5Int8 = zImageVariant?.id == "int8-convrot" &&
+                    AccelerationDiscovery.optimizationEnabled("z_image_int8_streaming") &&
+                    !AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming")
+                guard (m5Int8 ? [6, 8] : [6, 8, 10, 12]).contains(zImageStreamingBudgetGiB) else {
+                    throw NativeFailure(message: m5Int8 ? "M5 16 GiB 的 INT8 流式加载请选择 6 或 8 GiB 预算。" :
+                        "请选择 6、8、10 或 12 GiB 的流式内存预算。")
                 }
             }
             guard activeLoRAs.allSatisfy({ $0.role == "transformer" }) else {
@@ -1530,6 +1537,19 @@ final class StudioState: ObservableObject {
                 ? "available" : (option.reason_code ?? option.status)
         } else {
             draft.streaming.status = "unknown"
+        }
+    }
+    func setZImageResidency(_ value: String) {
+        draft.residency = value
+        guard value == "streamed", draft.modelID == "z-image-turbo",
+              draft.zImageVariant?.id == "int8-convrot" else { return }
+        // A saved public tier cannot execute INT8 and must not shadow the
+        // device-qualified residency route when the user selects it.
+        if draft.streaming.selection != .off { setStreamingSelection(.off) }
+        if AccelerationDiscovery.optimizationEnabled("z_image_int8_streaming"),
+           !AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming"),
+           ![6, 8].contains(draft.zImageStreamingBudgetGiB) {
+            draft.zImageStreamingBudgetGiB = 8
         }
     }
     private func scheduleSave() {

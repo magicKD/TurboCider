@@ -579,7 +579,10 @@ ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64
                 "Z-Image suffix streaming is only enabled for Apple M5 Pro 24 GiB");
         index(path);
         require(optimizations.supports_z_image_streaming(convrot_),
-                "Z-Image INT8 streaming is only enabled for Apple M5 Pro 24 GiB; use resident weights on this device");
+                "Z-Image INT8 streaming is only enabled for qualified Apple M5 16 GiB or M5 Pro 24 GiB devices; use resident weights on this device");
+        require(!convrot_ || std::string_view(optimizations.id) != "m5-16-z-int8-gpu-stream-v1" ||
+                    budget <= (8ull << 30),
+                "Z-Image INT8 streaming on Apple M5 16 GiB supports at most 8 GiB of sampling budget");
         require(prefix_channels >= 0, "invalid Z-Image ANE prefix width");
         if (prefix_channels) pack_suffix(prefix_channels, event);
         if (convrot_) {
