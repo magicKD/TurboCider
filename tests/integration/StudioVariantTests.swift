@@ -232,7 +232,7 @@ import Foundation
             restoredTurbo.draft.qwen21WeightCacheBudget == "custom" && restoredTurbo.draft.qwen21WeightCacheCustomMiB == 3584,
             "Restored Turbo draft kept incompatible base settings")
         restoredTurbo.changeOperation("image.edit")
-        try check(restoredTurbo.draft.residency == "resident", "Image editing reused the text-only streamed route")
+        try check(restoredTurbo.draft.residency == "component_staged", "Image editing must release encoder/DiT weights between stages")
         restoredTurbo.changeOperation("image.generate")
         try check(restoredTurbo.draft.residency == "streamed", "Returning to text generation did not restore streaming")
         let base = root.appendingPathComponent("qwen-base")

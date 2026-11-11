@@ -72,6 +72,31 @@ the GPU ConvRot streaming recipe; the private Runtime ANE composition is not
 enabled with retained-layer budgets. This exact weight cache is separate from
 the approximate DiT computation cache described below.
 
+### Reference editing with Turbo INT8 installations
+
+Turbo INT8 ConvRot installations support one or two reference images with the
+authored eight-step GPU schedule. The App selects `component_staged` for editing,
+including when restoring an older resident editing draft or reusing history.
+Encoder weights are released before DiT preparation; DiT weights are released
+before final VAE decoding. The encoder and checkpoint guards admit this route.
+The text-only streamed weight-cache setting is retained in the draft for later
+text generation but is omitted from staged editing requests.
+
+Memory admission uses the actual selected checkpoint file sizes and overlapping
+phases, retaining the canvas/reference allowances and 4 GiB system reserve.
+It does not charge staged INT8 editing for all three components being resident
+together or use the generic BF16 component estimate. Large output canvases and
+larger BF16 companion weights can still exceed the available memory.
+
+On November 11, 2026, the M5 Pro / 24 GB desktop route completed full 512×512,
+eight-step edits from the original failing JPEG and an RGBA PNG, using standard
+1024 reference encoding. App import, draft restoration, history reuse, PNG
+publication and preservation of the original source bytes were checked.
+Reference orientation, proportional sizing, alpha and restoration also have CPU
+tests. This is functional validation of these inputs, not a guarantee of every
+edit instruction or arbitrary file/format support. See the
+[portable validation record](../experiments/m5/qwen21-turbo-edit-2026-11-11.json).
+
 ## Turbo checkpoint (native research support)
 
 The original `qwen_image_2.1_turbo_bf16.safetensors` can now be installed in a

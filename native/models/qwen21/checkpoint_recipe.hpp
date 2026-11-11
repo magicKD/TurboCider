@@ -111,7 +111,7 @@ inline void validate_checkpoint_recipe(const Request& r,const std::filesystem::p
         const auto check=[](bool ok,const char* error){if(!ok)throw std::invalid_argument(error);};
         const bool packed=configured_convrot_packed();
         const bool w8a8=configured_convrot_w8a8(false,w8a8_available);
-        check(r.allow_approximation && (r.residency=="resident" || r.residency=="streamed") && r.loras.empty() && r.qwen21_denoiser_backend=="mlx" &&
+        check(r.allow_approximation && (r.residency=="resident" || r.residency=="streamed" || r.residency=="component_staged") && r.loras.empty() && r.qwen21_denoiser_backend=="mlx" &&
             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 && r.qwen21_dit_cache=="off" &&
             !r.streaming.active() && !r.memory_constrained.enabled && !r.prompt_enhance,
             "Qwen21 ConvRot initial route requires explicit approximation, MLX and no base/student LoRA, frozen or temporal recipe");

@@ -60,6 +60,13 @@ int main(int argc,char**argv){try{
     const float nodes[]={1.f,.978453f,.95418f,.926626f,.89508f,.845148f,.704534f,.414568f,0.f};
     for(size_t i=0;i<9;++i){check(turbo_sigma_nodes[i]==nodes[i],"authored final sigma changed");if(i<8)check(nodes[i]>nodes[i+1],"Turbo nodes not descending");}
     r.execution="gpu"; r.hybrid_mlp_mode="auto"; r.ane_manifest.clear();
+    r.residency="component_staged"; r.operation="image.edit"; r.inputs.resize(1);
+    validate_checkpoint_recipe(r,convrot,true);
+    r.inputs.resize(2);validate_checkpoint_recipe(r,convrot,true);
+    r.inputs.resize(3);rejected([&]{validate_checkpoint_recipe(r,convrot,true);});
+    r.inputs.resize(1);r.allow_approximation=false;
+    rejected([&]{validate_checkpoint_recipe(r,convrot,true);});r.allow_approximation=true;
+    r.inputs.clear();r.operation="image.generate";
     r.width=r.height=512; r.residency="streamed";
     validate_checkpoint_recipe(r,convrot,true);
     r.width=768; rejected([&]{validate_checkpoint_recipe(r,convrot,true);}); r.width=512;

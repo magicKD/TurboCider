@@ -499,11 +499,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool encoder_prefill=option_or_default(std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"),fast_encoder_default);
     if(convrot_encoder) {
         require(r.allow_approximation && (r.execution=="gpu" || r.execution=="auto") &&
-            r.residency=="resident" && !r.streaming.active() && !r.memory_constrained.enabled &&
+            (r.residency=="resident" || r.residency=="component_staged") && !r.streaming.active() && !r.memory_constrained.enabled &&
             !r.prompt_enhance && r.ane_manifest.empty() && r.encoder_ane_manifest.empty() && !encoder_runtime_requested &&
             !metal_encoder_requested && !native_prefill_requested && !native_dit && !encoder_prefill &&
             encoder_scale_path.empty() && encoder_capture_path.empty(),
-            "ConvRot encoder requires approximate resident MLX GPU execution without BF16-only encoder/ANE/prefill recipes");
+            "ConvRot encoder requires approximate resident or component-staged MLX GPU execution without BF16-only encoder/ANE/prefill recipes");
     }
     const std::string encoder_precision_identity=convrot_encoder
         ? (encoder_convrot_w8a8 ? ":convrot-w8a8-v1" : ":convrot-q8-f32-v1") : "";
@@ -732,12 +732,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(!r.prompt.empty(), "Qwen21 requires a prompt");
     require(warmup || prepare_only || (!r.output.empty() && std::filesystem::path(r.output).extension() == ".png"),
             "Qwen21 requires a .png output");
-    if((convrot_transformer || convrot_encoder) && r.residency=="resident" &&
+    if((convrot_transformer || convrot_encoder) &&
+        (r.residency=="resident" || r.residency=="component_staged") &&
         !hybrid_requested && !runtime_requested && !qkv_requested && !native_dit) {
         // Request-only planning cannot know which source format was selected.
         // Once bound to this installation, count its actual compact files,
         // preserving activation/packing allowances and the system margin.
-        plan.memory_estimate_bytes=convrot_resident_memory_estimate(r,{
+        plan.memory_estimate_bytes=convrot_memory_estimate(r,{
             std::filesystem::file_size(transformer_source_),
             std::filesystem::file_size(encoder_source_),
             std::filesystem::file_size(root_/"vae/qwen_image_2.1_vae_bf16.safetensors")});

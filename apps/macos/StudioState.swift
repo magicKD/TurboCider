@@ -417,7 +417,11 @@ struct StudioDraft: Codable, Sendable {
         guard usesQwen21InstalledRecipe else { return }
         if hasQwen21TurboCheckpoint { steps = 8 }
         let streamingCanvas = supportsQwen21ConvrotStreaming && width <= 512 && height <= 512
-        residency = streamingCanvas && (preferStreaming || residency != "resident") ? "streamed" : "resident"
+        if operation == "image.edit" && hasQwen21ConvrotCheckpoint {
+            residency = "component_staged"
+        } else {
+            residency = streamingCanvas && (preferStreaming || residency != "resident") ? "streamed" : "resident"
+        }
         streaming = StudioStreamingState()
         profilePath = ""; promptEnhance = false
         qwen21DiTCache = "off"; qwen21DiTW8A8 = false; qwen21DiTSmoothQuantConvRot = false

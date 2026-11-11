@@ -18,6 +18,58 @@ import Foundation
                   "Qwen21 discovery/defaults failed")
         try check(studio.draft.residency == "component_staged", "Qwen21 did not select staged residency")
         studio.selectInstallation(modelID: "qwen-image-2.1", path: model.path)
+        if studio.draft.hasQwen21TurboCheckpoint && !peEdit {
+            try check(store.jobs.isEmpty && studio.draft.assets.isEmpty,
+                      "Turbo acceptance requires a fresh output directory")
+            let reference = URL(fileURLWithPath: args[2]).standardizedFileURL
+            let sourceBytes = try Data(contentsOf: reference)
+            studio.changeOperation("image.edit")
+            await studio.addFiles([reference])
+            try check(studio.draft.assets.count == 1,
+                      "Turbo reference import failed: \(studio.message ?? "")")
+            let imported = URL(fileURLWithPath: studio.draft.assets[0].path)
+            try check(try Data(contentsOf: imported) == sourceBytes,
+                      "Turbo reference import changed the source bytes")
+            studio.draft.prompt = "Preserve the people and objects in the reference image. Make the lighting warmer and the background softly blurred, with realistic photographic detail."
+            studio.draft.width = 512; studio.draft.height = 512
+            studio.draft.randomSeed = false; studio.draft.seedText = "42"
+            let output = root.appendingPathComponent("turbo-edit.png")
+            let request = try studio.draft.request(output: output)
+            try check(request.steps == 8 && request.operation == "image.edit" &&
+                      request.residency == "component_staged" && request.execution == "gpu" &&
+                      request.qwen21_reference_size == 1024 &&
+                      request.inputs?.map(\.path) == [imported.path] &&
+                      request.qwen21_stream_weight_budget_bytes == nil,
+                      "Turbo edit lost its staged recipe, standard reference encoding or reference")
+            studio.save()
+            let restored = StudioState(directory: root)
+            try check(restored.draft.residency == "component_staged" && restored.draft.steps == 8 &&
+                      restored.draft.assets == studio.draft.assets,
+                      "Restored Turbo edit reverted to resident loading or lost the reference")
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(request).write(to: root.appendingPathComponent("request.json"), options: .atomic)
+            let job = try await store.generate(modelURL: model, request: request)
+            try check(job.state == "succeeded", "Turbo App editing failed")
+            guard let resultJSON = job.resultJSON else { throw NativeFailure(message: "Missing Turbo edit result") }
+            let report = try JSONSerialization.jsonObject(with: Data(resultJSON.utf8)) as! [String: Any]
+            try check(report["actual_denoise_steps"] as? Int == 8 &&
+                      (report["reference_tokens"] as? Int ?? 0) > 0,
+                      "Turbo edit did not consume the reference and complete all eight steps")
+            guard let image = NSBitmapImageRep(data: try Data(contentsOf: output)) else {
+                throw NativeFailure(message: "Turbo edit did not produce a decodable PNG")
+            }
+            try check(image.pixelsWide == 512 && image.pixelsHigh == 512 && image.hasAlpha,
+                      "Turbo edit lost the output dimensions or alpha")
+            try check(try Data(contentsOf: reference) == sourceBytes,
+                      "Turbo edit modified the user's original image")
+            restored.reuse(job)
+            try check(restored.draft.residency == "component_staged" && restored.draft.steps == 8,
+                      "Turbo history reuse restored the broken resident route")
+            try Data(resultJSON.utf8).write(to: root.appendingPathComponent("native-report.json"), options: .atomic)
+            try await store.unload()
+            print("PASS Turbo App editing: original reference import, staged GPU recipe, restored draft/history, full eight-step inference, reference tokens, RGBA PNG and unchanged source; visual fidelity requires inspection")
+            return
+        }
         if peEdit {
             // Full experimental inference, deliberately separate from one-step smoke.
             try check(store.jobs.isEmpty && studio.draft.assets.isEmpty,

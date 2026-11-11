@@ -31,6 +31,7 @@ int main() {
     request.model_variant = "qwen-image-2.1-turbo";
     request.width = request.height = 512;
     request.steps = 8;
+    request.residency = "resident";
     const auto rejects = [](auto operation) {
         try { operation(); } catch (const std::invalid_argument &) { return true; }
         return false;
@@ -38,7 +39,7 @@ int main() {
     auto plan_for = [&](const Request &r, const std::array<uint64_t, 3> &sizes) {
         ExecutionPlan plan;
         plan.request = r;
-        plan.memory_estimate_bytes = qwen21::convrot_resident_memory_estimate(r, sizes);
+        plan.memory_estimate_bytes = qwen21::convrot_memory_estimate(r, sizes);
         return plan;
     };
     auto plan = plan_for(request, int8_sources);
@@ -72,6 +73,23 @@ int main() {
         auto expanded = plan_for(edit, int8_sources);
         assert(*expanded.memory_estimate_bytes == 21041192261 + count * (5 * gib / 2));
         assert(rejects([&] { ResidencyPolicy::validate_budget(expanded, 24 * gib); }));
+    }
+    // A reference must not force compact editing to pay for simultaneously
+    // resident encoder + DiT + VAE. Keep prefix/canvas and system allowances.
+    for (size_t count : {size_t(1), size_t(2)}) {
+        auto edit = request;
+        edit.residency = "component_staged";
+        edit.operation = "image.edit";
+        edit.inputs.resize(count);
+        auto staged = plan_for(edit, int8_sources);
+        assert(*staged.memory_estimate_bytes == 9350798360 + gib +
+            uint64_t(512) * 512 * 10240 + count * (5 * gib / 2));
+        ResidencyPolicy::validate_budget(staged, 24 * gib);
+        assert(rejects([&] { ResidencyPolicy::validate_budget(staged, *staged.memory_estimate_bytes + 4*gib - 1); }));
+        assert(rejects([&] { ResidencyPolicy::validate_budget(plan_for(edit, bf16_sources), 24*gib); }));
+        auto larger = edit;
+        larger.width = larger.height = 1024;
+        assert(rejects([&] { ResidencyPolicy::validate_budget(plan_for(larger, int8_sources), 24*gib); }));
     }
     for (int dimension : {-1, 0, 32, 65, 4097, std::numeric_limits<int>::max()}) {
         auto invalid = request;

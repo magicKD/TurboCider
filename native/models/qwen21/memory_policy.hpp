@@ -4,6 +4,7 @@
 #include "diagnostic_options.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <array>
+#include <algorithm>
 #include <cstdlib>
 #include <limits>
 #include <stdexcept>
@@ -24,11 +25,11 @@ inline uint64_t convrot_stream_cache_headroom(const ane::StreamingMemoryObservat
     return (admission.headroom_bytes - workspace) / 2;
 }
 
-// Source-aware resident ConvRot heuristic. The caller supplies the actual
+// Source-aware ConvRot heuristic. The caller supplies the actual
 // selected DiT, encoder and VAE file sizes; a BF16 companion still pays for its
 // complete source. This is an estimate, not a cap or a physical-memory bypass.
 // ResidencyPolicy adds its existing 4 GiB system reserve separately.
-inline uint64_t convrot_resident_memory_estimate(
+inline uint64_t convrot_memory_estimate(
     const Request &r, const std::array<uint64_t, 3> &source_bytes) {
     constexpr uint64_t maximum = std::numeric_limits<uint64_t>::max();
     const auto add = [](uint64_t left, uint64_t right) {
@@ -52,6 +53,12 @@ inline uint64_t convrot_resident_memory_estimate(
         if (!bytes)
             throw std::invalid_argument("Qwen ConvRot estimate requires three nonempty source files");
         estimate = add(estimate, bytes);
+    }
+    if (r.residency == "component_staged") {
+        // The encoder's evaluated conditioning outlives its request-local
+        // weights. prepare_transformer owns DiT and VAE together; staged
+        // teardown releases the DiT before decoding and both at completion.
+        estimate = std::max(source_bytes[1], add(source_bytes[0], source_bytes[2]));
     }
     // Temporary code packing / one-layer dequantization allowance, followed
     // by the existing canvas growth and 2 GiB prefix K/V + 512 MiB per reference.

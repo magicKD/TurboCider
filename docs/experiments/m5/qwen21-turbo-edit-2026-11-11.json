@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-11",
+  "complete": true,
+  "device": {
+    "chip": "Apple M5 Pro",
+    "physical_memory_bytes": 25769803776,
+    "gpu_cores": 16,
+    "os": "macOS 26.5.1"
+  },
+  "problem": "Compact Turbo editing was normalized to resident loading and rejected by the simultaneous-source memory estimate; manually staged requests also needed checkpoint/encoder admission and a source-aware phase estimate.",
+  "fix": "Use component_staged for ConvRot editing, including restored drafts/history; admit staged ConvRot encoder/DiT; source bank=max(encoder, DiT+VAE), plus unchanged canvas/reference/packing allowances and the separate 4GiB reserve.",
+  "scope": "Functional validation; source-preserving import and original reference1024 encoding. No kernel, sigma schedule, reference downscale policy or arithmetic approximation changes.",
+  "source_sizes_bytes": {
+    "dit": 7256787829,
+    "encoder": 9350798360,
+    "vae": 675509688
+  },
+  "unit_validation": {
+    "source_aware_memory": "Passed real source lengths with one/two refs on 24GiB; resident edits/BF16/large canvases/budget/invalid geometry/overflow still rejected where required.",
+    "checkpoint_recipe": "3 tests passed, including staged one/two-reference admission and Turbo schedule/format/approximation controls.",
+    "app_variant": "Passed model switching, fixed-eight steps, staged edit selection, return to streamed T2I and existing variant contracts.",
+    "reference_preparation": "Passed proportional sizing, original-byte preservation, PNG alpha, TIFF orientation, batch rollback, import context, annotation and restoration.",
+    "native_and_packaged_contracts_each": {
+      "passed": 149,
+      "skipped": 3
+    },
+    "full_make_test_rerun": false
+  },
+  "real_model_samples": [
+    {
+      "case": "jpeg-app",
+      "reference_tokens": 4128,
+      "width": 512,
+      "height": 512,
+      "actual_denoise_steps": 8,
+      "runtime_precision": "w8a8_convrot_dit+w8a8_convrot_text+bf16_vae",
+      "timings_seconds": {
+        "denoise": 8.830650375,
+        "hybrid_setup": 0,
+        "image_encode": 0.911616167,
+        "request_wall": 16.03932975,
+        "text_encode": 3.857851417,
+        "vae_decode": 0.998718917
+      },
+      "memory": {
+        "mlx_active_bytes": 2253996554,
+        "mlx_peak_bytes": 13252888659,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "checkpoint": "qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "residency": "component_staged",
+      "memory_estimate_bytes": 15793249304,
+      "reference_size": 1024
+    },
+    {
+      "case": "original-request-jpeg-cli",
+      "reference_tokens": 4128,
+      "width": 512,
+      "height": 512,
+      "actual_denoise_steps": 8,
+      "runtime_precision": "w8a8_convrot_dit+w8a8_convrot_text+bf16_vae",
+      "timings_seconds": {
+        "denoise": 8.091849917,
+        "hybrid_setup": 0,
+        "image_encode": 0.851628167,
+        "request_wall": 13.737827958,
+        "text_encode": 2.700021833,
+        "vae_decode": 0.891876083
+      },
+      "memory": {
+        "mlx_active_bytes": 2277132362,
+        "mlx_peak_bytes": 13267504787,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "checkpoint": "qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "residency": "component_staged",
+      "memory_estimate_bytes": 15793249304,
+      "reference_size": 1024
+    },
+    {
+      "case": "rgba-png-app",
+      "reference_tokens": 4096,
+      "width": 512,
+      "height": 512,
+      "actual_denoise_steps": 8,
+      "runtime_precision": "w8a8_convrot_dit+w8a8_convrot_text+bf16_vae",
+      "timings_seconds": {
+        "denoise": 7.9106215,
+        "hybrid_setup": 0,
+        "image_encode": 0.916362333,
+        "request_wall": 13.63556825,
+        "text_encode": 2.673926333,
+        "vae_decode": 0.949647167
+      },
+      "memory": {
+        "mlx_active_bytes": 2236678666,
+        "mlx_peak_bytes": 13216139347,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      },
+      "checkpoint": "qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "residency": "component_staged",
+      "memory_estimate_bytes": 15793249304,
+      "reference_size": 1024
+    }
+  ],
+  "app_checks": [
+    "Full eight-step generation through StudioState/NativeJobStore",
+    "Imported bytes match original",
+    "Restored draft and history reuse retain staged editing",
+    "512x512 RGBA PNG publication",
+    "Original user source unchanged"
+  ],
+  "original_request_replay": {
+    "same_reference_and_prompt": true,
+    "seed": 42,
+    "tiny_vae_preview": true,
+    "steps": 8,
+    "output_verified": true,
+    "note": "Successful execution is not a guarantee that every requested pose/action is followed."
+  },
+  "visual_inspection": "JPEG App edit and original-prompt output decoded and inspected; recognizable reference content and nonempty output. No quantitative identity/pose-quality certificate.",
+  "limits": [
+    "Turbo accepts up to two references; corrupt/unsupported files and true memory shortages remain errors.",
+    "Output resolution still depends on the available memory; standard1024 is reference encoding, not output resolution.",
+    "MLX peak excludes OS/file cache and is not total process physical memory.",
+    "Only the focused unit/App tests and three actual edit requests were rerun for this fix."
+  ],
+  "artifacts": {
+    "source_manifest_sha256": "2efe0fdb59c65665cc4883f5df941b23f5a262c55db3b586d97902586d9b8b0f",
+    "source_inputs_verified": 697,
+    "desktop_entries": [
+      "dist/TurboCider.app",
+      "dist/prunavaed/TurboCider.app",
+      "dist/qwen-time-condition-cache-auto/TurboCider.app"
+    ],
+    "mapped_program_and_libraries_verified": true,
+    "sha256": {
+      "TurboCiderNativeApp": "fd10da816258a7bc5b5ff93e1bef873095b77128333b41bb21c89677d63ec498",
+      "libturbocider.dylib": "0695942c47dfac89a5900c85b33ae078e4cf26ff30952551e62414bcc43c2ef9",
+      "libmlx.dylib": "f7178a17d01050515309c93b51a12eff2ec2635651b68a191ac833835fa23b02",
+      "libjaccl.dylib": "2edd2a1e40e2e978c06e68b6722e052f84b535a54aa7a204218e51b9064e40c5"
+    },
+    "build_date": "2026-11-11T06:47:36Z",
+    "archive": {
+      "path": "dist/TurboCider-qwen-edit-fix-20261111.zip",
+      "bytes": 98021366,
+      "sha256": "77577e3789594a259395282b6ea30617483b7bd21be97c29949783ccd3002d7a",
+      "crc_check_passed": true
+    }
+  }
+}
