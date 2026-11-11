@@ -7,8 +7,8 @@ bool is_ltx_topk_sparse_mode(int mode) {
     return mode == 4 || mode == 5;
 }
 void validate_ltx_sparse_options(const Request &r) {
-    require(r.ltx_sparse_mode >= 0 && r.ltx_sparse_mode <= 5,
-            "LTX sparse mode must be 0...5");
+    require(r.ltx_sparse_mode >= 0 && r.ltx_sparse_mode <= 6,
+            "LTX sparse mode must be 0...6");
     require(is_ltx_topk_sparse_mode(r.ltx_sparse_mode) ?
                 (r.ltx_sparse_keep_blocks > 0 && r.ltx_sparse_keep_blocks <= 256) :
                 r.ltx_sparse_keep_blocks == 0,
@@ -20,6 +20,12 @@ void validate_ltx_sparse_options(const Request &r) {
     require(r.ltx_sparse_tokens_per_frame >= 0 &&
                 r.ltx_sparse_tokens_per_frame <= 16384,
             "LTX sparse tokens-per-frame out of range");
+    if (r.ltx_sparse_mode == 6) {
+        require(r.execution != "gpu_ane", "LTX spatial K/V pooling is GPU-only");
+        require(r.ltx_sparse_radius == 1 && !r.ltx_sparse_anchor_stride &&
+                    !r.ltx_sparse_tokens_per_frame,
+                "LTX spatial K/V pooling does not use sparse radius/anchors/frame geometry");
+    }
     if (r.ltx_sparse_mode != 0) {
         require(r.ltx_sol_stage2 && !r.ltx_sol_stage1,
                 "Experimental sparse patterns require Stage-2-only Sol admission");

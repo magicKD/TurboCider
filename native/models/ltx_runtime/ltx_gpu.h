@@ -10,10 +10,40 @@ extern "C" {
 
 typedef struct ltx_gpu ltx_gpu;
 typedef struct ltx_gpu_buffer ltx_gpu_buffer;
+typedef struct ltx_gpu_stage_workspace ltx_gpu_stage_workspace;
+
+/* Owner-thread, one denoise stage on an idle W8A8 queue without explicit
+ * memory hooks. Fixed LTX video 4096/FFN 16384 geometry, at most 4096 rows.
+ * The tracked placement heap aliases FFN storage with earlier attention
+ * intermediates. Creation is atomic; NULL leaves the ordinary path intact.
+ * hidden() is borrowed until free(); do not release that borrow separately.
+ * Free drains the native queue before detaching. A workspace also remains
+ * safe to free after its GPU owner was destroyed. Only one can be attached. */
+ltx_gpu_stage_workspace *ltx_gpu_stage_workspace_create(
+    ltx_gpu *gpu, uint32_t rows, char *error, size_t error_size);
+void ltx_gpu_stage_workspace_free(ltx_gpu_stage_workspace *workspace);
+ltx_gpu_buffer *ltx_gpu_stage_workspace_hidden(const ltx_gpu_stage_workspace *workspace);
+size_t ltx_gpu_stage_workspace_bytes(const ltx_gpu_stage_workspace *workspace);
+uint64_t ltx_gpu_stage_workspace_reuses(const ltx_gpu *gpu);
+#ifdef TURBOCIDER_ENABLE_TEST_HOOKS
+void ltx_gpu_stage_workspace_test_fail_at(unsigned allocation);
+#endif
 
 /* Quantizations may be fewer than projections: QKV/gate-up share one input. */
 int ltx_gpu_convrot_w8a8_info(const ltx_gpu *gpu,
                              uint64_t *projections, uint64_t *quantizations);
+int ltx_gpu_convrot_simd_enabled(const ltx_gpu *gpu);
+/* Successfully encoded fused GELU/ConvRot dispatches, including batched work. */
+uint64_t ltx_gpu_gelu_convrot_dispatches(const ltx_gpu *gpu);
+uint64_t ltx_gpu_gelu_output_dispatches(const ltx_gpu *gpu);
+uint64_t ltx_gpu_rot_quant_dispatches(const ltx_gpu *gpu);
+uint64_t ltx_gpu_adaln_rot_quant_dispatches(const ltx_gpu *gpu);
+uint64_t ltx_gpu_qk_norm_rope_dispatches(const ltx_gpu *gpu);
+uint64_t ltx_gpu_mlp_hidden_scratch_reuses(const ltx_gpu *gpu);
+int ltx_gpu_memory_hooks_enabled(const ltx_gpu *gpu);
+/* Experimental Stage-2 K/V pooling scope. All-zero geometry resets it. */
+int ltx_gpu_set_self_kv_pool_geometry(ltx_gpu *gpu, uint32_t frames,
+    uint32_t height, uint32_t width, char *error, size_t error_size);
 
 typedef enum {
     LTX_GPU_MEMORY_UNKNOWN = 0,
@@ -402,6 +432,12 @@ int ltx_gpu_convrot_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                          uint32_t rows, uint32_t columns,
                          uint32_t group_size,
                          char *error, size_t error_size);
+/* SIMD-only fused GELU + H4^4, retaining the GELU's BF16 rounding boundary. */
+int ltx_gpu_gelu_convrot_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
+                              const ltx_gpu_buffer *input,
+                              uint32_t rows, uint32_t columns,
+                              uint32_t group_size,
+                              char *error, size_t error_size);
 int ltx_gpu_pack_heads_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                             const ltx_gpu_buffer *input,
                             uint32_t rows, uint32_t heads,
@@ -702,6 +738,43 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
                         uint32_t hidden_dim, uint32_t output_dim,
                         uint32_t convrot_group_size,
                         char *error, size_t error_size);
+/* Explicit one-row-table AdaLN input transform; qualified W8A8 geometry may
+ * fuse normalization/modulation/rotation/quantization. Other paths materialize
+ * the same normalized_scratch and retain the ordinary MLP implementation. */
+int ltx_gpu_mlp_adaln_int8_convrot_mps_bf16(
+        ltx_gpu *gpu, ltx_gpu_buffer *output, const ltx_gpu_buffer *input,
+        const ltx_gpu_buffer *norm_scale, const ltx_gpu_buffer *norm_shift,
+        ltx_gpu_buffer *normalized_scratch, float epsilon,
+        const ltx_gpu_buffer *fc1_weight, const ltx_gpu_buffer *fc1_scale, const ltx_gpu_buffer *fc1_bias,
+        const ltx_gpu_buffer *fc2_weight, const ltx_gpu_buffer *fc2_scale, const ltx_gpu_buffer *fc2_bias,
+        uint32_t rows, uint32_t input_dim, uint32_t hidden_dim, uint32_t output_dim,
+        uint32_t convrot_group_size, char *error, size_t error_size);
+/* Caller-owned BF16 hidden workspace. NULL retains per-call allocation.
+ * It must belong to this queue and cannot alias any input/output/parameter. */
+int ltx_gpu_mlp_int8_convrot_mps_bf16_with_scratch(
+                        ltx_gpu *gpu, ltx_gpu_buffer *output,
+                        const ltx_gpu_buffer *input, ltx_gpu_buffer *hidden_scratch,
+                        const ltx_gpu_buffer *fc1_weight,
+                        const ltx_gpu_buffer *fc1_scale,
+                        const ltx_gpu_buffer *fc1_bias,
+                        const ltx_gpu_buffer *fc2_weight,
+                        const ltx_gpu_buffer *fc2_scale,
+                        const ltx_gpu_buffer *fc2_bias,
+                        uint32_t rows, uint32_t input_dim,
+                        uint32_t hidden_dim, uint32_t output_dim,
+                        uint32_t convrot_group_size,
+                        char *error, size_t error_size);
+/* Explicit one-row-table AdaLN input transform; qualified W8A8 geometry may
+ * fuse normalization/modulation/rotation/quantization. Other paths materialize
+ * the same normalized_scratch and retain the ordinary MLP implementation. */
+int ltx_gpu_mlp_adaln_int8_convrot_mps_bf16_with_scratch(
+        ltx_gpu *gpu, ltx_gpu_buffer *output, const ltx_gpu_buffer *input, ltx_gpu_buffer *hidden_scratch,
+        const ltx_gpu_buffer *norm_scale, const ltx_gpu_buffer *norm_shift,
+        ltx_gpu_buffer *normalized_scratch, float epsilon,
+        const ltx_gpu_buffer *fc1_weight, const ltx_gpu_buffer *fc1_scale, const ltx_gpu_buffer *fc1_bias,
+        const ltx_gpu_buffer *fc2_weight, const ltx_gpu_buffer *fc2_scale, const ltx_gpu_buffer *fc2_bias,
+        uint32_t rows, uint32_t input_dim, uint32_t hidden_dim, uint32_t output_dim,
+        uint32_t convrot_group_size, char *error, size_t error_size);
 int ltx_gpu_gated_mlp_int8_convrot_mps_bf16(
                         ltx_gpu *gpu, ltx_gpu_buffer *output,
                         const ltx_gpu_buffer *input,

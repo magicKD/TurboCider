@@ -14,7 +14,9 @@ COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-base-benchmark
 .PHONY: test-tiny-vae test-tiny-vae-metal test-tiny-vae-download
 .PHONY: test-h3-download test-ltx-gemma-quality test-mlx-encoder-quality test-validation-helpers
-.PHONY: test-ltx-convrot
+.PHONY: test-ltx-convrot test-ltx-optimization
+LTX_OPTIMIZATION_TEST_OUT ?= build/ltx-optimization-tests
+NATIVE_TEST_OUT ?= build/native
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -47,6 +49,7 @@ help:
 	@echo 'make test-h3-download           Verify H3 resumable downloads and identities without network'
 	@echo 'make test-ltx-gemma-quality      Verify Gemma BF16 metrics (NumPy; no GPU or weights)'
 	@echo 'make test-ltx-convrot            Verify LTX chip policy, resumable downloads and W8A8 GPU math'
+	@echo 'make test-ltx-optimization       Verify PrunaVAED fusion/Conv3D math and Sol route counts on this GPU'
 	@echo 'make test-mlx-encoder-quality    Verify H3/Qwen3 metrics on tiny MLX CPU tensors'
 	@echo 'make test-qwen21-runtime-host    Verify fixed-program/QKV/format/prefix/profiling contracts (no inference)'
 	@echo 'make build-runtime-ane-probe      Build optional runtime-weight Core ML component probe (not CLI)'
@@ -64,6 +67,12 @@ test-ltx-convrot:
 	@"$(PYTHON)" tests/native/test_ltx_convrot_precision.py
 	@"$(PYTHON)" tests/native/test_ltx_modelscope_ranges.py
 	@"$(PYTHON)" tests/native/test_ltx_w8a8.py
+test-ltx-optimization:
+	@TURBOCIDER_BUILD_OUTPUT_DIR="$(LTX_OPTIMIZATION_TEST_OUT)" bash tools/native/build_ltx_optimization_tests.sh
+	@"$(LTX_OPTIMIZATION_TEST_OUT)/ltx-sol-route-stats-test"
+	@"$(LTX_OPTIMIZATION_TEST_OUT)/ltx-prunavaed-fusion-test"
+	@"$(LTX_OPTIMIZATION_TEST_OUT)/ltx-prunavaed-conv-test"
+	@"$(PYTHON)" tests/native/test_ltx_kv_pool.py
 build-app:
 	@tools/native/build_app.sh
 build:
@@ -317,24 +326,24 @@ test-quantized-host:
 test-runtime-ane: test-runtime-ane-host
 	@TURBOCIDER_TEST_RUNTIME_ANE=1 "$(PYTHON)" -B tests/native/test_ane_runtime.py
 test-app:
-	@build/native/turbocider-prunavaed-app-tests
-	@build/native/turbocider-tiny-vae-app-tests
-	@build/native/turbocider-runtime-image-worker-tests
-	@build/native/turbocider-upscaler-tests
+	@$(NATIVE_TEST_OUT)/turbocider-prunavaed-app-tests
+	@$(NATIVE_TEST_OUT)/turbocider-tiny-vae-app-tests
+	@$(NATIVE_TEST_OUT)/turbocider-runtime-image-worker-tests
+	@$(NATIVE_TEST_OUT)/turbocider-upscaler-tests
 	@$(MAKE) test-reference-preparation
 	@$(MAKE) test-editing-canvas
 	@$(MAKE) test-playground
-	@build/native/turbocider-image-transaction-tests
-	@build/native/turbocider-ltx-worker-tests
-	@build/native/turbocider-streaming-resolution-tests
-	@build/native/turbocider-ane-library-tests
-	@build/native/turbocider-studio-variant-tests
-	@build/native/turbocider-studio-tests
-	@build/native/turbocider-history-tests
-	@build/native/turbocider-model-library-tests
-	@build/native/turbocider-library-store-tests
-	@build/native/turbocider-run-insights-tests
-	@build/native/turbocider-tensor-cache-tests
+	@$(NATIVE_TEST_OUT)/turbocider-image-transaction-tests
+	@$(NATIVE_TEST_OUT)/turbocider-ltx-worker-tests
+	@$(NATIVE_TEST_OUT)/turbocider-streaming-resolution-tests
+	@$(NATIVE_TEST_OUT)/turbocider-ane-library-tests
+	@$(NATIVE_TEST_OUT)/turbocider-studio-variant-tests
+	@$(NATIVE_TEST_OUT)/turbocider-studio-tests
+	@$(NATIVE_TEST_OUT)/turbocider-history-tests
+	@$(NATIVE_TEST_OUT)/turbocider-model-library-tests
+	@$(NATIVE_TEST_OUT)/turbocider-library-store-tests
+	@$(NATIVE_TEST_OUT)/turbocider-run-insights-tests
+	@$(NATIVE_TEST_OUT)/turbocider-tensor-cache-tests
 test-library:
 	@build/native/turbocider-component-tests
 	@build/native/turbocider-model-hub-tests
@@ -357,11 +366,11 @@ test-api:
 	@"$(PYTHON)" -B tests/native/test_local_client.py
 	@"$(PYTHON)" -B tests/native/test_service_installations.py
 test-reference-preparation:
-	@build/native/turbocider-reference-preparation-tests
+	@$(NATIVE_TEST_OUT)/turbocider-reference-preparation-tests
 test-editing-canvas:
-	@build/native/turbocider-editing-canvas-tests
+	@$(NATIVE_TEST_OUT)/turbocider-editing-canvas-tests
 test-playground:
-	@build/native/turbocider-playground-tests
+	@$(NATIVE_TEST_OUT)/turbocider-playground-tests
 test-qwen21-runtime-activation:
 	@"$(PYTHON)" -B tests/native/test_qwen21_runtime_activation.py
 test-model:

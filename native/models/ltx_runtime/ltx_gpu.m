@@ -62,6 +62,14 @@ typedef enum {
     LTX_PIPELINE_LINEAR_F32,
     LTX_PIPELINE_LINEAR_BF16,
     LTX_PIPELINE_CONVROT_BF16,
+    LTX_PIPELINE_CONVROT_SIMD_BF16,
+    LTX_PIPELINE_GELU_CONVROT_SIMD_BF16,
+    LTX_PIPELINE_ROT_QUANT_S1_BF16,
+    LTX_PIPELINE_ROT_QUANT_S2_BF16,
+    LTX_PIPELINE_ROT_QUANT_S4_BF16,
+    LTX_PIPELINE_GELU_ROT_QUANT_S1_BF16,
+    LTX_PIPELINE_GELU_ROT_QUANT_S2_BF16,
+    LTX_PIPELINE_GELU_ROT_QUANT_S4_BF16,
     LTX_PIPELINE_PACK_HEADS_BF16,
     LTX_PIPELINE_PACK_ROPE_SPLIT_BF16,
     LTX_PIPELINE_UNPACK_HEADS_GATE_BF16,
@@ -79,6 +87,8 @@ typedef enum {
     LTX_PIPELINE_AFFINE_BF16_SPLIT,
     LTX_PIPELINE_ADALN_BF16_SPLIT,
     LTX_PIPELINE_OUTPUT_ADALN_BF16_SPLIT,
+    LTX_PIPELINE_ADALN_ROT_QUANT_BF16,
+    LTX_PIPELINE_QK_NORM_ROPE_BF16,
     LTX_PIPELINE_COUNT
 } ltx_pipeline_kind;
 
@@ -498,6 +508,14 @@ static const char *const ltx_pipeline_names[LTX_PIPELINE_COUNT] = {
     "ltx_linear_f32",
     "ltx_linear_bf16",
     "ltx_convrot_bf16",
+    "ltx_convrot_simd_bf16",
+    "ltx_gelu_convrot_simd_bf16",
+    "ltx_rot_quant_bf16_s1",
+    "ltx_rot_quant_bf16_s2",
+    "ltx_rot_quant_bf16_s4",
+    "ltx_gelu_rot_quant_bf16_s1",
+    "ltx_gelu_rot_quant_bf16_s2",
+    "ltx_gelu_rot_quant_bf16_s4",
     "ltx_pack_heads_bf16",
     "ltx_pack_rope_split_bf16",
     "ltx_unpack_heads_gate_bf16",
@@ -515,9 +533,14 @@ static const char *const ltx_pipeline_names[LTX_PIPELINE_COUNT] = {
     "ltx_affine_bf16_split",
     "ltx_adaln_bf16_split",
     "ltx_output_adaln_bf16_split",
+    "ltx_adaln_rot_quant_bf16",
+    "ltx_qk_norm_rope_bf16",
 };
 
 struct ltx_gpu {
+    ltx_gpu_stage_workspace *stage_workspace;
+    uint64_t stage_workspace_reuses;
+    uint64_t qk_norm_rope_dispatches;
     void *device;
     void *queue;
     void *deferred_commands;
@@ -528,9 +551,18 @@ struct ltx_gpu {
     int batch_active;
     int memory_callback_failed;
     int convrot_w8a8_enabled;
+    int convrot_simd_enabled;
+    uint32_t self_kv_pool_frames;
+    uint32_t self_kv_pool_height;
+    uint32_t self_kv_pool_width;
     void *convrot_w8a8_pipelines;
     uint64_t convrot_w8a8_projections;
     uint64_t convrot_w8a8_quantizations;
+    uint64_t gelu_convrot_dispatches;
+    uint64_t gelu_output_dispatches;
+    uint64_t rot_quant_dispatches;
+    uint64_t adaln_rot_quant_dispatches;
+    uint64_t mlp_hidden_scratch_reuses;
     void *convrot_w8a8_attention_graphs;
     void *bf16_linear_graphs;
     void *int8_linear_graphs;
@@ -566,6 +598,8 @@ struct ltx_gpu_buffer {
     uint8_t memory_retired;
     ltx_gpu_memory_hooks memory_hooks;
 };
+
+static void ltx_gpu_stage_workspace_detach_gpu(ltx_gpu *gpu);
 
 static int ltx_gpu_fail(char *error, size_t error_size,
                         const char *message) {
@@ -931,6 +965,12 @@ ltx_gpu *ltx_gpu_create(const char *shader_source_path,
         }
         gpu->device = (__bridge_retained void *)device;
         gpu->convrot_w8a8_enabled = convrot_w8a8;
+        const char *convrot_simd = getenv("TURBOCIDER_LTX_CONVROT_SIMD");
+        /* Qualified on M5 W8A8 with byte-exact operators, both Gemma prompts
+         * and complete AV runs. Keep other devices on their original default;
+         * an explicit zero remains available for matched ablations. */
+        gpu->convrot_simd_enabled = convrot_simd ?
+            strcmp(convrot_simd, "1") == 0 : convrot_w8a8;
         gpu->queue = (__bridge_retained void *)queue;
         gpu->memory_queue_id = LTX_GPU_MEMORY_QUEUE_MAIN;
         gpu->deferred_commands = (__bridge_retained void *)
@@ -1019,6 +1059,7 @@ void ltx_gpu_free(ltx_gpu *gpu) {
     if (!gpu) return;
     char drain_error[1024] = {0};
     (void)ltx_gpu_drain(gpu, drain_error, sizeof(drain_error));
+    ltx_gpu_stage_workspace_detach_gpu(gpu);
     ltx_w8a8_free(gpu->convrot_w8a8_pipelines);
     if (gpu->convrot_w8a8_attention_graphs)
         (void)CFBridgingRelease(gpu->convrot_w8a8_attention_graphs);
@@ -1086,6 +1127,53 @@ int ltx_gpu_convrot_w8a8_info(const ltx_gpu *gpu,
     if (projections) *projections = gpu ? gpu->convrot_w8a8_projections : 0;
     if (quantizations) *quantizations = gpu ? gpu->convrot_w8a8_quantizations : 0;
     return gpu && gpu->convrot_w8a8_enabled;
+}
+
+int ltx_gpu_convrot_simd_enabled(const ltx_gpu *gpu) {
+    return gpu && gpu->convrot_simd_enabled;
+}
+
+uint64_t ltx_gpu_gelu_convrot_dispatches(const ltx_gpu *gpu) {
+    return gpu ? gpu->gelu_convrot_dispatches : 0;
+}
+
+uint64_t ltx_gpu_gelu_output_dispatches(const ltx_gpu *gpu) {
+    return gpu ? gpu->gelu_output_dispatches : 0;
+}
+
+uint64_t ltx_gpu_rot_quant_dispatches(const ltx_gpu *gpu) {
+    return gpu ? gpu->rot_quant_dispatches : 0;
+}
+
+uint64_t ltx_gpu_adaln_rot_quant_dispatches(const ltx_gpu *gpu) {
+    return gpu ? gpu->adaln_rot_quant_dispatches : 0;
+}
+
+uint64_t ltx_gpu_mlp_hidden_scratch_reuses(const ltx_gpu *gpu) {
+    return gpu ? gpu->mlp_hidden_scratch_reuses : 0;
+}
+
+int ltx_gpu_memory_hooks_enabled(const ltx_gpu *gpu) {
+    return gpu && gpu->memory_hooks.reserve != NULL;
+}
+
+int ltx_gpu_set_self_kv_pool_geometry(ltx_gpu *gpu, uint32_t frames,
+    uint32_t height, uint32_t width, char *error, size_t error_size) {
+    if (!gpu) return ltx_gpu_fail(error, error_size, "missing K/V pooling GPU context");
+    if (!frames && !height && !width) {
+        gpu->self_kv_pool_frames = gpu->self_kv_pool_height = gpu->self_kv_pool_width = 0;
+        return 1;
+    }
+    if (!gpu->convrot_w8a8_enabled || !frames || !height || !width ||
+        height % 2u || width % 2u || height > 16384u || width > 16384u ||
+        frames > 16384u || (uint64_t)frames * height * width > 16384u ||
+        gpu->self_kv_pool_frames)
+        return ltx_gpu_fail(error, error_size,
+            "spatial K/V pooling requires M5 W8A8, even spatial dimensions, <=16384 rows and a fresh scope");
+    gpu->self_kv_pool_frames = frames;
+    gpu->self_kv_pool_height = height;
+    gpu->self_kv_pool_width = width;
+    return 1;
 }
 
 int ltx_gpu_streaming_boundary_completed(const ltx_gpu *gpu) {
@@ -1352,6 +1440,9 @@ int ltx_gpu_buffer_read(const ltx_gpu_buffer *buffer, void *data,
     memcpy(data, ltx_buffer(buffer).contents, bytes);
     return 1;
 }
+
+#include "ltx_gpu_stage_workspace.inc"
+#include "ltx_gpu_qk_norm_rope.inc"
 
 int ltx_gpu_buffer_copy(ltx_gpu *gpu, ltx_gpu_buffer *output,
                         size_t output_offset,
@@ -3390,25 +3481,29 @@ int ltx_gpu_adaln_single_mps_bf16(
     }
 }
 
-int ltx_gpu_convrot_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
+static int ltx_gpu_convrot_activation_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
                          const ltx_gpu_buffer *input,
                          uint32_t rows, uint32_t columns,
-                         uint32_t group_size,
+                         uint32_t group_size, int gelu,
                          char *error, size_t error_size) {
     uint64_t required = 0;
     if (!ltx_required_bytes((uint64_t)rows * columns, sizeof(uint16_t),
                             &required) ||
         !gpu || !rows || !columns || group_size != 256u ||
-        columns % group_size || !ltx_buffer_fits(input, required) ||
+        columns % group_size || (gelu && !gpu->convrot_simd_enabled) ||
+        !ltx_buffer_fits(input, required) ||
         !ltx_buffer_fits(output, required))
         return ltx_gpu_fail(error, error_size,
                             "ConvRot requires BF16 rows with K divisible by 256");
     @autoreleasepool {
-        id<MTLComputePipelineState> pipeline =
-            ltx_pipeline(gpu, LTX_PIPELINE_CONVROT_BF16);
-        if (pipeline.maxTotalThreadsPerThreadgroup < 256u)
+        uint32_t threads = gpu->convrot_simd_enabled ? 32u : 256u;
+        id<MTLComputePipelineState> pipeline = ltx_pipeline(gpu,
+            gelu ? LTX_PIPELINE_GELU_CONVROT_SIMD_BF16 :
+            (gpu->convrot_simd_enabled ? LTX_PIPELINE_CONVROT_SIMD_BF16 : LTX_PIPELINE_CONVROT_BF16));
+        if (pipeline.maxTotalThreadsPerThreadgroup < threads ||
+            (gpu->convrot_simd_enabled && pipeline.threadExecutionWidth != 32u))
             return ltx_gpu_fail(error, error_size,
-                                "ConvRot requires a 256-thread threadgroup");
+                                "ConvRot pipeline has incompatible threadgroup geometry");
         id<MTLCommandBuffer> command = [ltx_queue(gpu) commandBuffer];
         if (!command)
             return ltx_gpu_fail(error, error_size,
@@ -3424,10 +3519,28 @@ int ltx_gpu_convrot_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
         [encoder setBytes:&columns length:sizeof(columns) atIndex:2];
         [encoder dispatchThreadgroups:
             MTLSizeMake(columns / group_size, rows, 1)
-                 threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+                 threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
         [encoder endEncoding];
-        return ltx_finish_command(gpu, command, "ConvRot", error, error_size);
+        int ok = ltx_finish_command(gpu, command, "ConvRot", error, error_size);
+        if (ok && gelu) gpu->gelu_convrot_dispatches++;
+        return ok;
     }
+}
+
+int ltx_gpu_convrot_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
+                         const ltx_gpu_buffer *input,
+                         uint32_t rows, uint32_t columns, uint32_t group_size,
+                         char *error, size_t error_size) {
+    return ltx_gpu_convrot_activation_bf16(gpu, output, input, rows, columns,
+        group_size, 0, error, error_size);
+}
+
+int ltx_gpu_gelu_convrot_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
+                              const ltx_gpu_buffer *input,
+                              uint32_t rows, uint32_t columns, uint32_t group_size,
+                              char *error, size_t error_size) {
+    return ltx_gpu_convrot_activation_bf16(gpu, output, input, rows, columns,
+        group_size, 1, error, error_size);
 }
 
 int ltx_gpu_pack_heads_bf16(ltx_gpu *gpu, ltx_gpu_buffer *output,
@@ -3853,6 +3966,44 @@ int ltx_gpu_self_attention_core_sol_bf16(
 
 /* One rotation and token quantization feed all projections (QKV or gate/up).
  * All scratch passes through the normal allocator and retirement hooks. */
+static id<MTLComputePipelineState> ltx_rot_quant_pipeline(
+        ltx_gpu *gpu, uint32_t columns, int gelu, uint32_t *threads) {
+    if (!gpu->convrot_simd_enabled || !columns || columns % 256u || columns > 16384u)
+        return nil;
+    const uint32_t caps[] = {32u, 16u};
+    for (unsigned i = 0; i < 2; ++i) {
+        uint32_t groups = MIN(caps[i], columns / 256u);
+        uint32_t segments = (columns / 256u + groups - 1u) / groups;
+        unsigned variant = segments <= 1u ? 0u : segments <= 2u ? 1u : 2u;
+        unsigned first = gelu ? LTX_PIPELINE_GELU_ROT_QUANT_S1_BF16 : LTX_PIPELINE_ROT_QUANT_S1_BF16;
+        id<MTLComputePipelineState> pipeline = ltx_pipeline(gpu, (ltx_pipeline_kind)(first + variant));
+        if (pipeline.threadExecutionWidth == 32u &&
+            pipeline.maxTotalThreadsPerThreadgroup >= groups * 32u) {
+            *threads = groups * 32u;
+            return pipeline;
+        }
+    }
+    return nil;
+}
+
+typedef struct {
+    const ltx_gpu_buffer *scale;
+    const ltx_gpu_buffer *shift;
+    ltx_gpu_buffer *fallback;
+    float epsilon;
+} ltx_w8a8_adaln_input;
+
+static id<MTLComputePipelineState> ltx_adaln_rot_quant_pipeline(ltx_gpu *gpu,
+        uint32_t columns, uint32_t *threads) {
+    if (!gpu->convrot_w8a8_enabled || !gpu->convrot_simd_enabled || columns != 4096u)
+        return nil;
+    id<MTLComputePipelineState> pipeline = ltx_pipeline(gpu, LTX_PIPELINE_ADALN_ROT_QUANT_BF16);
+    if (pipeline.threadExecutionWidth != 32u || pipeline.maxTotalThreadsPerThreadgroup < 512u)
+        return nil;
+    *threads = 512u;
+    return pipeline;
+}
+
 static int ltx_w8a8_project_varying(
         ltx_gpu *gpu, ltx_gpu_buffer *const *outputs,
         const ltx_gpu_buffer *input,
@@ -3860,8 +4011,13 @@ static int ltx_w8a8_project_varying(
         const ltx_gpu_buffer *const *scales,
         const ltx_gpu_buffer *const *biases,
         uint32_t count, uint32_t rows, uint32_t input_dim,
-        const uint32_t *output_dims, int rotate, char *error, size_t error_size) {
+        const uint32_t *output_dims, int rotate, int output_gelu,
+        const ltx_w8a8_adaln_input *adaln,
+        const ltx_qk_norm_rope_outputs *qk_rope, char *error, size_t error_size) {
+    /* rotate=2 applies GELU with the original intermediate BF16 round before
+     * the SIMD rotation. Every existing projection continues to use 0 or 1. */
     if (!count || count > 3 || !rows || rows > UINT32_MAX - 127u ||
+        rotate < 0 || rotate > 2 || (rotate == 2 && !gpu->convrot_simd_enabled) ||
         !input_dim || input_dim % 16u || input_dim > INT32_MAX / (128u * 127u))
         return ltx_gpu_fail(error, error_size, "invalid W8A8 projection dimensions");
     uint32_t max_output = 0, padded_output[3] = {0, 0, 0};
@@ -3880,19 +4036,49 @@ static int ltx_w8a8_project_varying(
     }
     uint32_t bm = rows <= 64u ? 32u : 128u;
     uint32_t padded_rows = (rows + bm - 1u) / bm * bm;
+    const int fused_output = ltx_w8a8_fused_output_enabled();
+    if (output_gelu && !fused_output)
+        return ltx_gpu_fail(error, error_size, "GELU output requires fused BF16 epilogues");
+    if (output_gelu && !ltx_w8a8_prepare_gelu_output(gpu->convrot_w8a8_pipelines, error, error_size))
+        return 0;
+    const char *fusion = getenv("TURBOCIDER_LTX_W8A8_FUSED_ROT_QUANT");
+    uint32_t fused_threads = 0;
+    id<MTLComputePipelineState> fused_prepare =
+        adaln ? ltx_adaln_rot_quant_pipeline(gpu, input_dim, &fused_threads) :
+        (rotate && (!fusion || strcmp(fusion, "1") == 0) ?
+        ltx_rot_quant_pipeline(gpu, input_dim, rotate == 2, &fused_threads) : nil);
+    if (adaln && (!fused_prepare || rotate != 1))
+        return ltx_gpu_fail(error, error_size, "unsupported fused AdaLN W8A8 preparation");
     ltx_gpu_buffer *rotated = NULL, *codes = NULL, *token_scales = NULL, *fp32 = NULL;
     ltx_gpu_buffer *padded_weights[3] = {NULL, NULL, NULL};
     int ok = 0;
-    if (rotate) rotated = ltx_gpu_buffer_new_classified(gpu,
+    if (rotate && !fused_prepare) rotated = ltx_gpu_buffer_new_classified(gpu,
         (size_t)rows * input_dim * 2u, LTX_GPU_MEMORY_CONVERSION_SCRATCH,
         "ltx_w8a8_rotated", error, error_size);
-    codes = ltx_gpu_buffer_new_classified(gpu, (size_t)padded_rows * input_dim,
-        LTX_GPU_MEMORY_CONVERSION_SCRATCH, "ltx_w8a8_codes", error, error_size);
-    token_scales = ltx_gpu_buffer_new_classified(gpu, (size_t)padded_rows * 4u,
-        LTX_GPU_MEMORY_CONVERSION_SCRATCH, "ltx_w8a8_token_scales", error, error_size);
-    fp32 = ltx_gpu_buffer_new_classified(gpu, (size_t)rows * max_output * 4u,
-        LTX_GPU_MEMORY_CONVERSION_SCRATCH, "ltx_w8a8_fp32", error, error_size);
-    if ((rotate && !rotated) || !codes || !token_scales || !fp32) goto cleanup;
+    ltx_gpu_stage_workspace *stage = gpu->stage_workspace;
+    const ltx_gpu_buffer *prepare_inputs[] = {input,
+        adaln ? adaln->scale : NULL, adaln ? adaln->shift : NULL,
+        adaln ? adaln->fallback : NULL};
+    int reuse_stage = stage && stage->owner == gpu &&
+        ltx_buffer_fits(stage->codes, (uint64_t)padded_rows * input_dim) &&
+        ltx_buffer_fits(stage->scales, (uint64_t)padded_rows * 4u) &&
+        ltx_stage_avoids_buffers(stage->codes, prepare_inputs, 4u) &&
+        ltx_stage_avoids_buffers(stage->scales, prepare_inputs, 4u);
+    for (uint32_t i = 0; reuse_stage && i < count; ++i) {
+        const ltx_gpu_buffer *project_buffers[] = {outputs[i], weights[i], scales[i], biases[i]};
+        reuse_stage = ltx_stage_avoids_buffers(stage->codes, project_buffers, 4u) &&
+            ltx_stage_avoids_buffers(stage->scales, project_buffers, 4u);
+    }
+    codes = reuse_stage ? ltx_stage_borrow(gpu, stage->codes) :
+        ltx_gpu_buffer_new_classified(gpu, (size_t)padded_rows * input_dim,
+            LTX_GPU_MEMORY_CONVERSION_SCRATCH, "ltx_w8a8_codes", error, error_size);
+    token_scales = reuse_stage ? ltx_stage_borrow(gpu, stage->scales) :
+        ltx_gpu_buffer_new_classified(gpu, (size_t)padded_rows * 4u,
+            LTX_GPU_MEMORY_CONVERSION_SCRATCH, "ltx_w8a8_token_scales", error, error_size);
+    if (!fused_output)
+        fp32 = ltx_gpu_buffer_new_classified(gpu, (size_t)rows * max_output * 4u,
+            LTX_GPU_MEMORY_CONVERSION_SCRATCH, "ltx_w8a8_fp32", error, error_size);
+    if ((rotate && !fused_prepare && !rotated) || !codes || !token_scales || (!fused_output && !fp32)) goto cleanup;
     for (uint32_t i = 0; i < count; ++i) if (padded_output[i] != output_dims[i]) {
         padded_weights[i] = ltx_gpu_buffer_new_classified(gpu,
             (size_t)padded_output[i] * input_dim, LTX_GPU_MEMORY_CONVERSION_SCRATCH,
@@ -3926,31 +4112,58 @@ static int ltx_w8a8_project_varying(
             ltx_gpu_fail(error, error_size, "create W8A8 compute encoder failed");
             goto cleanup;
         }
-        if (rotate) {
-            [encoder setComputePipelineState:ltx_pipeline(gpu, LTX_PIPELINE_CONVROT_BF16)];
-            [encoder setBuffer:ltx_buffer(rotated) offset:0 atIndex:0];
-            [encoder setBuffer:ltx_buffer(input) offset:0 atIndex:1];
-            [encoder setBytes:&input_dim length:sizeof(input_dim) atIndex:2];
-            [encoder dispatchThreadgroups:MTLSizeMake(input_dim / 256u, rows, 1)
-                     threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+        if (fused_prepare) {
+            [encoder setComputePipelineState:fused_prepare];
+            [encoder setBuffer:ltx_buffer(input) offset:0 atIndex:0];
+            [encoder setBuffer:ltx_buffer(codes) offset:0 atIndex:1];
+            [encoder setBuffer:ltx_buffer(token_scales) offset:0 atIndex:2];
+            [encoder setBytes:&rows length:sizeof(rows) atIndex:3];
+            [encoder setBytes:&input_dim length:sizeof(input_dim) atIndex:4];
+            if (adaln) {
+                [encoder setBuffer:ltx_buffer(adaln->scale) offset:0 atIndex:5];
+                [encoder setBuffer:ltx_buffer(adaln->shift) offset:0 atIndex:6];
+                [encoder setBytes:&adaln->epsilon length:sizeof(adaln->epsilon) atIndex:7];
+            }
+            [encoder dispatchThreadgroups:MTLSizeMake(padded_rows, 1, 1)
+                     threadsPerThreadgroup:MTLSizeMake(fused_threads, 1, 1)];
             [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        } else {
+            if (rotate) {
+                [encoder setComputePipelineState:ltx_pipeline(gpu,
+                    rotate == 2 ? LTX_PIPELINE_GELU_CONVROT_SIMD_BF16 :
+                    (gpu->convrot_simd_enabled ? LTX_PIPELINE_CONVROT_SIMD_BF16 : LTX_PIPELINE_CONVROT_BF16))];
+                [encoder setBuffer:ltx_buffer(rotated) offset:0 atIndex:0];
+                [encoder setBuffer:ltx_buffer(input) offset:0 atIndex:1];
+                [encoder setBytes:&input_dim length:sizeof(input_dim) atIndex:2];
+                [encoder dispatchThreadgroups:MTLSizeMake(input_dim / 256u, rows, 1)
+                         threadsPerThreadgroup:MTLSizeMake(gpu->convrot_simd_enabled ? 32u : 256u, 1, 1)];
+                [encoder memoryBarrierWithScope:MTLBarrierScopeBuffers];
+            }
+            ltx_w8a8_quantize(gpu->convrot_w8a8_pipelines, (__bridge void *)encoder,
+                ltx_gpu_buffer_native(rotate ? rotated : input), ltx_gpu_buffer_native(codes),
+                ltx_gpu_buffer_native(token_scales), rows, input_dim);
         }
-        ltx_w8a8_quantize(gpu->convrot_w8a8_pipelines, (__bridge void *)encoder,
-            ltx_gpu_buffer_native(rotate ? rotated : input), ltx_gpu_buffer_native(codes),
-            ltx_gpu_buffer_native(token_scales), rows, input_dim);
-        for (uint32_t i = 0; i < count; ++i)
-            ltx_w8a8_project(gpu->convrot_w8a8_pipelines, (__bridge void *)encoder,
+        for (uint32_t i = 0; i < count; ++i) {
+            ltx_w8a8_project_activation(gpu->convrot_w8a8_pipelines, (__bridge void *)encoder,
                 ltx_gpu_buffer_native(codes),
                 ltx_gpu_buffer_native(padded_weights[i] ? padded_weights[i] : weights[i]),
                 ltx_gpu_buffer_native(scales[i]), ltx_gpu_buffer_native(token_scales),
                 ltx_gpu_buffer_native(fp32), ltx_gpu_buffer_native(outputs[i]),
                 biases[i] ? ltx_gpu_buffer_native(biases[i]) : NULL,
-                rows, input_dim, output_dims[i]);
+                rows, input_dim, output_dims[i], fused_output, output_gelu);
+            if (qk_rope && i < 2u)
+                ltx_encode_qk_norm_rope(gpu, encoder, qk_rope, outputs[i], i);
+        }
         [encoder endEncoding];
         ok = ltx_finish_command(gpu, command, "ConvRot W8A8", error, error_size);
         if (ok) {
             gpu->convrot_w8a8_projections += count;
             gpu->convrot_w8a8_quantizations++;
+            if (rotate == 2) gpu->gelu_convrot_dispatches++;
+            if (fused_prepare) gpu->rot_quant_dispatches++;
+            if (output_gelu) gpu->gelu_output_dispatches += count;
+            if (adaln) gpu->adaln_rot_quant_dispatches++;
+            if (qk_rope) gpu->qk_norm_rope_dispatches += 2u;
         }
     }
 cleanup:
@@ -3969,7 +4182,19 @@ static int ltx_w8a8_project_many(
         uint32_t input_dim, uint32_t output_dim, int rotate, char *error, size_t error_size) {
     const uint32_t dims[] = {output_dim, output_dim, output_dim};
     return ltx_w8a8_project_varying(gpu, outputs, input, weights, scales, biases,
-        count, rows, input_dim, dims, rotate, error, error_size);
+        count, rows, input_dim, dims, rotate, 0, NULL, NULL, error, error_size);
+}
+
+static int ltx_w8a8_linear_gelu_output(ltx_gpu *gpu, ltx_gpu_buffer *output,
+        const ltx_gpu_buffer *input, const ltx_gpu_buffer *weight,
+        const ltx_gpu_buffer *scale, const ltx_gpu_buffer *bias,
+        uint32_t rows, uint32_t input_dim, uint32_t output_dim,
+        char *error, size_t error_size) {
+    ltx_gpu_buffer *outputs[] = {output};
+    const ltx_gpu_buffer *weights[] = {weight}, *scales[] = {scale}, *biases[] = {bias};
+    const uint32_t dims[] = {output_dim};
+    return ltx_w8a8_project_varying(gpu, outputs, input, weights, scales, biases,
+        1u, rows, input_dim, dims, 1, 1, NULL, NULL, error, error_size);
 }
 
 static int ltx_w8a8_linear(ltx_gpu *gpu, ltx_gpu_buffer *output,
@@ -4007,7 +4232,7 @@ int ltx_gpu_linears_int8_convrot_bf16(
     }
     if (gpu->convrot_w8a8_enabled)
         return ltx_w8a8_project_varying(gpu, outputs, input, weights, scales, biases,
-            count, rows, input_dim, output_dims, 1, error, error_size);
+            count, rows, input_dim, output_dims, 1, 0, NULL, NULL, error, error_size);
     for (uint32_t i = 0; i < count; ++i)
         if (!ltx_gpu_linear_int8_convrot_mps_bf16(gpu, outputs[i], input, weights[i], scales[i], biases[i],
                 rows, input_dim, output_dims[i], 256u, error, error_size)) return 0;
@@ -4525,7 +4750,7 @@ static LTXInt8MLPGraph *ltx_int8_mlp_graph(
     return mlp;
 }
 
-int ltx_gpu_mlp_int8_convrot_mps_bf16(
+static int ltx_gpu_mlp_int8_impl(
                         ltx_gpu *gpu, ltx_gpu_buffer *output,
                         const ltx_gpu_buffer *input,
                         const ltx_gpu_buffer *fc1_weight,
@@ -4537,6 +4762,8 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
                         uint32_t rows, uint32_t input_dim,
                         uint32_t hidden_dim, uint32_t output_dim,
                         uint32_t convrot_group_size,
+                        const ltx_w8a8_adaln_input *adaln,
+                        ltx_gpu_buffer *hidden_scratch,
                         char *error, size_t error_size) {
     uint64_t input_bytes = 0;
     uint64_t fc1_weight_bytes = 0;
@@ -4571,24 +4798,79 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
         return ltx_gpu_fail(error, error_size,
                             "invalid MPS ConvRot INT8 MLP arguments");
 
+    uint64_t hidden_bytes = 0;
+    if (hidden_scratch &&
+        (!ltx_required_bytes((uint64_t)rows * hidden_dim, 2u, &hidden_bytes) ||
+         !ltx_buffer_fits(hidden_scratch, hidden_bytes) || hidden_scratch->owner != gpu ||
+         ltx_gpu_buffers_overlap(hidden_scratch, input) || ltx_gpu_buffers_overlap(hidden_scratch, output) ||
+         ltx_gpu_buffers_overlap(hidden_scratch, fc1_weight) || ltx_gpu_buffers_overlap(hidden_scratch, fc1_scale) || ltx_gpu_buffers_overlap(hidden_scratch, fc1_bias) ||
+         ltx_gpu_buffers_overlap(hidden_scratch, fc2_weight) || ltx_gpu_buffers_overlap(hidden_scratch, fc2_scale) || ltx_gpu_buffers_overlap(hidden_scratch, fc2_bias) ||
+         (adaln && (ltx_gpu_buffers_overlap(hidden_scratch, adaln->fallback) || ltx_gpu_buffers_overlap(hidden_scratch, adaln->scale) ||
+                    ltx_gpu_buffers_overlap(hidden_scratch, adaln->shift)))))
+        return ltx_gpu_fail(error, error_size, "invalid MLP hidden scratch geometry/alias/owner");
+
+    if (adaln) {
+        if (!isfinite(adaln->epsilon) || adaln->epsilon < 0.0f ||
+            !ltx_buffer_fits(adaln->scale, (uint64_t)input_dim * 2u) ||
+            !ltx_buffer_fits(adaln->shift, (uint64_t)input_dim * 2u) ||
+            !ltx_buffer_fits(adaln->fallback, input_bytes))
+            return ltx_gpu_fail(error, error_size, "invalid AdaLN MLP buffers/epsilon");
+        uint32_t threads = 0;
+        const char *prepare = getenv("TURBOCIDER_LTX_W8A8_FUSED_ROT_QUANT");
+        if ((prepare && strcmp(prepare, "1") != 0) ||
+            !ltx_adaln_rot_quant_pipeline(gpu, input_dim, &threads)) {
+            if (!ltx_gpu_adaln_bf16(gpu, adaln->fallback, input, adaln->scale,
+                    adaln->shift, rows, input_dim, 1u, adaln->epsilon, error, error_size))
+                return 0;
+            input = adaln->fallback;
+            adaln = NULL;
+        }
+    }
+
     if (gpu->convrot_w8a8_enabled) {
-        ltx_gpu_buffer *hidden = ltx_gpu_buffer_new_classified(gpu,
-            (size_t)rows * hidden_dim * 2u, LTX_GPU_MEMORY_ACTIVATION,
-            "ltx_w8a8_mlp_hidden", error, error_size);
+        ltx_gpu_buffer *hidden = hidden_scratch ? ltx_gpu_buffer_retain(hidden_scratch) :
+            ltx_gpu_buffer_new_classified(gpu,
+                (size_t)rows * hidden_dim * 2u, LTX_GPU_MEMORY_ACTIVATION,
+                "ltx_w8a8_mlp_hidden", error, error_size);
         if (!hidden) return 0;
         int own_batch = !gpu->batch_active;
         int ok = !own_batch || ltx_gpu_batch_begin(gpu, error, error_size);
+        const char *fusion = getenv("TURBOCIDER_LTX_W8A8_FUSED_GELU_CONVROT");
+        const char *output_fusion = getenv("TURBOCIDER_LTX_W8A8_FUSED_GELU_OUTPUT");
+        int fused_gelu_output = ltx_w8a8_fused_output_enabled() &&
+            output_fusion && strcmp(output_fusion, "1") == 0;
+        int fused_gelu = !fused_gelu_output && gpu->convrot_simd_enabled && fusion && strcmp(fusion, "1") == 0;
         if (ok) {
-            ok = ltx_gpu_linear_int8_convrot_mps_bf16(gpu, hidden, input,
+            int up_ok;
+            if (adaln) {
+                ltx_gpu_buffer *outputs[] = {hidden};
+                const ltx_gpu_buffer *weights[] = {fc1_weight}, *scales[] = {fc1_scale}, *biases[] = {fc1_bias};
+                const uint32_t dims[] = {hidden_dim};
+                up_ok = ltx_w8a8_project_varying(gpu, outputs, input, weights, scales, biases,
+                    1u, rows, input_dim, dims, 1, fused_gelu_output, adaln, NULL, error, error_size);
+            } else {
+                up_ok = fused_gelu_output ? ltx_w8a8_linear_gelu_output(gpu, hidden, input,
                 fc1_weight, fc1_scale, fc1_bias, rows, input_dim, hidden_dim,
-                convrot_group_size, error, error_size) &&
-                ltx_gpu_gelu_tanh_bf16(gpu, hidden, hidden, rows * hidden_dim, error, error_size) &&
+                error, error_size) :
+                ltx_gpu_linear_int8_convrot_mps_bf16(gpu, hidden, input,
+                fc1_weight, fc1_scale, fc1_bias, rows, input_dim, hidden_dim,
+                convrot_group_size, error, error_size);
+            }
+            ok = up_ok &&
+                (fused_gelu_output ? ltx_gpu_linear_int8_convrot_mps_bf16(gpu, output, hidden,
+                    fc2_weight, fc2_scale, fc2_bias, rows, hidden_dim, output_dim,
+                    convrot_group_size, error, error_size) :
+                (fused_gelu ? ltx_w8a8_linear(gpu, output, hidden,
+                    fc2_weight, fc2_scale, fc2_bias, rows, hidden_dim, output_dim,
+                    2, error, error_size) :
+                (ltx_gpu_gelu_tanh_bf16(gpu, hidden, hidden, rows * hidden_dim, error, error_size) &&
                 ltx_gpu_linear_int8_convrot_mps_bf16(gpu, output, hidden,
                     fc2_weight, fc2_scale, fc2_bias, rows, hidden_dim, output_dim,
-                    convrot_group_size, error, error_size);
+                    convrot_group_size, error, error_size))));
             ok = ltx_w8a8_finish_batch(gpu, own_batch, ok, error, error_size);
         }
         ltx_gpu_buffer_free(hidden);
+        if (ok && hidden_scratch) gpu->mlp_hidden_scratch_reuses++;
         return ok;
     }
 
@@ -4649,6 +4931,56 @@ int ltx_gpu_mlp_int8_convrot_mps_bf16(
         return ltx_finish_mps_command(gpu, command, "MPSGraph INT8 MLP",
                                       error, error_size);
     }
+}
+
+int ltx_gpu_mlp_int8_convrot_mps_bf16(
+        ltx_gpu *gpu, ltx_gpu_buffer *output, const ltx_gpu_buffer *input,
+        const ltx_gpu_buffer *fc1_weight, const ltx_gpu_buffer *fc1_scale, const ltx_gpu_buffer *fc1_bias,
+        const ltx_gpu_buffer *fc2_weight, const ltx_gpu_buffer *fc2_scale, const ltx_gpu_buffer *fc2_bias,
+        uint32_t rows, uint32_t input_dim, uint32_t hidden_dim, uint32_t output_dim,
+        uint32_t convrot_group_size, char *error, size_t error_size) {
+    return ltx_gpu_mlp_int8_impl(gpu, output, input, fc1_weight, fc1_scale, fc1_bias,
+        fc2_weight, fc2_scale, fc2_bias, rows, input_dim, hidden_dim, output_dim,
+        convrot_group_size, NULL, NULL, error, error_size);
+}
+
+int ltx_gpu_mlp_adaln_int8_convrot_mps_bf16(
+        ltx_gpu *gpu, ltx_gpu_buffer *output, const ltx_gpu_buffer *input,
+        const ltx_gpu_buffer *norm_scale, const ltx_gpu_buffer *norm_shift,
+        ltx_gpu_buffer *normalized_scratch, float epsilon,
+        const ltx_gpu_buffer *fc1_weight, const ltx_gpu_buffer *fc1_scale, const ltx_gpu_buffer *fc1_bias,
+        const ltx_gpu_buffer *fc2_weight, const ltx_gpu_buffer *fc2_scale, const ltx_gpu_buffer *fc2_bias,
+        uint32_t rows, uint32_t input_dim, uint32_t hidden_dim, uint32_t output_dim,
+        uint32_t convrot_group_size, char *error, size_t error_size) {
+    const ltx_w8a8_adaln_input adaln = {norm_scale, norm_shift, normalized_scratch, epsilon};
+    return ltx_gpu_mlp_int8_impl(gpu, output, input, fc1_weight, fc1_scale, fc1_bias,
+        fc2_weight, fc2_scale, fc2_bias, rows, input_dim, hidden_dim, output_dim,
+        convrot_group_size, &adaln, NULL, error, error_size);
+}
+
+int ltx_gpu_mlp_int8_convrot_mps_bf16_with_scratch(
+        ltx_gpu *gpu, ltx_gpu_buffer *output, const ltx_gpu_buffer *input, ltx_gpu_buffer *hidden_scratch,
+        const ltx_gpu_buffer *fc1_weight, const ltx_gpu_buffer *fc1_scale, const ltx_gpu_buffer *fc1_bias,
+        const ltx_gpu_buffer *fc2_weight, const ltx_gpu_buffer *fc2_scale, const ltx_gpu_buffer *fc2_bias,
+        uint32_t rows, uint32_t input_dim, uint32_t hidden_dim, uint32_t output_dim,
+        uint32_t convrot_group_size, char *error, size_t error_size) {
+    return ltx_gpu_mlp_int8_impl(gpu, output, input, fc1_weight, fc1_scale, fc1_bias,
+        fc2_weight, fc2_scale, fc2_bias, rows, input_dim, hidden_dim, output_dim,
+        convrot_group_size, NULL, hidden_scratch, error, error_size);
+}
+
+int ltx_gpu_mlp_adaln_int8_convrot_mps_bf16_with_scratch(
+        ltx_gpu *gpu, ltx_gpu_buffer *output, const ltx_gpu_buffer *input, ltx_gpu_buffer *hidden_scratch,
+        const ltx_gpu_buffer *norm_scale, const ltx_gpu_buffer *norm_shift,
+        ltx_gpu_buffer *normalized_scratch, float epsilon,
+        const ltx_gpu_buffer *fc1_weight, const ltx_gpu_buffer *fc1_scale, const ltx_gpu_buffer *fc1_bias,
+        const ltx_gpu_buffer *fc2_weight, const ltx_gpu_buffer *fc2_scale, const ltx_gpu_buffer *fc2_bias,
+        uint32_t rows, uint32_t input_dim, uint32_t hidden_dim, uint32_t output_dim,
+        uint32_t convrot_group_size, char *error, size_t error_size) {
+    const ltx_w8a8_adaln_input adaln = {norm_scale, norm_shift, normalized_scratch, epsilon};
+    return ltx_gpu_mlp_int8_impl(gpu, output, input, fc1_weight, fc1_scale, fc1_bias,
+        fc2_weight, fc2_scale, fc2_bias, rows, input_dim, hidden_dim, output_dim,
+        convrot_group_size, &adaln, hidden_scratch, error, error_size);
 }
 
 static LTXInt8GatedMLPGraph *ltx_int8_gated_mlp_graph(
@@ -5405,6 +5737,20 @@ static MPSGraphTensor *ltx_graph_apply_rope_split(
     return [graph concatTensors:@[first, second] dimension:3 name:nil];
 }
 
+static MPSGraphTensor *ltx_graph_spatial_kv_pool2(
+        MPSGraph *graph, MPSGraphTensor *input, const ltx_gpu *gpu,
+        uint32_t heads, uint32_t head_dim) {
+    uint32_t frames = gpu->self_kv_pool_frames;
+    uint32_t height = gpu->self_kv_pool_height, width = gpu->self_kv_pool_width;
+    MPSGraphTensor *values = [graph castTensor:input toType:MPSDataTypeFloat32 name:nil];
+    values = [graph reshapeTensor:values withShape:
+        @[@1, @(heads), @(frames), @(height / 2u), @2, @(width / 2u), @2, @(head_dim)] name:nil];
+    values = [graph meanOfTensor:values axes:@[@4, @6] name:nil];
+    values = [graph reshapeTensor:values withShape:
+        @[@1, @(heads), @(frames * (height / 2u) * (width / 2u)), @(head_dim)] name:nil];
+    return [graph castTensor:values toType:MPSDataTypeBFloat16 name:nil];
+}
+
 static LTXGemmaAttentionGraph *ltx_gemma_attention_graph(
         ltx_gpu *gpu, uint32_t rows, uint32_t query_heads,
         uint32_t kv_heads, uint32_t head_dim, uint32_t window) {
@@ -5590,8 +5936,9 @@ static LTXSelfAttentionCoreGraph *ltx_self_attention_core_graph(
         uint32_t head_dim, float scale, int has_gate) {
     NSMutableDictionary<NSString *, LTXSelfAttentionCoreGraph *> *cache =
         ltx_self_attention_core_graphs(gpu);
-    NSString *key = [NSString stringWithFormat:@"%u:%u:%u:%.9g:%d",
-                     rows, heads, head_dim, scale, has_gate];
+    NSString *key = [NSString stringWithFormat:@"%u:%u:%u:%.9g:%d:%u:%u:%u",
+                     rows, heads, head_dim, scale, has_gate,
+                     gpu->self_kv_pool_frames, gpu->self_kv_pool_height, gpu->self_kv_pool_width];
     LTXSelfAttentionCoreGraph *cached = cache[key];
     if (cached) return cached;
 
@@ -5634,6 +5981,10 @@ static LTXSelfAttentionCoreGraph *ltx_self_attention_core_graph(
         core.graph, query, core.cosine, core.sine, head_dim);
     key_projection = ltx_graph_apply_rope_split(
         core.graph, key_projection, core.cosine, core.sine, head_dim);
+    if (gpu->self_kv_pool_frames) {
+        key_projection = ltx_graph_spatial_kv_pool2(core.graph, key_projection, gpu, heads, head_dim);
+        value = ltx_graph_spatial_kv_pool2(core.graph, value, gpu, heads, head_dim);
+    }
     MPSGraphTensor *attention =
         [core.graph scaledDotProductAttentionWithQueryTensor:query
                                                    keyTensor:key_projection
@@ -5692,6 +6043,9 @@ int ltx_gpu_self_attention_core_mps_bf16(
         (gate && !ltx_buffer_fits(gate, gate_bytes)))
         return ltx_gpu_fail(error, error_size,
                             "invalid MPS BF16 self-attention arguments");
+    if (gpu->self_kv_pool_frames &&
+        (uint64_t)gpu->self_kv_pool_frames * gpu->self_kv_pool_height * gpu->self_kv_pool_width != rows)
+        return ltx_gpu_fail(error, error_size, "K/V pooling geometry does not match attention rows");
     @autoreleasepool {
         LTXSelfAttentionCoreGraph *core = ltx_self_attention_core_graph(
             gpu, rows, heads, head_dim, scale, gate != NULL);
@@ -5746,16 +6100,25 @@ static int ltx_w8a8_attention_core(
         const ltx_gpu_buffer *key_cosine, const ltx_gpu_buffer *key_sine,
         const ltx_gpu_buffer *mask, uint32_t mask_rows,
         uint32_t query_rows, uint32_t key_rows, uint32_t query_dim,
-        uint32_t heads, uint32_t head_dim, int kv_head_major,
+        uint32_t heads, uint32_t head_dim, int kv_head_major, int prepacked_qk,
         char *error, size_t error_size) {
+    const int pooled = gpu->self_kv_pool_frames != 0;
+    if (prepacked_qk && (pooled || kv_head_major || query_rows != key_rows ||
+        !query_cosine || !key_cosine))
+        return ltx_gpu_fail(error, error_size, "prepacked Q/K requires unpooled self-attention");
+    if (pooled && (mask || !query_cosine || !key_cosine || query_rows != key_rows ||
+        (uint64_t)gpu->self_kv_pool_frames * gpu->self_kv_pool_height * gpu->self_kv_pool_width != query_rows))
+        return ltx_gpu_fail(error, error_size, "spatial K/V pooling requires matching unmasked self-attention");
     @autoreleasepool {
         if (!gpu->convrot_w8a8_attention_graphs)
             gpu->convrot_w8a8_attention_graphs = (__bridge_retained void *)[NSMutableDictionary new];
         NSMutableDictionary<NSString *, LTXW8A8AttentionCore *> *cache =
             (__bridge NSMutableDictionary *)gpu->convrot_w8a8_attention_graphs;
-        NSString *cache_key = [NSString stringWithFormat:@"%u:%u:%u:%u:%u:%u:%d:%d:%d",
+        NSString *cache_key = [NSString stringWithFormat:@"%u:%u:%u:%u:%u:%u:%d:%d:%d:%u:%u:%u",
             query_rows, key_rows, query_dim, heads, head_dim, mask_rows,
-            gate_bias != NULL, query_cosine != NULL, kv_head_major];
+            gate_bias != NULL, query_cosine != NULL, kv_head_major,
+            gpu->self_kv_pool_frames, gpu->self_kv_pool_height, gpu->self_kv_pool_width];
+        cache_key = [cache_key stringByAppendingFormat:@":qk%d", prepacked_qk];
         LTXW8A8AttentionCore *core = cache[cache_key];
         const uint32_t inner = heads * head_dim;
         if (!core) {
@@ -5769,23 +6132,30 @@ static int ltx_w8a8_attention_core(
                 @"v": kv_head_major ? @[@1, @(heads), @(key_rows), @(head_dim)] : @[@1, @(key_rows), @(inner)],
                 @"gate_weight": @[@1, @(heads), @(query_dim)],
             } mutableCopy];
+            if (prepacked_qk)
+                shapes[@"q"] = shapes[@"k"] = @[@1, @(heads), @(query_rows), @(head_dim)];
             if (gate_bias) shapes[@"gate_bias"] = @[@1, @1, @(heads)];
             if (mask) shapes[@"mask"] = @[@1, @1, @(mask_rows), @(key_rows)];
-            if (query_cosine) {
+            if (query_cosine && !prepacked_qk) {
                 shapes[@"qcos"] = shapes[@"qsin"] = @[@1, @(heads), @(query_rows), @(head_dim / 2u)];
                 shapes[@"kcos"] = shapes[@"ksin"] = @[@1, @(heads), @(key_rows), @(head_dim / 2u)];
             }
             for (NSString *name in shapes)
                 core.inputs[name] = [core.graph placeholderWithShape:shapes[name] dataType:MPSDataTypeBFloat16 name:name];
-            MPSGraphTensor *q = ltx_graph_to_head_major(core.graph, core.inputs[@"q"], query_rows, heads, head_dim);
+            MPSGraphTensor *q = prepacked_qk ? core.inputs[@"q"] :
+                ltx_graph_to_head_major(core.graph, core.inputs[@"q"], query_rows, heads, head_dim);
             MPSGraphTensor *k = core.inputs[@"k"], *v = core.inputs[@"v"];
             if (!kv_head_major) {
-                k = ltx_graph_to_head_major(core.graph, k, key_rows, heads, head_dim);
+                if (!prepacked_qk) k = ltx_graph_to_head_major(core.graph, k, key_rows, heads, head_dim);
                 v = ltx_graph_to_head_major(core.graph, v, key_rows, heads, head_dim);
             }
-            if (query_cosine) {
+            if (query_cosine && !prepacked_qk) {
                 q = ltx_graph_apply_rope_split(core.graph, q, core.inputs[@"qcos"], core.inputs[@"qsin"], head_dim);
                 k = ltx_graph_apply_rope_split(core.graph, k, core.inputs[@"kcos"], core.inputs[@"ksin"], head_dim);
+            }
+            if (pooled) {
+                k = ltx_graph_spatial_kv_pool2(core.graph, k, gpu, heads, head_dim);
+                v = ltx_graph_spatial_kv_pool2(core.graph, v, gpu, heads, head_dim);
             }
             MPSGraphTensor *attention = mask ? [core.graph scaledDotProductAttentionWithQueryTensor:q
                 keyTensor:k valueTensor:v maskTensor:core.inputs[@"mask"] scale:1.0f / sqrtf((float)head_dim) name:nil] :
@@ -5810,7 +6180,7 @@ static int ltx_w8a8_attention_core(
         } mutableCopy];
         if (gate_bias) buffers[@"gate_bias"] = ltx_buffer(gate_bias);
         if (mask) buffers[@"mask"] = ltx_buffer(mask);
-        if (query_cosine) {
+        if (query_cosine && !prepacked_qk) {
             buffers[@"qcos"] = ltx_buffer(query_cosine); buffers[@"qsin"] = ltx_buffer(query_sine);
             buffers[@"kcos"] = ltx_buffer(key_cosine); buffers[@"ksin"] = ltx_buffer(key_sine);
         }
@@ -5843,16 +6213,25 @@ static int ltx_w8a8_projected_attention(
         const ltx_gpu_buffer *key_cosine, const ltx_gpu_buffer *key_sine,
         const ltx_gpu_buffer *mask, uint32_t mask_rows,
         uint32_t query_rows, uint32_t key_rows, uint32_t query_dim,
-        uint32_t heads, uint32_t head_dim, uint32_t output_dim, int kv_head_major,
+        uint32_t heads, uint32_t head_dim, uint32_t output_dim,
+        int kv_head_major, int prepacked_qk,
         char *error, size_t error_size) {
     uint32_t inner = heads * head_dim;
-    ltx_gpu_buffer *core = ltx_gpu_buffer_new_classified(gpu,
-        (size_t)query_rows * inner * 2u, LTX_GPU_MEMORY_ACTIVATION,
-        "ltx_w8a8_attention_core", error, error_size);
+    ltx_gpu_stage_workspace *stage = gpu->stage_workspace;
+    const ltx_gpu_buffer *buffers[] = {output, input, query, key, value, gate_weight, gate_bias,
+        output_weight, output_scale, output_bias, query_cosine, query_sine,
+        key_cosine, key_sine, mask};
+    int reuse_stage = stage && stage->owner == gpu && stage->rows == query_rows &&
+        query_dim == 4096u && inner == 4096u &&
+        ltx_stage_avoids_buffers(stage->core, buffers, sizeof(buffers) / sizeof(buffers[0]));
+    ltx_gpu_buffer *core = reuse_stage ? ltx_stage_borrow(gpu, stage->core) :
+        ltx_gpu_buffer_new_classified(gpu,
+            (size_t)query_rows * inner * 2u, LTX_GPU_MEMORY_ACTIVATION,
+            "ltx_w8a8_attention_core", error, error_size);
     if (!core) return 0;
     int ok = ltx_w8a8_attention_core(gpu, core, input, query, key, value, gate_weight, gate_bias,
         query_cosine, query_sine, key_cosine, key_sine, mask, mask_rows,
-        query_rows, key_rows, query_dim, heads, head_dim, kv_head_major, error, error_size) &&
+        query_rows, key_rows, query_dim, heads, head_dim, kv_head_major, prepacked_qk, error, error_size) &&
         ltx_gpu_linear_int8_convrot_mps_bf16(gpu, output, core, output_weight, output_scale,
             output_bias, query_rows, inner, output_dim, 256u, error, error_size);
     ltx_gpu_buffer_free(core);
@@ -5885,7 +6264,7 @@ static int ltx_w8a8_query_attention(
                 query_rows, inner, epsilon, error, error_size) &&
             ltx_w8a8_projected_attention(gpu, output, input, q, key, value, gate_weight, gate_bias,
                 output_weight, output_scale, output_bias, query_cosine, query_sine, key_cosine, key_sine,
-                mask, mask_rows, query_rows, key_rows, query_dim, heads, head_dim, output_dim, 1,
+                mask, mask_rows, query_rows, key_rows, query_dim, heads, head_dim, output_dim, 1, 0,
                 error, error_size);
         ok = ltx_w8a8_finish_batch(gpu, own_batch, ok, error, error_size);
     }
@@ -6121,16 +6500,51 @@ int ltx_gpu_self_attention_int8_mps_bf16(
                             "invalid MPS INT8 self-attention arguments");
 
     if (gpu->convrot_w8a8_enabled) {
-        ltx_gpu_buffer *q = ltx_gpu_buffer_new_classified(gpu, tensor_bytes,
-            LTX_GPU_MEMORY_ACTIVATION, "ltx_w8a8_self_q", error, error_size);
-        ltx_gpu_buffer *k = ltx_gpu_buffer_new_classified(gpu, tensor_bytes,
-            LTX_GPU_MEMORY_ACTIVATION, "ltx_w8a8_self_k", error, error_size);
-        ltx_gpu_buffer *v = ltx_gpu_buffer_new_classified(gpu, tensor_bytes,
-            LTX_GPU_MEMORY_ACTIVATION, "ltx_w8a8_self_v", error, error_size);
+        ltx_gpu_stage_workspace *stage = gpu->stage_workspace;
+        const ltx_gpu_buffer *buffers[] = {output, input, query_weight, query_scale, query_bias,
+            key_weight, key_scale, key_bias, value_weight, value_scale, value_bias,
+            query_norm_weight, key_norm_weight, gate_weight, gate_bias,
+            output_weight, output_scale, output_bias, cosine, sine};
+        int reuse_stage = stage && stage->owner == gpu && stage->rows == rows &&
+            inner_dim == 4096u &&
+            ltx_stage_avoids_heap(stage, buffers, sizeof(buffers) / sizeof(buffers[0]));
+        ltx_gpu_buffer *q = reuse_stage ? ltx_stage_borrow(gpu, stage->query) :
+            ltx_gpu_buffer_new_classified(gpu, tensor_bytes,
+                LTX_GPU_MEMORY_ACTIVATION, "ltx_w8a8_self_q", error, error_size);
+        ltx_gpu_buffer *k = reuse_stage ? ltx_stage_borrow(gpu, stage->key) :
+            ltx_gpu_buffer_new_classified(gpu, tensor_bytes,
+                LTX_GPU_MEMORY_ACTIVATION, "ltx_w8a8_self_k", error, error_size);
+        ltx_gpu_buffer *v = reuse_stage ? ltx_stage_borrow(gpu, stage->value) :
+            ltx_gpu_buffer_new_classified(gpu, tensor_bytes,
+                LTX_GPU_MEMORY_ACTIVATION, "ltx_w8a8_self_v", error, error_size);
+        const char *qk_fusion = getenv("TURBOCIDER_LTX_W8A8_FUSED_QK_NORM_ROPE");
+        const int fused_qk = reuse_stage && heads == 32u && head_dim == 128u &&
+            !gpu->self_kv_pool_frames &&
+            (qk_fusion ? strcmp(qk_fusion, "1") == 0 : rows >= 2048u) &&
+            ltx_pipeline(gpu, LTX_PIPELINE_QK_NORM_ROPE_BF16).maxTotalThreadsPerThreadgroup >= 256u;
         int own_batch = !gpu->batch_active;
         int ok = q && k && v;
         if (ok && own_batch) ok = ltx_gpu_batch_begin(gpu, error, error_size);
-        if (ok) {
+        if (ok && fused_qk) {
+            /* Q and K GEMMs reuse the disjoint core view. Transform each
+             * immediately before the next projection overwrites that view. */
+            ltx_gpu_buffer *outputs[] = {stage->core, stage->core, v};
+            const ltx_gpu_buffer *weights[] = {query_weight, key_weight, value_weight};
+            const ltx_gpu_buffer *scales[] = {query_scale, key_scale, value_scale};
+            const ltx_gpu_buffer *biases[] = {query_bias, key_bias, value_bias};
+            const uint32_t dims[] = {(uint32_t)inner_dim, (uint32_t)inner_dim, (uint32_t)inner_dim};
+            const ltx_qk_norm_rope_outputs transformed = {
+                {q, k}, {query_norm_weight, key_norm_weight}, cosine, sine,
+                rows, heads, head_dim, norm_epsilon,
+            };
+            ok = ltx_w8a8_project_varying(gpu, outputs, input, weights, scales, biases,
+                3u, rows, (uint32_t)inner_dim, dims, 1, 0, NULL, &transformed, error, error_size) &&
+                ltx_w8a8_projected_attention(gpu, output, input, q, k, v, gate_weight, gate_bias,
+                    output_weight, output_scale, output_bias, cosine, sine, cosine, sine,
+                    NULL, 0u, rows, rows, (uint32_t)inner_dim, heads, head_dim, (uint32_t)inner_dim,
+                    0, 1, error, error_size);
+            ok = ltx_w8a8_finish_batch(gpu, own_batch, ok, error, error_size);
+        } else if (ok) {
             ok = ltx_gpu_qkv_int8_convrot_mps_bf16(gpu, q, k, v, input,
                 query_weight, query_scale, query_bias, key_weight, key_scale, key_bias,
                 value_weight, value_scale, value_bias, query_norm_weight, key_norm_weight,
@@ -6139,7 +6553,7 @@ int ltx_gpu_self_attention_int8_mps_bf16(
                 ltx_w8a8_projected_attention(gpu, output, input, q, k, v, gate_weight, gate_bias,
                     output_weight, output_scale, output_bias, cosine, sine, cosine, sine,
                     NULL, 0u, rows, rows, (uint32_t)inner_dim, heads, head_dim, (uint32_t)inner_dim,
-                    0, error, error_size);
+                    0, 0, error, error_size);
             ok = ltx_w8a8_finish_batch(gpu, own_batch, ok, error, error_size);
         }
         ltx_gpu_buffer_free(v); ltx_gpu_buffer_free(k); ltx_gpu_buffer_free(q);

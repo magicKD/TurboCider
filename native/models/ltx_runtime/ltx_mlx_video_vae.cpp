@@ -1,11 +1,14 @@
 #include "ltx_runtime_config.h"
 #include "ltx_mlx_video_vae.h"
+#include "ltx_prunavaed_fusion.hpp"
+#include "ltx_prunavaed_conv.hpp"
 #include "../../backends/mlx_fd_reader.hpp"
 
 #include <mlx/mlx.h>
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cstdarg>
 #include <cstdlib>
 #include <cstdio>
@@ -402,7 +405,7 @@ class VideoVAE {
         dump_stage("encode_03_down_blocks", value);
 
         value = convolution(
-            silu(pixel_norm(value)), "encoder.conv_out.conv", true);
+            norm_silu(value), "encoder.conv_out.conv", true);
         value = mx::slice(
             value, {0, 0, 0, 0, 0},
             {value.shape(0), value.shape(1), value.shape(2), value.shape(3),
@@ -523,7 +526,7 @@ class VideoVAE {
         value = residual_stage(value, 8, 4);
         dump_stage("11_res8", value);
 
-        value = silu(pixel_norm(value));
+        value = norm_silu(value);
         dump_stage("12_pre_out", value);
         value = convolution(value, "decoder.conv_out.conv", false);
         dump_stage("13_conv_out", value);
@@ -682,14 +685,49 @@ class VideoVAE {
         return mx::fast::rms_norm(value, std::nullopt, 1.0e-8f);
     }
 
+    mx::array norm_silu(const mx::array &value) const {
+        if (pruna_ && environment_enabled("TURBOCIDER_PRUNAVAED_FUSED_NORM_SILU", false) &&
+            environment_enabled("TURBOCIDER_PRUNAVAED_FUSED_SILU", true) &&
+            ltx_prunavaed::can_fuse_norm_silu(value)) {
+            return ltx_prunavaed::norm_silu(value);
+        }
+        return silu(pixel_norm(value));
+    }
+
     mx::array convolution(const mx::array &input,
                           const std::string &prefix,
                           bool causal) const {
+        const bool profile = pruna_ && environment_enabled("TURBOCIDER_PRUNAVAED_PROFILE", false);
+        std::chrono::steady_clock::time_point started;
+        if (profile) {
+            mx::eval(input);
+            started = std::chrono::steady_clock::now();
+        }
         const int32_t batch = input.shape(0);
         const int32_t frames = input.shape(1);
         const int32_t height = input.shape(2);
         const int32_t width = input.shape(3);
         const int32_t channels = input.shape(4);
+        const bool tensorops = pruna_ && !causal &&
+            environment_enabled("TURBOCIDER_PRUNAVAED_CONV_TENSOROPS", true) &&
+            ltx_prunavaed::can_convolve_tensorops(input, weight(prefix + ".weight"), weight(prefix + ".bias"));
+        auto finish = [&](mx::array result) {
+            if (profile) {
+                mx::eval(result);
+                const double seconds = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - started).count();
+                std::fprintf(stderr, "ltx_pruna_profile kind=conv name=%s backend=%s seconds=%.9f input=%dx%dx%dx%dx%d output_channels=%d\n",
+                             prefix.c_str(), tensorops ? "tensorops" : "mlx", seconds,
+                             batch, frames, height, width, channels, result.shape(4));
+            }
+            return result;
+        };
+        if (tensorops) {
+            return finish(ltx_prunavaed::convolution_tensorops(
+                input, weight(prefix + ".weight"), weight(prefix + ".bias"),
+                environment_enabled("TURBOCIDER_PRUNAVAED_FULL_CHANNEL_TILES", true),
+                environment_enabled("TURBOCIDER_PRUNAVAED_OPTIMIZED_INPUT_LOADS", true)));
+        }
         mx::array first = mx::slice(
             input, {0, 0, 0, 0, 0},
             {batch, 1, height, width, channels});
@@ -700,18 +738,24 @@ class VideoVAE {
                  mx::slice(input, {0, frames - 1, 0, 0, 0},
                            {batch, frames, height, width, channels})},
                 1);
-        padded = mx::pad(
-            padded,
-            {{0, 0}, {0, 0}, {1, 1}, {1, 1}, {0, 0}},
-            mx::array(0.0f, input.dtype()));
+        const bool implicit_spatial_padding = pruna_ && environment_enabled(
+            "TURBOCIDER_PRUNAVAED_IMPLICIT_PADDING", false);
+        if (!implicit_spatial_padding) {
+            padded = mx::pad(
+                padded,
+                {{0, 0}, {0, 0}, {1, 1}, {1, 1}, {0, 0}},
+                mx::array(0.0f, input.dtype()));
+        }
         mx::array result = mx::conv3d(
             padded, weight(prefix + ".weight"),
             std::tuple<int, int, int>{1, 1, 1},
-            std::tuple<int, int, int>{0, 0, 0});
+            implicit_spatial_padding ? std::tuple<int, int, int>{0, 1, 1} :
+                std::tuple<int, int, int>{0, 0, 0});
         const int32_t output_channels = result.shape(4);
-        return result + mx::reshape(
+        result = result + mx::reshape(
             weight(prefix + ".bias"),
             {1, 1, 1, 1, output_channels});
+        return finish(result);
     }
 
     mx::array residual_block(const mx::array &input,
@@ -722,17 +766,17 @@ class VideoVAE {
         const std::string base = stages_prefix + "." + std::to_string(stage) +
             ".res_blocks." + std::to_string(block);
         mx::array value = convolution(
-            silu(pixel_norm(input)), base + ".conv1.conv", causal);
+            norm_silu(input), base + ".conv1.conv", causal);
         value = convolution(
-            silu(pixel_norm(value)), base + ".conv2.conv", causal);
+            norm_silu(value), base + ".conv2.conv", causal);
         return value + input;
     }
 
     mx::array pruna_projection(const mx::array &input, uint32_t stage) const {
         const std::string base = "decoder.up_blocks." +
             std::to_string(stage) + ".conv_in";
-        auto value = convolution(silu(pixel_norm(input)), base + ".conv1.conv", false);
-        value = convolution(silu(pixel_norm(value)), base + ".conv2.conv", false);
+        auto value = convolution(norm_silu(input), base + ".conv1.conv", false);
+        value = convolution(norm_silu(value), base + ".conv2.conv", false);
         auto skip = mx::fast::layer_norm(input, weight(base + ".norm3.weight"),
                                          weight(base + ".norm3.bias"), 1.0e-6f);
         const auto &kernel = weight(base + ".conv_shortcut.weight");
@@ -890,7 +934,17 @@ class VideoVAE {
             value, {batch, 3, frames, height * 4, width * 4});
     }
 
-    static void dump_stage(const char *name, const mx::array &value) {
+    void dump_stage(const char *name, const mx::array &value) const {
+        if (pruna_ && environment_enabled("TURBOCIDER_PRUNAVAED_PROFILE", false)) {
+            mx::eval(value);
+            const auto now = std::chrono::steady_clock::now();
+            if (std::strcmp(name, "00_input") != 0) {
+                const double seconds = std::chrono::duration<double>(now - profile_previous_).count();
+                std::fprintf(stderr, "ltx_pruna_profile kind=stage name=%s seconds=%.9f elements=%zu\n",
+                             name, seconds, value.size());
+            }
+            profile_previous_ = now;
+        }
         const char *directory = ltx_runtime_getenv("LTX_MLX_VAE_DUMP_DIR");
         if (!directory || !directory[0]) return;
         std::filesystem::create_directories(directory);
@@ -917,6 +971,7 @@ class VideoVAE {
     uint64_t weight_bytes_ = 0;
     bool encoder_ = false;
     bool pruna_ = false;
+    mutable std::chrono::steady_clock::time_point profile_previous_;
 };
 
 }  // namespace

@@ -107,10 +107,14 @@ int main(int argc, char **argv) {
     uint64_t projections = 0, quantizations = 0;
     int w8a8 = ltx_gpu_convrot_w8a8_info(gpu, &projections, &quantizations);
     printf("{\"scope\":\"real weights, synthetic input, isolated FFN\",\"rows\":%u,\"dim\":%u,"
-        "\"hidden\":%u,\"gated\":%s,\"runs\":%u,\"median_seconds\":%.9g,\"w8a8\":%s,"
-        "\"projections\":%llu,\"activation_quantizations\":%llu}\n",
+        "\"hidden\":%u,\"gated\":%s,\"runs\":%u,\"median_seconds\":%.9g,\"w8a8\":%s,\"convrot_simd\":%s,"
+        "\"projections\":%llu,\"activation_quantizations\":%llu,\"gelu_convrot_dispatches\":%llu,\"rot_quant_dispatches\":%llu,\"gelu_output_dispatches\":%llu}\n",
         rows, dim, hidden, gated ? "true" : "false", runs, median, w8a8 ? "true" : "false",
-        (unsigned long long)projections, (unsigned long long)quantizations);
+        ltx_gpu_convrot_simd_enabled(gpu) ? "true" : "false",
+        (unsigned long long)projections, (unsigned long long)quantizations,
+        (unsigned long long)ltx_gpu_gelu_convrot_dispatches(gpu),
+        (unsigned long long)ltx_gpu_rot_quant_dispatches(gpu),
+        (unsigned long long)ltx_gpu_gelu_output_dispatches(gpu));
     result = 0;
 cleanup:
     if (result) fprintf(stderr, "%s\n", error[0] ? error : "FFN probe failed");

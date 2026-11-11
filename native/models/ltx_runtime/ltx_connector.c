@@ -421,10 +421,13 @@ uint32_t ltx_connector_output_rows(const ltx_connector *connector,
     return rows <= UINT32_MAX - padding ? rows + padding : 0u;
 }
 
-static int modality_run(
+static int modality_run_impl(
         ltx_gpu *gpu, const ltx_connector_modality *modality,
         ltx_gpu_buffer *output, const ltx_gpu_buffer *input,
-        uint32_t input_rows, char *error, size_t error_size) {
+        uint32_t input_rows, uint32_t block_count, int use_batches,
+        char *error, size_t error_size) {
+    if (!block_count || block_count > LTX_CONNECTOR_BLOCKS)
+        return connector_fail(error, error_size, "invalid connector block count");
     uint32_t rows = input_rows < 1024u ? 1024u : input_rows;
     uint32_t remainder = rows % modality->register_rows;
     if (remainder) {
@@ -527,7 +530,15 @@ static int modality_run(
     int ok = state[0] && state[1] && normed && branch && cosine_buffer &&
         sine_buffer && ones_buffer;
     uint32_t current = 0u;
-    for (uint32_t index = 0; ok && index < LTX_CONNECTOR_BLOCKS; index++) {
+    const int own_batch = ok && use_batches &&
+        ltx_gpu_streaming_boundary_completed(gpu);
+    for (uint32_t index = 0; ok && index < block_count; index++) {
+        int batch_started = 0;
+        if (own_batch) {
+            ok = ltx_gpu_batch_begin(gpu, error, error_size);
+            batch_started = ok;
+            if (!ok) break;
+        }
         const ltx_connector_block *block = &modality->blocks[index];
         const ltx_connector_attention *attention = &block->attention;
         ok = ltx_gpu_rms_norm_bf16(
@@ -553,8 +564,7 @@ static int modality_run(
                 ones_buffer, rows, modality->dim, 1u,
                 error, error_size);
         current ^= 1u;
-        if (!ok) break;
-        ok = ltx_gpu_rms_norm_bf16(
+        if (ok) ok = ltx_gpu_rms_norm_bf16(
                 gpu, normed, state[current], rows, modality->dim, 1e-6f,
                 error, error_size) &&
             ltx_gpu_mlp_int8_convrot_mps_bf16(
@@ -570,6 +580,14 @@ static int modality_run(
                 ones_buffer, rows, modality->dim, 1u,
                 error, error_size);
         current ^= 1u;
+        if (batch_started) {
+            char batch_error[1024] = {0};
+            int completed = ltx_gpu_batch_end(gpu, batch_error, sizeof(batch_error));
+            if (!completed && ok)
+                snprintf(error, error_size, "%s", batch_error[0] ? batch_error :
+                    "connector command batch failed");
+            ok = ok && completed;
+        }
     }
     if (ok)
         ok = ltx_gpu_rms_norm_bf16(
@@ -582,6 +600,30 @@ static int modality_run(
     ltx_gpu_buffer_free(cosine_buffer);
     ltx_gpu_buffer_free(sine_buffer);
     ltx_gpu_buffer_free(ones_buffer);
+    return ok;
+}
+
+static int modality_run(
+        ltx_gpu *gpu, const ltx_connector_modality *modality,
+        ltx_gpu_buffer *output, const ltx_gpu_buffer *input,
+        uint32_t input_rows, uint32_t block_count,
+        char *error, size_t error_size) {
+    const char *setting = getenv("TURBOCIDER_LTX_CONNECTOR_BATCH_COMMANDS");
+    int use_batches = setting ? strcmp(setting, "1") == 0 :
+        ltx_gpu_convrot_w8a8_info(gpu, NULL, NULL) &&
+        ltx_gpu_convrot_simd_enabled(gpu);
+    int ok = modality_run_impl(gpu, modality, output, input, input_rows,
+                              block_count, use_batches, error, error_size);
+    /* Deferred temporaries can exceed a budget that fits synchronous execution.
+     * The input is immutable and the implementation drains its owned batch and
+     * frees its workspace before returning, so retry from the original input. */
+    if (!ok && use_batches && error && error_size &&
+        strstr(error, "memory_budget_too_small") &&
+        ltx_gpu_streaming_boundary_completed(gpu)) {
+        error[0] = '\0';
+        ok = modality_run_impl(gpu, modality, output, input, input_rows,
+                               block_count, 0, error, error_size);
+    }
     return ok;
 }
 
@@ -599,8 +641,8 @@ int ltx_connector_run_bf16(
                               "invalid connector run arguments");
     return modality_run(
             connector->gpu, &connector->video,
-            video_output, video_input, input_rows, error, error_size) &&
+            video_output, video_input, input_rows, LTX_CONNECTOR_BLOCKS, error, error_size) &&
         modality_run(
             connector->gpu, &connector->audio,
-            audio_output, audio_input, input_rows, error, error_size);
+            audio_output, audio_input, input_rows, LTX_CONNECTOR_BLOCKS, error, error_size);
 }

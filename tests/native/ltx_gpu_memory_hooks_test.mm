@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 #include <new>
 
 struct HookState {
@@ -175,6 +176,9 @@ int main(int argc, char **argv) {
     assert(ltx_gpu_set_memory_hooks_for_queue(
         gpu, &hooks, 7, 11, LTX_GPU_MEMORY_QUEUE_VIDEO,
         error, sizeof(error)));
+    assert(!ltx_gpu_stage_workspace_create(gpu, 7u, error, sizeof(error)));
+    assert(!state.reserved && !state.committed && !state.reserve_calls);
+    error[0] = 0;
 
     ltx_gpu_buffer *buffer = ltx_gpu_buffer_new_classified(
         gpu, 1024, LTX_GPU_MEMORY_ACTIVATION, "unit",
@@ -252,6 +256,69 @@ int main(int argc, char **argv) {
         assert(ltx_gpu_batch_end(gpu, error, sizeof(error)));
         assert(!state.pending && !state.reserved && !state.committed);
         std::puts("W8A8 scratch admission, failure cleanup and deferred retirement passed");
+
+        state.budget = 8u << 20;
+        auto alloc = [&](size_t bytes) {
+            auto *buffer = ltx_gpu_buffer_new(gpu, bytes, error, sizeof(error));
+            assert(buffer);
+            std::memset(ltx_gpu_buffer_contents(buffer), 0, bytes);
+            return buffer;
+        };
+        auto *ax = alloc(4096u * 2u), *ns = alloc(4096u * 2u), *nt = alloc(4096u * 2u);
+        auto *fallback = alloc(4096u * 2u), *aw1 = alloc(256u * 4096u), *aw2 = alloc(129u * 256u);
+        auto *as1 = alloc(256u * 4u), *as2 = alloc(129u * 4u), *ay = alloc(129u * 2u);
+        for (unsigned i = 0; i < 256; ++i) static_cast<float*>(ltx_gpu_buffer_contents(as1))[i] = 1.0f;
+        for (unsigned i = 0; i < 129; ++i) static_cast<float*>(ltx_gpu_buffer_contents(as2))[i] = 1.0f;
+        auto invoke = [&] { return ltx_gpu_mlp_adaln_int8_convrot_mps_bf16(gpu, ay, ax,
+            ns, nt, fallback, 1e-6f, aw1, as1, nullptr, aw2, as2, nullptr,
+            1u, 4096u, 256u, 129u, 256u, error, sizeof(error)); };
+        const uint64_t adaln_baseline = state.committed;
+        const uint64_t before_adaln = ltx_gpu_adaln_rot_quant_dispatches(gpu);
+        state.budget = adaln_baseline + 1024;
+        assert(!invoke());
+        assert(std::strstr(error, "memory_budget_too_small"));
+        assert(state.committed == adaln_baseline && !state.reserved && !state.pending);
+        assert(ltx_gpu_adaln_rot_quant_dispatches(gpu) == before_adaln);
+        state.budget = 8u << 20;
+        assert(ltx_gpu_batch_begin(gpu, error, sizeof(error)));
+        assert(invoke());
+        assert(state.committed == adaln_baseline && state.pending > 0);
+        for (auto *buffer : {ax, ns, nt, fallback, aw1, aw2, as1, as2, ay}) ltx_gpu_buffer_free(buffer);
+        assert(!state.committed && state.pending > 0);
+        assert(ltx_gpu_batch_end(gpu, error, sizeof(error)));
+        assert(!state.pending && !state.reserved && !state.committed);
+        std::puts("AdaLN W8A8 scratch admission, failure cleanup and deferred retirement passed");
+
+        ax = alloc(4096u * 2u); ns = alloc(4096u * 2u); nt = alloc(4096u * 2u);
+        fallback = alloc(4096u * 2u); aw1 = alloc(256u * 4096u); aw2 = alloc(129u * 256u);
+        as1 = alloc(256u * 4u); as2 = alloc(129u * 4u); ay = alloc(129u * 2u);
+        auto *hidden_workspace = alloc(256u * 2u);
+        for (unsigned i = 0; i < 256; ++i) static_cast<float*>(ltx_gpu_buffer_contents(as1))[i] = 1.0f;
+        for (unsigned i = 0; i < 129; ++i) static_cast<float*>(ltx_gpu_buffer_contents(as2))[i] = 1.0f;
+        auto invoke_workspace = [&] { return ltx_gpu_mlp_adaln_int8_convrot_mps_bf16_with_scratch(
+            gpu, ay, ax, hidden_workspace, ns, nt, fallback, 1e-6f,
+            aw1, as1, nullptr, aw2, as2, nullptr,
+            1u, 4096u, 256u, 129u, 256u, error, sizeof(error)); };
+        assert(ltx_gpu_memory_hooks_enabled(gpu));
+        const uint64_t workspace_baseline = state.committed;
+        const uint64_t reused_before = ltx_gpu_mlp_hidden_scratch_reuses(gpu);
+        state.budget = workspace_baseline + 1024u;
+        assert(!invoke_workspace());
+        assert(std::strstr(error, "memory_budget_too_small"));
+        assert(state.committed == workspace_baseline && !state.reserved && !state.pending);
+        assert(ltx_gpu_mlp_hidden_scratch_reuses(gpu) == reused_before);
+        state.budget = 8u << 20;
+        assert(ltx_gpu_batch_begin(gpu, error, sizeof(error)));
+        assert(invoke_workspace());
+        assert(invoke_workspace());
+        assert(ltx_gpu_mlp_hidden_scratch_reuses(gpu) == reused_before + 2);
+        assert(state.committed == workspace_baseline && state.pending > 0);
+        for (auto *buffer : {ax, ns, nt, fallback, aw1, aw2, as1, as2, ay, hidden_workspace})
+            ltx_gpu_buffer_free(buffer);
+        assert(!state.committed && state.pending > 0);
+        assert(ltx_gpu_batch_end(gpu, error, sizeof(error)));
+        assert(!state.pending && !state.reserved && !state.committed);
+        std::puts("Caller-owned FFN workspace: budget failure/recovery, repeated outer batch and final deferred release passed");
     }
 
     assert(ltx_gpu_drain(gpu, error, sizeof(error)));

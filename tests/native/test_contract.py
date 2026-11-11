@@ -2746,6 +2746,35 @@ class ContractTests(unittest.TestCase):
             with self.subTest(change=change):
                 self.assertNotEqual(plan({**request, **change})[0], 0)
 
+    def test_ltx_spatial_kv_pool_is_explicit_and_stage2_only(self):
+        request = dict(model='ltx-2.5-distilled', operation='video.generate',
+                       width=704, height=448, frames=97, steps=11, fps=24, audio=True,
+                       execution='gpu', residency='streamed', memory_budget_bytes=12 << 30,
+                       ltx_backend='c_metal', allow_approximation=True,
+                       ltx_sol_stage2=True, ltx_sparse_mode=6,
+                       ltx_sol_dense_edge_blocks=8, ltx_sol_dense_edge_steps=0)
+        status, result, error = plan(request)
+        self.assertEqual(status, 0, error)
+        self.assertEqual(result['ltx_sparse_mode'], 6)
+        schema2 = dict(schema_version=2, model=request['model'], operation='video.generate',
+                       inputs=[dict(kind='text', role='prompt', text='A red fox')],
+                       outputs=[dict(kind='video', path='/tmp/pooled-video.mp4', width=704,
+                                     height=448, frames=97, fps=24, audio=True)],
+                       sampling=dict(steps=11, seed=42),
+                       execution=dict(policy='gpu', residency='component_staged',
+                                      allow_approximation=True, ltx_backend='c_metal',
+                                      ltx_sol_stage2=True, ltx_sparse_mode=6))
+        status, result, error = plan(schema2)
+        self.assertEqual(status, 0, error)
+        self.assertEqual(result['ltx_sparse_mode'], 6)
+        for change in [dict(allow_approximation=False), dict(ltx_sol_stage2=False),
+                       dict(ltx_sol_stage1=True), dict(ltx_backend='cpp_mlx'),
+                       dict(execution='gpu_ane'), dict(ltx_sparse_radius=2),
+                       dict(ltx_sparse_anchor_stride=16), dict(ltx_sparse_tokens_per_frame=308),
+                       dict(ltx_sparse_keep_blocks=4), dict(ltx_sparse_mode=7)]:
+            with self.subTest(change=change):
+                self.assertNotEqual(plan({**request, **change})[0], 0)
+
     def test_z_image_step_range_and_defaults(self):
         for model in ['z-image-turbo', 'z-image-turbo-gguf']:
             request = {'model': model, 'width': 512, 'height': 512,
@@ -3507,6 +3536,7 @@ class ContractTests(unittest.TestCase):
 
     def test_ltx_service_conditioning_cache_is_bound_and_observable(self):
         session=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
+        session+=(ROOT/'native/platform/apple/ltx_conditioning_cache.hpp').read_text()
         service=(ROOT/'services/turbociderd/service.mm').read_text()
         finalizer=(ROOT/'tools/native/ltx_video_finalizer.mm').read_text()
         for token in [
@@ -3804,6 +3834,7 @@ class ContractTests(unittest.TestCase):
 
     def test_ltx_conditioning_cache_is_prompt_bound(self):
         source=(ROOT/'native/platform/apple/ltx_session.mm').read_text()
+        source+=(ROOT/'native/platform/apple/ltx_conditioning_cache.hpp').read_text()
         self.assertIn('conditioning_prompt',source)
         self.assertIn('root_, selected_checkpoint, request.prompt',source)
         self.assertIn('if (!bound_prompt || *bound_prompt != requested_prompt)',source)

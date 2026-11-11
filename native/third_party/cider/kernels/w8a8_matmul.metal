@@ -60,7 +60,8 @@ inline void nax_frag_store_int32(const thread int32_t *src, device int32_t *dst,
 }
 
 // ── Fragment store with bounds check and dequant ────────────────
-template<typename Output, bool HasBias = true>
+template<typename Output, bool HasBias = true, bool RoundBeforeBias = false,
+         bool GeluOutput = false>
 inline void nax_frag_store_dequant(const thread int32_t *src, device Output *dst,
                                    int ld, short2 sc, short off_m, short off_n,
                                    uint M, uint N, uint m_base, uint n_base,
@@ -73,7 +74,17 @@ inline void nax_frag_store_dequant(const thread int32_t *src, device Output *dst
       uint ni = n_base + sc.x + off_n + j;
       if (mi < M && ni < N) {
         float val = float(src[i * kElemCols + j]) * scale_a[mi] * scale_w[ni];
-        if constexpr (HasBias) val += float(bias[ni]);
+        if constexpr (HasBias) {
+          if constexpr (RoundBeforeBias) val = float(Output(val));
+          val += float(bias[ni]);
+        }
+        if constexpr (GeluOutput) {
+          // Preserve the original output store before the separate GELU.
+          const float x = float(Output(val));
+          const float inner = 0.7978845608028654f *
+              (x + 0.044715f * x * x * x);
+          val = 0.5f * x * (1.0f + tanh(clamp(inner, -10.0f, 10.0f)));
+        }
         dst[(sc.y + off_m + i * kElemRowsJump) * ld + (sc.x + off_n + j)] =
             Output(val);
       }
@@ -87,7 +98,8 @@ inline void nax_frag_store_dequant(const thread int32_t *src, device Output *dst
 // B fragments loaded as [N_tile, K_tile] and hardware transposes via
 // transpose_b=true
 template <int BM, int BN, int BK, int SK, int WM, int WN,
-          typename Output = half, bool HasBias = true>
+          typename Output = half, bool HasBias = true, bool RoundBeforeBias = false,
+          bool GeluOutput = false>
 void w8a8_gemm_impl(const device int8_t *A, const device int8_t *B,
                     device Output *C, uint M, uint N, uint K,
                     const device float *scale_a, const device float *scale_w,
@@ -251,7 +263,7 @@ void w8a8_gemm_impl(const device int8_t *A, const device int8_t *B,
   device Output *D = C + m_base * N + n_base;
   for (short mm = 0; mm < TM; mm++) {
     for (short nn = 0; nn < TN; nn++) {
-      nax_frag_store_dequant<Output,HasBias>(c_frags[mm * TN + nn], D, int(N), sc,
+      nax_frag_store_dequant<Output,HasBias,RoundBeforeBias,GeluOutput>(c_frags[mm * TN + nn], D, int(N), sc,
                              short(mm * 16), short(nn * 16), M, N, m_base,
                              n_base, scale_a, scale_w, bias);
     }

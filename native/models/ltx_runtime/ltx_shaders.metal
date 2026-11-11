@@ -604,6 +604,59 @@ kernel void ltx_rms_norm_weighted_bf16(
     }
 }
 
+struct ltx_qk_norm_rope_args {
+    uint rows;
+    uint heads;
+    uint head_dim;
+    float epsilon;
+};
+
+// Keep the native RMS reduction tree and its BF16 output boundary. MPSGraph
+// fuses the RoPE products/subtraction in float before the final BF16 store.
+kernel void ltx_qk_norm_rope_bf16(
+        device ushort *output [[buffer(0)]],
+        device const ushort *input [[buffer(1)]],
+        device const ushort *weight [[buffer(2)]],
+        device const ushort *cosine [[buffer(3)]],
+        device const ushort *sine [[buffer(4)]],
+        constant ltx_qk_norm_rope_args &args [[buffer(5)]],
+        uint row [[threadgroup_position_in_grid]],
+        uint lane [[thread_index_in_threadgroup]]) {
+    if (row >= args.rows) return;
+    const uint columns = args.heads * args.head_dim;
+    const uint base = row * columns;
+    threadgroup float sums[256];
+    float sum = 0.0f;
+    for (uint column = lane; column < columns; column += 256u) {
+        float value = ltx_bf16_to_f32(input[base + column]);
+        sum = fma(value, value, sum);
+    }
+    sums[lane] = sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint offset = 128u; offset > 0u; offset >>= 1u) {
+        if (lane < offset) sums[lane] += sums[lane + offset];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float inverse_rms = rsqrt(sums[0] / float(columns) + args.epsilon);
+    const uint half_dim = args.head_dim / 2u;
+    for (uint pair = lane; pair < columns / 2u; pair += 256u) {
+        uint head = pair / half_dim, column = head * args.head_dim + pair % half_dim;
+        float first = ltx_bf16_to_f32(ltx_f32_to_bf16(
+            ltx_bf16_to_f32(input[base + column]) * inverse_rms *
+            ltx_bf16_to_f32(weight[column])));
+        float second = ltx_bf16_to_f32(ltx_f32_to_bf16(
+            ltx_bf16_to_f32(input[base + column + half_dim]) * inverse_rms *
+            ltx_bf16_to_f32(weight[column + half_dim])));
+        uint angle = (head * args.rows + row) * half_dim + pair % half_dim;
+        float co = ltx_bf16_to_f32(cosine[angle]), si = ltx_bf16_to_f32(sine[angle]);
+        float first_cos = first * co, second_sin = second * si;
+        float first_sin = first * si, second_cos = second * co;
+        uint target = (head * args.rows + row) * args.head_dim + pair % half_dim;
+        output[target] = ltx_f32_to_bf16(first_cos - second_sin);
+        output[target + half_dim] = ltx_f32_to_bf16(first_sin + second_cos);
+    }
+}
+
 kernel void ltx_gemma_projection_tap_bf16(
         device ushort *video_output [[buffer(0)]],
         device ushort *audio_output [[buffer(1)]],
@@ -944,6 +997,100 @@ kernel void ltx_convrot_bf16(device ushort *output [[buffer(0)]],
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
     output[base + lane] = ltx_f32_to_bf16(current[lane] * 0.0625f);
+}
+
+inline float ltx_h4_lane(float a, float b, float c, float d, uint digit) {
+    switch (digit) {
+        case 0u: return a + b + c - d;
+        case 1u: return a + b - c + d;
+        case 2u: return a - b + c + d;
+        default: return -a + b + c + d;
+    }
+}
+
+// One SIMD group owns a 256-element H4^4 transform. Eight FP32 values per
+// lane preserve the original butterfly order and single final BF16 rounding.
+// All communication stays in SIMD shuffles/registers, with no shared memory.
+kernel void ltx_convrot_simd_bf16(device ushort *output [[buffer(0)]],
+                             device const ushort *input [[buffer(1)]],
+                             constant uint &columns [[buffer(2)]],
+                             uint2 group [[threadgroup_position_in_grid]],
+                             uint lane [[thread_index_in_simdgroup]]) {
+    uint base = group.y * columns + group.x * 256u;
+    float values[8];
+    for (uint r = 0u; r < 8u; ++r)
+        values[r] = ltx_bf16_to_f32(input[base + r * 32u + lane]);
+    for (uint stride = 1u; stride <= 4u; stride *= 4u) {
+        uint digit = (lane / stride) & 3u;
+        uint butterfly = lane - digit * stride;
+        for (uint r = 0u; r < 8u; ++r) {
+            float a = simd_shuffle(values[r], butterfly);
+            float b = simd_shuffle(values[r], butterfly + stride);
+            float c = simd_shuffle(values[r], butterfly + 2u * stride);
+            float d = simd_shuffle(values[r], butterfly + 3u * stride);
+            values[r] = ltx_h4_lane(a, b, c, d, digit);
+        }
+    }
+    float middle[8];
+    for (uint r = 0u; r < 8u; ++r) {
+        uint pair = r & ~1u;
+        uint offset = lane & 15u;
+        float a = simd_shuffle(values[pair], offset);
+        float b = simd_shuffle(values[pair], offset + 16u);
+        float c = simd_shuffle(values[pair + 1u], offset);
+        float d = simd_shuffle(values[pair + 1u], offset + 16u);
+        middle[r] = ltx_h4_lane(a, b, c, d, (r & 1u) * 2u + lane / 16u);
+    }
+    for (uint r = 0u; r < 8u; ++r) {
+        uint offset = r & 1u;
+        float value = ltx_h4_lane(middle[offset], middle[offset + 2u],
+                                 middle[offset + 4u], middle[offset + 6u], r / 2u);
+        output[base + r * 32u + lane] = ltx_f32_to_bf16(value * 0.0625f);
+    }
+}
+
+// Experimental fusion; the unfused default kernel above remains available.
+kernel void ltx_gelu_convrot_simd_bf16(device ushort *output [[buffer(0)]],
+                             device const ushort *input [[buffer(1)]],
+                             constant uint &columns [[buffer(2)]],
+                             uint2 group [[threadgroup_position_in_grid]],
+                             uint lane [[thread_index_in_simdgroup]]) {
+    uint base = group.y * columns + group.x * 256u;
+    float values[8];
+    for (uint r = 0u; r < 8u; ++r) {
+        float x = ltx_bf16_to_f32(input[base + r * 32u + lane]);
+        float inner = 0.7978845608028654f * (x + 0.044715f * x * x * x);
+        float value = 0.5f * x * (1.0f + tanh(clamp(inner, -10.0f, 10.0f)));
+        // Preserve the separate GELU store/load's exact BF16 rounding.
+        values[r] = ltx_bf16_to_f32(ltx_f32_to_bf16(value));
+    }
+    for (uint stride = 1u; stride <= 4u; stride *= 4u) {
+        uint digit = (lane / stride) & 3u;
+        uint butterfly = lane - digit * stride;
+        for (uint r = 0u; r < 8u; ++r) {
+            float a = simd_shuffle(values[r], butterfly);
+            float b = simd_shuffle(values[r], butterfly + stride);
+            float c = simd_shuffle(values[r], butterfly + 2u * stride);
+            float d = simd_shuffle(values[r], butterfly + 3u * stride);
+            values[r] = ltx_h4_lane(a, b, c, d, digit);
+        }
+    }
+    float middle[8];
+    for (uint r = 0u; r < 8u; ++r) {
+        uint pair = r & ~1u;
+        uint offset = lane & 15u;
+        float a = simd_shuffle(values[pair], offset);
+        float b = simd_shuffle(values[pair], offset + 16u);
+        float c = simd_shuffle(values[pair + 1u], offset);
+        float d = simd_shuffle(values[pair + 1u], offset + 16u);
+        middle[r] = ltx_h4_lane(a, b, c, d, (r & 1u) * 2u + lane / 16u);
+    }
+    for (uint r = 0u; r < 8u; ++r) {
+        uint offset = r & 1u;
+        float value = ltx_h4_lane(middle[offset], middle[offset + 2u],
+                                 middle[offset + 4u], middle[offset + 6u], r / 2u);
+        output[base + r * 32u + lane] = ltx_f32_to_bf16(value * 0.0625f);
+    }
 }
 
 kernel void ltx_pack_heads_bf16(
@@ -1932,3 +2079,159 @@ kernel void ltx_sol_attention_tiled_bf16(
 }
 
 #undef LTX_SOL_UNROLL
+
+// Experimental exact H4^4/BF16-round/absmax/RNE fusion. Up to 16384 columns.
+// One threadgroup owns a row; each SIMD group keeps up to four H256 groups.
+template <bool GELU, uint SEGMENTS, bool ADALN = false>
+inline void ltx_rot_quant_body(
+    const device ushort *input, device char *codes, device float *scales,
+    uint rows, uint columns, uint row, uint lane, uint sg, uint threads,
+    threadgroup float *maxima, threadgroup uint *invalid,
+    const device ushort *norm_scale, const device ushort *norm_shift,
+    threadgroup float *norm_sums, float norm_epsilon) {
+    const uint simdgroups = threads / 32;
+    const uint groups = columns / 256;
+    if (row >= rows) {
+        for (uint k = sg * 32 + lane; k < columns; k += threads)
+            codes[row * columns + k] = 0;
+        if (sg == 0 && lane == 0) scales[row] = 1.0f;
+        return;
+    }
+    float inverse_rms = 0.0f;
+    if constexpr (ADALN) {
+        const uint tid = sg * 32u + lane;
+        if (tid < 256u) {
+            float sum = 0.0f;
+            for (uint column = tid; column < columns; column += 256u) {
+                float value = ltx_bf16_to_f32(input[row * columns + column]);
+                sum = fma(value, value, sum);
+            }
+            norm_sums[tid] = sum;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint offset = 128u; offset > 0u; offset >>= 1u) {
+            if (tid < offset) norm_sums[tid] += norm_sums[tid + offset];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        inverse_rms = rsqrt(norm_sums[0] / float(columns) + norm_epsilon);
+    }
+    float retained[SEGMENTS][8];
+    float peak = 0;
+    uint bad = 0;
+    #pragma clang loop unroll(full)
+    for (uint segment = 0; segment < SEGMENTS; ++segment) {
+        const uint group = sg + segment * simdgroups;
+        if (group >= groups) {
+            for (uint r = 0; r < 8; ++r) retained[segment][r] = 0;
+            continue;
+        }
+        const uint base = row * columns + group * 256;
+        float v[8];
+        #pragma clang loop unroll(full)
+        for (uint r = 0; r < 8; ++r) {
+            float x = row < rows && group < groups ?
+                ltx_bf16_to_f32(input[base + r * 32 + lane]) : 0.0f;
+            if constexpr (ADALN) {
+                const uint column = group * 256u + r * 32u + lane;
+                float normalized = x * inverse_rms;
+                float modulated = fma(normalized,
+                    1.0f + ltx_bf16_to_f32(norm_scale[column]),
+                    ltx_bf16_to_f32(norm_shift[column]));
+                x = ltx_bf16_to_f32(ltx_f32_to_bf16(modulated));
+            }
+            if constexpr (GELU) {
+                float inner = 0.7978845608028654f * (x + 0.044715f * x * x * x);
+                float activated = 0.5f * x * (1.0f + tanh(clamp(inner, -10.0f, 10.0f)));
+                x = ltx_bf16_to_f32(ltx_f32_to_bf16(activated));
+            }
+            v[r] = x;
+        }
+        #pragma clang loop unroll(full)
+        for (uint stride = 1; stride <= 4; stride *= 4) {
+            uint digit = (lane / stride) & 3;
+            uint butterfly = lane - digit * stride;
+            #pragma clang loop unroll(full)
+            for (uint r = 0; r < 8; ++r)
+                v[r] = ltx_h4_lane(simd_shuffle(v[r], butterfly),
+                    simd_shuffle(v[r], butterfly + stride),
+                    simd_shuffle(v[r], butterfly + 2 * stride),
+                    simd_shuffle(v[r], butterfly + 3 * stride), digit);
+        }
+        float middle[8];
+        #pragma clang loop unroll(full)
+        for (uint r = 0; r < 8; ++r) {
+            uint pair = r & ~1u, offset = lane & 15;
+            middle[r] = ltx_h4_lane(simd_shuffle(v[pair], offset),
+                simd_shuffle(v[pair], offset + 16),
+                simd_shuffle(v[pair + 1], offset),
+                simd_shuffle(v[pair + 1], offset + 16), (r & 1) * 2 + lane / 16);
+        }
+        #pragma clang loop unroll(full)
+        for (uint r = 0; r < 8; ++r) {
+            uint offset = r & 1;
+            float x = ltx_h4_lane(middle[offset], middle[offset + 2],
+                middle[offset + 4], middle[offset + 6], r / 2) * 0.0625f;
+            x = ltx_bf16_to_f32(ltx_f32_to_bf16(x));
+            retained[segment][r] = x;
+            bad |= !isfinite(x);
+            peak = max(peak, abs(x));
+        }
+    }
+    peak = simd_max(peak);
+    bad = simd_sum(bad);
+    if (lane == 0) { maxima[sg] = peak; invalid[sg] = bad; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sg == 0) {
+        peak = simd_max(lane < simdgroups ? maxima[lane] : 0.0f);
+        bad = simd_sum(lane < simdgroups ? invalid[lane] : 0u);
+        if (lane == 0) {
+            maxima[0] = bad ? NAN : (peak == 0.0f ? 1.0f : peak / 127.0f);
+            invalid[0] = bad;
+            scales[row] = maxima[0];
+        }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    const float scale = maxima[0];
+    #pragma clang loop unroll(full)
+    for (uint segment = 0; segment < SEGMENTS; ++segment) {
+        uint group = sg + segment * simdgroups;
+        if (group < groups) {
+            #pragma clang loop unroll(full)
+            for (uint r = 0; r < 8; ++r) {
+                float x = row < rows && !invalid[0] ? retained[segment][r] / scale : 0.0f;
+                codes[row * columns + group * 256 + r * 32 + lane] =
+                    char(clamp(rint(x), -127.0f, 127.0f));
+            }
+        }
+    }
+}
+
+#define TC_ROT_QUANT(NAME, GELU, SEGMENTS) \
+kernel void NAME(const device ushort *input [[buffer(0)]], \
+    device char *codes [[buffer(1)]], device float *scales [[buffer(2)]], \
+    constant uint &rows [[buffer(3)]], constant uint &columns [[buffer(4)]], \
+    uint row [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]], \
+    uint sg [[simdgroup_index_in_threadgroup]], uint threads [[threads_per_threadgroup]]) { \
+    threadgroup float maxima[32]; threadgroup uint invalid[32]; \
+    ltx_rot_quant_body<GELU,SEGMENTS>(input,codes,scales,rows,columns,row,lane,sg,threads,maxima,invalid,nullptr,nullptr,nullptr,0.0f); \
+}
+TC_ROT_QUANT(ltx_rot_quant_bf16_s1, false, 1)
+TC_ROT_QUANT(ltx_rot_quant_bf16_s2, false, 2)
+TC_ROT_QUANT(ltx_rot_quant_bf16_s4, false, 4)
+TC_ROT_QUANT(ltx_gelu_rot_quant_bf16_s1, true, 1)
+TC_ROT_QUANT(ltx_gelu_rot_quant_bf16_s2, true, 2)
+TC_ROT_QUANT(ltx_gelu_rot_quant_bf16_s4, true, 4)
+#undef TC_ROT_QUANT
+
+kernel void ltx_adaln_rot_quant_bf16(
+    const device ushort *input [[buffer(0)]], device char *codes [[buffer(1)]],
+    device float *scales [[buffer(2)]], constant uint &rows [[buffer(3)]],
+    constant uint &columns [[buffer(4)]], const device ushort *norm_scale [[buffer(5)]],
+    const device ushort *norm_shift [[buffer(6)]], constant float &epsilon [[buffer(7)]],
+    uint row [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]],
+    uint sg [[simdgroup_index_in_threadgroup]], uint threads [[threads_per_threadgroup]]) {
+    threadgroup float maxima[32], norm_sums[256];
+    threadgroup uint invalid[32];
+    ltx_rot_quant_body<false,1,true>(input,codes,scales,rows,columns,row,lane,sg,threads,
+        maxima,invalid,norm_scale,norm_shift,norm_sums,epsilon);
+}

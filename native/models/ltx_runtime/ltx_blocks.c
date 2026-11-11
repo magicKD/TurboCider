@@ -11,6 +11,7 @@
 #include "ltx_upsampler.h"
 #include "ltx_weights.h"
 #include "ltx_streaming_slot.h"
+#include "ltx_sol_route_stats.h"
 #include "ltx_mlx_upsampler.h"
 #include "../../runtime/block_residency.h"
 #include "../../core/memory_schedule_adapter.h"
@@ -66,6 +67,7 @@ static int video_text_kv_prefetch_stage1;
 static int video_text_kv_prefetch_stage2;
 static int ane_video_text_kv_enabled;
 static int video_attention_batch;
+static int video_attention_batch_stage2_only;
 /* Image-to-video uses a contiguous first-frame token prefix. Transformer
  * modulation is selected per row while attention/MLP geometry stays fixed. */
 static uint32_t active_video_conditioned_prefix_rows;
@@ -243,6 +245,7 @@ typedef struct {
      * allocated once per denoise stage and shared by every block in order to
      * keep the candidate free of per-block Metal allocation overhead. */
     ltx_gpu_buffer *video_ffn_hidden;
+    ltx_gpu_stage_workspace *video_stage_workspace;
     ltx_gpu_buffer *video_sol_query;
     ltx_gpu_buffer *video_sol_key;
     ltx_gpu_buffer *video_sol_value;
@@ -1612,7 +1615,7 @@ static int create_sol_video_self_workspace(
         uint32_t heads, uint32_t head_dim,
         block_workspace *workspace,
         char *error, size_t error_size) {
-    if (!sol_video_self_stage_enabled(rows)) return 1;
+    if (!sol_video_self_stage_enabled(rows) || sol_sparse_pattern.mode == 6u) return 1;
     uint32_t blocks = (rows + 63u) / 64u;
     if (blocks > 256u) {
         snprintf(error, error_size,
@@ -1663,6 +1666,11 @@ static int create_sol_video_self_workspace(
 }
 
 static void free_workspace(block_workspace *workspace) {
+    if (workspace->video_stage_workspace) {
+        ltx_gpu_stage_workspace_free(workspace->video_stage_workspace);
+        workspace->video_stage_workspace = NULL;
+        workspace->video_ffn_hidden = NULL;
+    }
     ltx_gpu_buffer_free(workspace->video_state[0]);
     ltx_gpu_buffer_free(workspace->video_state[1]);
     ltx_gpu_buffer_free(workspace->audio_state[0]);
@@ -1711,6 +1719,13 @@ static void free_workspace(block_workspace *workspace) {
     ltx_gpu_buffer_free(workspace->video_qkv_rotated);
 #endif
     memset(workspace, 0, sizeof(*workspace));
+}
+
+static int reuse_video_mlp_hidden(ltx_gpu *gpu) {
+    const char *option = getenv("TURBOCIDER_LTX_W8A8_REUSE_MLP_HIDDEN");
+    return (!option || strcmp(option, "1") == 0) &&
+        ltx_gpu_convrot_w8a8_info(gpu, NULL, NULL) &&
+        !ltx_gpu_memory_hooks_enabled(gpu);
 }
 
 static int create_workspace(ltx_gpu *gpu,
@@ -1783,6 +1798,25 @@ static int create_workspace(ltx_gpu *gpu,
         ;
 #undef LTX_NEW_VIDEO
 #undef LTX_NEW_AUDIO
+    const char *stage_reuse = getenv("TURBOCIDER_LTX_W8A8_REUSE_STAGE_WORKSPACE");
+    if (ok && !workspace->video_ffn_hidden && video_rows <= 4096u && video_dim == 4096u &&
+        video_ffn_hidden == 16384u && reuse_video_mlp_hidden(gpu) &&
+        (!stage_reuse || strcmp(stage_reuse, "1") == 0)) {
+        char scratch_error[512] = {0};
+        workspace->video_stage_workspace = ltx_gpu_stage_workspace_create(
+            gpu, video_rows, scratch_error, sizeof(scratch_error));
+        if (workspace->video_stage_workspace)
+            workspace->video_ffn_hidden = ltx_gpu_stage_workspace_hidden(workspace->video_stage_workspace);
+    }
+    if (ok && !workspace->video_ffn_hidden && video_rows <= 4096u && video_dim == 4096u &&
+        video_ffn_hidden == 16384u && reuse_video_mlp_hidden(gpu)) {
+        /* Optional stage-owned workspace; allocation failure retains the
+         * original per-call path. Explicit memory plans retain their existing
+         * allocation sites and lifetimes until separately qualified. */
+        char scratch_error[512] = {0};
+        workspace->video_ffn_hidden = new_tensor(gpu, video_rows, video_ffn_hidden,
+                                                scratch_error, sizeof(scratch_error));
+    }
     if (!ok) free_workspace(workspace);
     return ok;
 }
@@ -1873,6 +1907,44 @@ invalid:
     return 0;
 }
 
+static int report_sol_routes(const attention_weights *weights,
+        block_workspace *workspace, uint32_t rows, uint32_t block_index,
+        char *error, size_t error_size) {
+    const char *option = getenv("TURBOCIDER_LTX_SOL_ROUTE_STATS");
+    if (!option || strcmp(option, "1") != 0) return 1;
+    uint32_t blocks = (rows + 63u) / 64u;
+    size_t words = (size_t)weights->heads * blocks * ((blocks + 31u) / 32u);
+    size_t bytes = 0;
+    if (!checked_bytes(words, sizeof(uint32_t), &bytes)) return 0;
+    uint32_t *routes = malloc(bytes);
+    if (!routes) {
+        snprintf(error, error_size, "cannot allocate diagnostic Sol route readback");
+        return 0;
+    }
+    ltx_sol_route_counts counts;
+    int ok = ltx_gpu_buffer_read(workspace->video_sol_routes, routes,
+                                bytes, error, error_size) &&
+        ltx_sol_count_routes(routes, words, rows, weights->heads, &counts);
+    free(routes);
+    if (!ok) return 0;
+    /* Diagnostic readback runs only after command completion. Exclude these
+     * runs from speed comparisons; approximated tiles still have summary cost. */
+    fprintf(stderr, "ltx_sol_route_stats={\"stage\":%u,\"step\":%zu,\"block\":%u,"
+        "\"rows\":%u,\"heads\":%u,\"tau\":%.9g,\"mode\":%u,"
+        "\"exact_blocks\":%llu,\"total_blocks\":%llu,"
+        "\"exact_token_pairs\":%llu,\"total_token_pairs\":%llu,"
+        "\"exact_pair_density\":%.9g}\n",
+        rows == active_geometry.stage1_rows ? 1u : 2u,
+        sol_video_self.active_step, block_index, rows, weights->heads,
+        sol_video_self_current_tau(), sol_sparse_pattern.mode,
+        (unsigned long long)counts.exact_blocks,
+        (unsigned long long)counts.total_blocks,
+        (unsigned long long)counts.exact_token_pairs,
+        (unsigned long long)counts.total_token_pairs,
+        (double)counts.exact_token_pairs / (double)counts.total_token_pairs);
+    return 1;
+}
+
 static int run_sol_video_self_attention(
         ltx_gpu *gpu, ltx_gpu_buffer *output,
         const ltx_gpu_buffer *input,
@@ -1957,7 +2029,9 @@ static int run_sol_video_self_attention(
             rows, inner_dim, weights->output_dim,
             error, error_size);
     if (!sol_video_self.batch_commands)
-        return ok && capture_sol_qkv(weights, rope, workspace, rows,
+        return ok && report_sol_routes(weights, workspace, rows, block_index,
+                                       error, error_size) &&
+            capture_sol_qkv(weights, rope, workspace, rows,
                                      block_index, error, error_size);
     char batch_error[1024] = {0};
     int batch_ok = ltx_gpu_batch_end(
@@ -1965,7 +2039,9 @@ static int run_sol_video_self_attention(
     if (!batch_ok && ok)
         snprintf(error, error_size, "%s", batch_error[0] ?
                  batch_error : "Sol attention command batch failed");
-    return ok && batch_ok && capture_sol_qkv(weights, rope, workspace, rows,
+    return ok && batch_ok &&
+        report_sol_routes(weights, workspace, rows, block_index, error, error_size) &&
+        capture_sol_qkv(weights, rope, workspace, rows,
                                             block_index, error, error_size);
 }
 
@@ -2090,6 +2166,19 @@ static int run_video_self_attention(
 #else
     (void)timing;
 #endif
+    if (sol_video_self_should_run(rows, block_index) && sol_sparse_pattern.mode == 6u) {
+        if (!ltx_gpu_set_self_kv_pool_geometry(gpu, active_geometry.latent_frames,
+                active_geometry.stage2_height, active_geometry.stage2_width, error, error_size)) return 0;
+        int ok = run_self_attention(gpu, output, input, &block->video_self,
+                                   rope, rows, error, error_size);
+        (void)ltx_gpu_set_self_kv_pool_geometry(gpu, 0, 0, 0, NULL, 0);
+        const char *stats = getenv("TURBOCIDER_LTX_KV_POOL_STATS");
+        if (ok && stats && strcmp(stats, "1") == 0)
+            fprintf(stderr, "ltx_kv_pool_stats={\"stage\":2,\"step\":%zu,\"block\":%u,"
+                "\"query_rows\":%u,\"key_rows\":%u,\"pool_height\":2,\"pool_width\":2}\n",
+                sol_video_self.active_step, block_index, rows, rows / 4u);
+        return ok;
+    }
     if (sol_video_self_should_run(rows, block_index))
         return run_sol_video_self_attention(
             gpu, output, input, &block->video_self,
@@ -2220,7 +2309,8 @@ static int run_video_pre_cross(
         const ltx_gpu_buffer *text_mask,
         uint32_t video_rows, uint32_t text_rows, uint32_t block_index,
         block_timing *timing, char *error, size_t error_size) {
-    if (!video_attention_batch)
+    if (!video_attention_batch || (video_attention_batch_stage2_only &&
+                                  video_rows != active_geometry.stage2_rows))
         return run_video_self_pre_cross(
             gpu, weights, rope, workspace, video_rows, block_index,
             timing, error, error_size) &&
@@ -2478,9 +2568,16 @@ static int run_video_mlp(ltx_gpu *gpu, ltx_gpu_buffer *output,
                          char *error, size_t error_size) {
     if (!metal_convrot_mlp ||
         (metal_convrot_mlp_stage2_only &&
-         rows != active_geometry.stage2_rows))
-        return run_mlp(gpu, output, input, weights, rows,
-                       error, error_size);
+         rows != active_geometry.stage2_rows)) {
+        if (workspace && workspace->video_ffn_hidden && reuse_video_mlp_hidden(gpu))
+            return ltx_gpu_mlp_int8_convrot_mps_bf16_with_scratch(
+                gpu, output, input, workspace->video_ffn_hidden,
+                weights->fc1.weight, weights->fc1.scale, weights->fc1.bias,
+                weights->fc2.weight, weights->fc2.scale, weights->fc2.bias,
+                rows, weights->input_dim, weights->hidden_dim, weights->output_dim,
+                256u, error, error_size);
+        return run_mlp(gpu, output, input, weights, rows, error, error_size);
+    }
     if (!workspace || !workspace->video_ffn_hidden) {
         snprintf(error, error_size,
                  "Metal ConvRot MLP scratch is unavailable");
@@ -2975,6 +3072,11 @@ static int run_block(ltx_gpu *gpu, block_weights *weights,
     }
 
     start = now_seconds();
+    const char *adaln_fusion = getenv("TURBOCIDER_LTX_W8A8_FUSED_ADALN_ROT_QUANT");
+    int fuse_video_adaln = (!adaln_fusion || strcmp(adaln_fusion, "1") == 0) &&
+        ltx_gpu_convrot_w8a8_info(gpu, NULL, NULL) && ltx_gpu_convrot_simd_enabled(gpu) &&
+        video_dim == 4096u && !active_video_conditioned_prefix_rows && !metal_convrot_mlp;
+    int video_ffn_ok = 1;
 #ifdef LTX_ENABLE_ANE_MLP
     ltx_ane_mlp *ane_video_mlp = video_rows == active_geometry.stage1_rows ?
         weights->ane_video_mlp[0] : video_rows == active_geometry.stage2_rows ?
@@ -2982,9 +3084,26 @@ static int run_block(ltx_gpu *gpu, block_weights *weights,
     ltx_ane_mlp_timing ane_mlp_timing = {0};
     int ane_mlp_shape_ok = !ane_video_mlp || ltx_ane_mlp_set_rows(
         ane_video_mlp, gpu, video_rows, error, error_size);
+    video_ffn_ok = ane_mlp_shape_ok;
+    if (ane_video_mlp) fuse_video_adaln = 0;
 #endif
+    if (fuse_video_adaln && video_ffn_ok) {
+        const mlp_weights *mlp = &weights->video_mlp;
+        video_ffn_ok = ltx_gpu_mlp_adaln_int8_convrot_mps_bf16_with_scratch(
+            gpu, workspace->video_branch, video_hidden,
+            reuse_video_mlp_hidden(gpu) ? workspace->video_ffn_hidden : NULL,
+            weights->video_adaln.row[4], weights->video_adaln.row[3],
+            workspace->video_normed, 1e-6f,
+            mlp->fc1.weight, mlp->fc1.scale, mlp->fc1.bias,
+            mlp->fc2.weight, mlp->fc2.scale, mlp->fc2.bias,
+            video_rows, mlp->input_dim, mlp->hidden_dim, mlp->output_dim,
+            256u, error, error_size) &&
+            video_residual_gate(
+                gpu, video_next, video_hidden, workspace->video_branch,
+                &weights->video_adaln, &weights->video_adaln_conditioned, 5u,
+                video_rows, video_dim, error, error_size);
+    } else {
 #ifdef LTX_ENABLE_ANE_MLP
-    int video_ffn_ok = ane_mlp_shape_ok;
     if (video_ffn_ok && ane_video_mlp && ane_mlp_fused_adaln_pack &&
         !active_video_conditioned_prefix_rows) {
         video_ffn_ok = ltx_ane_mlp_eval_adaln(
@@ -3027,7 +3146,7 @@ static int run_block(ltx_gpu *gpu, block_weights *weights,
         }
     }
 #else
-    int video_ffn_ok = video_adaln(
+    video_ffn_ok = video_adaln(
             gpu, workspace->video_normed, video_hidden,
             &weights->video_adaln, &weights->video_adaln_conditioned,
             4u, 3u, video_rows, video_dim, error, error_size);
@@ -3041,6 +3160,7 @@ static int run_block(ltx_gpu *gpu, block_weights *weights,
             &weights->video_adaln, &weights->video_adaln_conditioned, 5u,
             video_rows, video_dim, error, error_size);
 #endif
+    }
     if (timing) {
         timing->video_ffn += now_seconds() - start;
 #ifdef LTX_ENABLE_ANE_MLP
@@ -4565,7 +4685,7 @@ static ltx_native_denoiser *ltx_native_create_internal(const ltx_native_options 
     for(unsigned i=0;i<10;++i)if(*fields[i]){ctx->owned_strings[i]=strdup(*fields[i]);if(!ctx->owned_strings[i]){snprintf(error,error_size,"option allocation failed");goto failed;}*fields[i]=ctx->owned_strings[i];}
     if(!ltx_workload_init(&ctx->workload,options->width,options->height,options->frames,options->fps,error,error_size))goto failed;
     if(ctx->workload.output_width!=options->width||ctx->workload.output_height!=options->height||ctx->workload.frames!=options->frames){snprintf(error,error_size,"LTX dimensions must already satisfy the two-stage geometry");goto failed;}
-    if (ctx->options.sparse_mode > 5u ||
+    if (ctx->options.sparse_mode > 6u ||
         ((ctx->options.sparse_mode == 4u || ctx->options.sparse_mode == 5u) &&
          (!ctx->options.sparse_keep_blocks || ctx->options.sparse_keep_blocks > 256u)) ||
         (ctx->options.sparse_mode &&
@@ -4576,6 +4696,12 @@ static ltx_native_denoiser *ltx_native_create_internal(const ltx_native_options 
            ctx->options.sparse_tokens_per_frame !=
                ctx->workload.stage2_latent_height * ctx->workload.stage2_latent_width)))) {
         snprintf(error, error_size, "invalid Stage-2 sparse pattern geometry");
+        goto failed;
+    }
+    if (ctx->options.sparse_mode == 6u &&
+        (ctx->options.sparse_radius != 1u || ctx->options.sparse_anchor_stride ||
+         ctx->options.sparse_tokens_per_frame || ctx->options.sparse_keep_blocks)) {
+        snprintf(error, error_size, "spatial K/V pooling does not use sparse radius/anchors/top-k geometry");
         goto failed;
     }
     if ((ctx->options.sol_stage1 || ctx->options.sol_stage2) &&
@@ -4622,6 +4748,10 @@ static ltx_native_denoiser *ltx_native_create_internal(const ltx_native_options 
     }
     const char *shader_source=ctx->options.shader_source?ctx->options.shader_source:"ltx_shaders.metal";
     ctx->gpu=ltx_gpu_create(shader_source,error,error_size);if(!ctx->gpu)goto failed;
+    if (ctx->options.sparse_mode == 6u && !ltx_gpu_convrot_w8a8_info(ctx->gpu, NULL, NULL)) {
+        snprintf(error, error_size, "spatial K/V pooling currently requires the M5 W8A8 backend");
+        goto failed;
+    }
     if (ctx->exact_stream) ctx->exact_stream->gpu = ctx->gpu;
     if (options->memory_hooks) {
         const size_t async_size = offsetof(ltx_gpu_memory_hooks, complete) +
@@ -5062,6 +5192,9 @@ int ltx_native_run(ltx_native_denoiser *ctx,int stage,uint64_t seed,
          strcmp(video_batch, "0") != 0 &&
          strcmp(video_batch, "false") != 0 &&
          strcmp(video_batch, "off") != 0);
+    const char *video_batch_stage2 = getenv("TURBOCIDER_LTX_VIDEO_ATTENTION_BATCH_STAGE2_ONLY");
+    video_attention_batch_stage2_only = video_batch_stage2 &&
+        strcmp(video_batch_stage2, "1") == 0;
     if ((ctx->options.sol_stage1 || ctx->options.sol_stage2) &&
         video_attention_batch) {
         video_attention_batch = 0;
