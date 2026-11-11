@@ -74,6 +74,17 @@ ranking or physical ANE occupancy is claimed. See the
 [complete report and cold controls](../benchmark/SEEDVR2_COMFYUI.md) and
 [retained evidence](BENCHMARKS.md#seedvr2-on-m4-max--october-14-2026).
 
+## LTX 2.5 audio/video on M5 Pro — November 11, 2026
+
+For a separate GPU-only LTX 2.5 audio/video validation on November 11, 2026,
+M5 Pro / 24 GB completed a 704×448, 97-frame, 24 FPS, 11-step streamed request
+in **34.969 s warm native request time**, or **35.002 s including the CLI
+process**. The first prompt-cache miss took 51.856 s including the process.
+The latest PrunaVAED input-load ablation reduced decoder compute from 2.772 s
+to 1.917 s; the small complete-request sample does not establish a stable
+end-to-end speedup. DiT still accounts for about 83.8% of warm native time.
+See the [full stage timings, exact-output checks and comparison limits](../experiments/m5/README.md#ltx-25-加速与桌面发布验证--2026-11-11).
+
 ## How much comes from ANE?
 
 For the recorded Z-Image workload, native GPU alone took **36.369 s**, versus

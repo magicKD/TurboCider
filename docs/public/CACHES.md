@@ -18,6 +18,14 @@ The native LTX route can also persist connected conditioning on disk with an
 identity derived from model, checkpoint, tokenizer and prompt. Cache reuse is
 reported by the executor rather than inferred from a faster request.
 
+LTX stores the connector's video/audio context and attention mask. A compatible
+hit skips both Gemma encoding and connector execution, including in a fresh
+CLI process. The key also binds the runtime and compute recipe; held checkpoint
+sources are revalidated before and after use. Changing the prompt, source
+identity or runtime recipe regenerates the condition. Metadata, tensor hashes
+and shapes are checked before reuse; an invalid entry is discarded and rebuilt.
+DiT sampling and audio/video decoding still run on a hit.
+
 App tasks display a text-conditioning cache-hit message when the result reports a hit.
 Z-Image layer callbacks update elapsed time without replacing the completed
 denoise-step counter. Task details

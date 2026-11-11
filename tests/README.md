@@ -66,6 +66,23 @@ Keep the selected library, its manifest and source revision together. Even tests
 using MLX CPU tensors may need Metal device visibility during initialization;
 `test-runtime-ane-cpu-bridge` documents that boundary in the Makefile.
 
+For an isolated App build, use the same directory for compilation and behavior
+tests. The default remains `build/native`:
+
+```sh
+TURBOCIDER_BUILD_OUTPUT_DIR=build/release-check make build-app
+make test-app NATIVE_TEST_OUT=build/release-check
+```
+
+LTX snapshot, streaming-contract and finalizer-envelope tests also honor
+`TURBOCIDER_TEST_NATIVE_DIR`; the finalizer alone can be overridden with
+`TURBOCIDER_LTX_FINALIZER_BINARY`. This avoids testing an older helper left in
+the default build directory. `make test-ltx-optimization` checks PrunaVAED
+convolution/fusion math, Sol route accounting and spatial K/V pooling with
+small fixtures. `tests/native/test_ltx_w8a8.py` additionally checks projection
+workspace lifetimes, fused normalization/RoPE and rotation/quantization against
+independent oracles. These GPU checks establish correctness, not model speed.
+
 ## Device and model checks
 
 `make test-runtime-ane` runs small synthetic Core ML/MLX device work.

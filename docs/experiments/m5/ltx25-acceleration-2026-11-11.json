@@ -1,0 +1,1946 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-11",
+  "complete": true,
+  "device": {
+    "chip": "Apple M5 Pro",
+    "cpu_cores": 15,
+    "gpu_cores": 16,
+    "memory_gb": 24,
+    "os": "macOS 26.5.1 (25F80)"
+  },
+  "code_commit": "9c6d29674b0738ae3e70508eb30573075dc116f2",
+  "request": {
+    "schema_version": 1,
+    "model": "ltx-2.5-distilled",
+    "operation": "video.generate",
+    "prompt": "A cinematic red fox walking through a snowy forest. Its paws crunch softly in fresh snow, with gentle wind and distant birds chirping. Natural soft daylight, realistic motion, clear synchronized ambient sound.",
+    "width": 704,
+    "height": 448,
+    "frames": 97,
+    "fps": 24,
+    "steps": 11,
+    "seed": 42,
+    "execution": "gpu",
+    "residency": "streamed",
+    "memory_budget_bytes": 12884901888,
+    "audio": true,
+    "ltx_backend": "c_metal",
+    "ltx_video_vae": "prunavaed",
+    "allow_approximation": true,
+    "ltx_video_vae_path": "<PRUNAVAED_CHECKPOINT>",
+    "dynamic_text": true,
+    "compile_gpu": false,
+    "inputs": [],
+    "ltx_fast_av": true
+  },
+  "precision": "Original INT8 ConvRot codes / FP32 scales, BF16 boundaries, RNE127 activation quantization; PrunaVAED BF16 with strict FP32 TensorOps accumulation",
+  "method": "One complete warm-up per arm, then ABBA/BAAB; fresh CLI process per sample; common conditioning cache; compare outputs after timing",
+  "conditioning": "Fresh isolated conditioning directory, first candidate is a prompt-cache miss; one full warmup per arm then ABBA. All following requests hit connected conditioning. Process/shader/OS caches are not forced cold. No concurrent agent benchmark/build/test during timing.",
+  "ablation": "Same packaged CLI and all prior defaults; only TURBOCIDER_PRUNAVAED_OPTIMIZED_INPUT_LOADS=0 versus 1. This does not measure all historical optimizations against stock.",
+  "artifacts_sha256": {
+    "turbocider": "251c79e61eca7c103056e1d4939f417376bb4fae4b7deb89140ac8631715d9ff",
+    "libturbocider.dylib": "787cb98bd935ccd844625a2bad4e8825da84869c8d5fee48ac95f00d059ebcc1",
+    "ltx-video-finalizer": "6e6fc59382cfacf3807f0e0eb60a80ecabf3bf7df65465b77291bd4d03415e21",
+    "ltx_shaders.metal": "bcb3b7fc32081b9c5d2ac6fedd1cf08b4b262aba699921b68305a590f0729c41"
+  },
+  "source_manifest_sha256": "e77b3f05c8348b6625bd36e179c7f369a33cf9030fd0721212655868273d6b4c",
+  "source_inputs_verified": 697,
+  "timings_seconds": {
+    "audio_bwe": {
+      "cold_prompt_seconds": 0.480108583,
+      "warm_median_seconds": 0.4841872705,
+      "warm_samples_seconds": [
+        0.484611416,
+        0.483763125
+      ]
+    },
+    "audio_decode": {
+      "cold_prompt_seconds": 0.961747417,
+      "warm_median_seconds": 0.9684125415,
+      "warm_samples_seconds": [
+        0.968479583,
+        0.9683455
+      ]
+    },
+    "audio_input_read": {
+      "cold_prompt_seconds": 0.000376917,
+      "warm_median_seconds": 0.0003734995,
+      "warm_samples_seconds": [
+        0.000387833,
+        0.000359166
+      ]
+    },
+    "audio_mux": {
+      "cold_prompt_seconds": 0.094486417,
+      "warm_median_seconds": 0.041868417,
+      "warm_samples_seconds": [
+        0.041223209,
+        0.042513625
+      ]
+    },
+    "audio_vae_decode": {
+      "cold_prompt_seconds": 0.047240292,
+      "warm_median_seconds": 0.042792250500000004,
+      "warm_samples_seconds": [
+        0.047158417,
+        0.038426084
+      ]
+    },
+    "audio_vocoder": {
+      "cold_prompt_seconds": 0.434021625,
+      "warm_median_seconds": 0.441059521,
+      "warm_samples_seconds": [
+        0.436321917,
+        0.445797125
+      ]
+    },
+    "conditioning_and_rng": {
+      "cold_prompt_seconds": 5.2040705,
+      "warm_median_seconds": 0.000539625,
+      "warm_samples_seconds": [
+        0.00053325,
+        0.000546
+      ]
+    },
+    "connector": {
+      "cold_prompt_seconds": 5.203287292,
+      "warm_median_seconds": 0.0,
+      "warm_samples_seconds": [
+        0,
+        0
+      ]
+    },
+    "denoise": {
+      "cold_prompt_seconds": 30.962073583000002,
+      "warm_median_seconds": 29.3086619375,
+      "warm_samples_seconds": [
+        29.045275791,
+        29.572048084
+      ]
+    },
+    "exec_handoff": {
+      "cold_prompt_seconds": 3.7363193740000025,
+      "warm_median_seconds": 0.19571214599999975,
+      "warm_samples_seconds": [
+        0.19260358400000044,
+        0.19882070799999907
+      ]
+    },
+    "export": {
+      "cold_prompt_seconds": 0.320740208,
+      "warm_median_seconds": 0.238270771,
+      "warm_samples_seconds": [
+        0.227238292,
+        0.24930325
+      ]
+    },
+    "finalizer_wall": {
+      "cold_prompt_seconds": 4.136467667,
+      "warm_median_seconds": 3.2770842085,
+      "warm_samples_seconds": [
+        3.27426625,
+        3.279902167
+      ]
+    },
+    "latent_upsample": {
+      "cold_prompt_seconds": 0.718664792,
+      "warm_median_seconds": 0.5730719165,
+      "warm_samples_seconds": [
+        0.576092042,
+        0.570051791
+      ]
+    },
+    "model_load": {
+      "cold_prompt_seconds": 2.277762042,
+      "warm_median_seconds": 1.397893979,
+      "warm_samples_seconds": [
+        1.386359833,
+        1.409428125
+      ]
+    },
+    "pre_finalizer": {
+      "cold_prompt_seconds": 43.585318,
+      "warm_median_seconds": 31.496637999999997,
+      "warm_samples_seconds": [
+        31.228263,
+        31.765013
+      ]
+    },
+    "pre_model_load": {
+      "cold_prompt_seconds": 4.399242291,
+      "warm_median_seconds": 0.197529146,
+      "warm_samples_seconds": [
+        0.200664959,
+        0.194393333
+      ]
+    },
+    "request_wall": {
+      "cold_prompt_seconds": 51.458105041,
+      "warm_median_seconds": 34.969434354499995,
+      "warm_samples_seconds": [
+        34.695132834,
+        35.243735875
+      ]
+    },
+    "request_wall_estimate": {
+      "cold_prompt_seconds": 47.721785667,
+      "warm_median_seconds": 34.7737222085,
+      "warm_samples_seconds": [
+        34.502529249999995,
+        35.044915167
+      ]
+    },
+    "rgb_convert": {
+      "cold_prompt_seconds": 0.010722292,
+      "warm_median_seconds": 0.0155990415,
+      "warm_samples_seconds": [
+        0.016873958,
+        0.014324125
+      ]
+    },
+    "stage1": {
+      "cold_prompt_seconds": 16.333886708,
+      "warm_median_seconds": 14.0060748335,
+      "warm_samples_seconds": [
+        13.937053208,
+        14.075096459
+      ]
+    },
+    "stage2": {
+      "cold_prompt_seconds": 14.628186875,
+      "warm_median_seconds": 15.302587104,
+      "warm_samples_seconds": [
+        15.108222583,
+        15.496951625
+      ]
+    },
+    "text_encode": {
+      "cold_prompt_seconds": 3.525809291,
+      "warm_median_seconds": 0.0,
+      "warm_samples_seconds": [
+        0,
+        0
+      ]
+    },
+    "text_encoder_load": {
+      "cold_prompt_seconds": 0.586634,
+      "warm_median_seconds": 0.0,
+      "warm_samples_seconds": [
+        0,
+        0
+      ]
+    },
+    "video_export": {
+      "cold_prompt_seconds": 0.320740208,
+      "warm_median_seconds": 0.238270771,
+      "warm_samples_seconds": [
+        0.227238292,
+        0.24930325
+      ]
+    },
+    "video_input_read": {
+      "cold_prompt_seconds": 0.000614292,
+      "warm_median_seconds": 0.0007617500000000001,
+      "warm_samples_seconds": [
+        0.000749333,
+        0.000774167
+      ]
+    },
+    "video_vae_compute": {
+      "cold_prompt_seconds": 2.620153833,
+      "warm_median_seconds": 1.9167718335,
+      "warm_samples_seconds": [
+        1.923535625,
+        1.910008042
+      ]
+    },
+    "video_vae_decode": {
+      "cold_prompt_seconds": 2.748771333,
+      "warm_median_seconds": 2.0129334375,
+      "warm_samples_seconds": [
+        2.020451208,
+        2.005415667
+      ]
+    },
+    "video_vae_weight_load": {
+      "cold_prompt_seconds": 0.128003208,
+      "warm_median_seconds": 0.095399854,
+      "warm_samples_seconds": [
+        0.09616625,
+        0.094633458
+      ]
+    }
+  },
+  "denoise_steps": {
+    "stage1": {
+      "count": 8,
+      "cold_seconds": [
+        2.4285045,
+        2.081090083,
+        1.988396042,
+        1.956068875,
+        2.035381167,
+        1.929976041,
+        1.95173875,
+        1.939650292
+      ],
+      "warm_samples_seconds": [
+        [
+          1.798522417,
+          1.706086458,
+          1.70244875,
+          1.74464875,
+          1.753297042,
+          1.73572625,
+          1.7428535,
+          1.73164725
+        ],
+        [
+          1.792022917,
+          1.704401833,
+          1.73615475,
+          1.721957209,
+          1.765075083,
+          1.756520167,
+          1.785412625,
+          1.791957291
+        ]
+      ],
+      "warm_mean_seconds_per_step": 1.74804576825
+    },
+    "stage2": {
+      "count": 3,
+      "cold_seconds": [
+        4.907608375,
+        4.79732025,
+        4.840000875
+      ],
+      "warm_samples_seconds": [
+        [
+          4.9886225,
+          4.983390458,
+          5.046695625
+        ],
+        [
+          4.97878925,
+          5.258950458,
+          5.167060375
+        ]
+      ],
+      "warm_mean_seconds_per_step": 5.070584777666666
+    }
+  },
+  "process_wall_seconds": {
+    "cold_prompt": 51.85630124999443,
+    "warm_candidate_samples": [
+      34.7277816660353,
+      35.276467207993846
+    ],
+    "warm_candidate_median": 35.00212443701457
+  },
+  "paired_e2e_ablation": {
+    "audio_bwe": {
+      "medians": {
+        "baseline": 0.4824816875,
+        "candidate": 0.4841872705
+      },
+      "samples": {
+        "baseline": [
+          0.4823155,
+          0.482647875
+        ],
+        "candidate": [
+          0.484611416,
+          0.483763125
+        ]
+      },
+      "speedup": 0.9964774311430395
+    },
+    "audio_decode": {
+      "medians": {
+        "baseline": 0.965539979,
+        "candidate": 0.9684125415
+      },
+      "samples": {
+        "baseline": [
+          0.9617625,
+          0.969317458
+        ],
+        "candidate": [
+          0.968479583,
+          0.9683455
+        ]
+      },
+      "speedup": 0.9970337409142279
+    },
+    "audio_input_read": {
+      "medians": {
+        "baseline": 0.000385896,
+        "candidate": 0.0003734995
+      },
+      "samples": {
+        "baseline": [
+          0.000362375,
+          0.000409417
+        ],
+        "candidate": [
+          0.000387833,
+          0.000359166
+        ]
+      },
+      "speedup": 1.0331901381394084
+    },
+    "audio_mux": {
+      "medians": {
+        "baseline": 0.044690521,
+        "candidate": 0.041868417
+      },
+      "samples": {
+        "baseline": [
+          0.042803333,
+          0.046577709
+        ],
+        "candidate": [
+          0.041223209,
+          0.042513625
+        ]
+      },
+      "speedup": 1.0674041246890227
+    },
+    "audio_vae_decode": {
+      "medians": {
+        "baseline": 0.042883458,
+        "candidate": 0.042792250500000004
+      },
+      "samples": {
+        "baseline": [
+          0.038247416,
+          0.0475195
+        ],
+        "candidate": [
+          0.047158417,
+          0.038426084
+        ]
+      },
+      "speedup": 1.0021314022734091
+    },
+    "audio_vocoder": {
+      "medians": {
+        "baseline": 0.43978893750000003,
+        "candidate": 0.441059521
+      },
+      "samples": {
+        "baseline": [
+          0.440837209,
+          0.438740666
+        ],
+        "candidate": [
+          0.436321917,
+          0.445797125
+        ]
+      },
+      "speedup": 0.9971192470868349
+    },
+    "conditioning_and_rng": {
+      "medians": {
+        "baseline": 0.000547417,
+        "candidate": 0.000539625
+      },
+      "samples": {
+        "baseline": [
+          0.000529625,
+          0.000565209
+        ],
+        "candidate": [
+          0.00053325,
+          0.000546
+        ]
+      },
+      "speedup": 1.0144396571693306
+    },
+    "connector": {
+      "medians": {
+        "baseline": 0.0,
+        "candidate": 0.0
+      },
+      "samples": {
+        "baseline": [
+          0,
+          0
+        ],
+        "candidate": [
+          0,
+          0
+        ]
+      },
+      "speedup": null
+    },
+    "denoise": {
+      "medians": {
+        "baseline": 29.686772125,
+        "candidate": 29.3086619375
+      },
+      "samples": {
+        "baseline": [
+          28.659238000000002,
+          30.71430625
+        ],
+        "candidate": [
+          29.045275791,
+          29.572048084
+        ]
+      },
+      "speedup": 1.0129009706518268
+    },
+    "exec_handoff": {
+      "medians": {
+        "baseline": 0.21509497899999896,
+        "candidate": 0.19571214599999975
+      },
+      "samples": {
+        "baseline": [
+          0.1640156250000011,
+          0.2661743329999968
+        ],
+        "candidate": [
+          0.19260358400000044,
+          0.19882070799999907
+        ]
+      },
+      "speedup": 1.0990374557540197
+    },
+    "export": {
+      "medians": {
+        "baseline": 0.2383752085,
+        "candidate": 0.238270771
+      },
+      "samples": {
+        "baseline": [
+          0.230578792,
+          0.246171625
+        ],
+        "candidate": [
+          0.227238292,
+          0.24930325
+        ]
+      },
+      "speedup": 1.0004383143579116
+    },
+    "finalizer_wall": {
+      "medians": {
+        "baseline": 4.1401476875,
+        "candidate": 3.2770842085
+      },
+      "samples": {
+        "baseline": [
+          4.086479208,
+          4.193816167
+        ],
+        "candidate": [
+          3.27426625,
+          3.279902167
+        ]
+      },
+      "speedup": 1.2633632290441035
+    },
+    "latent_upsample": {
+      "medians": {
+        "baseline": 0.597810979,
+        "candidate": 0.5730719165
+      },
+      "samples": {
+        "baseline": [
+          0.627580708,
+          0.56804125
+        ],
+        "candidate": [
+          0.576092042,
+          0.570051791
+        ]
+      },
+      "speedup": 1.0431692110321724
+    },
+    "model_load": {
+      "medians": {
+        "baseline": 1.4180526875,
+        "candidate": 1.397893979
+      },
+      "samples": {
+        "baseline": [
+          1.331483167,
+          1.504622208
+        ],
+        "candidate": [
+          1.386359833,
+          1.409428125
+        ]
+      },
+      "speedup": 1.0144207706756279
+    },
+    "pre_finalizer": {
+      "medians": {
+        "baseline": 31.930332,
+        "candidate": 31.496637999999997
+      },
+      "samples": {
+        "baseline": [
+          30.854198,
+          33.006466
+        ],
+        "candidate": [
+          31.228263,
+          31.765013
+        ]
+      },
+      "speedup": 1.0137695331165189
+    },
+    "pre_model_load": {
+      "medians": {
+        "baseline": 0.20857170800000002,
+        "candidate": 0.197529146
+      },
+      "samples": {
+        "baseline": [
+          0.217775458,
+          0.199367958
+        ],
+        "candidate": [
+          0.200664959,
+          0.194393333
+        ]
+      },
+      "speedup": 1.0559034563942278
+    },
+    "request_wall": {
+      "medians": {
+        "baseline": 36.2855746665,
+        "candidate": 34.969434354499995
+      },
+      "samples": {
+        "baseline": [
+          35.104692833,
+          37.4664565
+        ],
+        "candidate": [
+          34.695132834,
+          35.243735875
+        ]
+      },
+      "speedup": 1.0376368773557425
+    },
+    "request_wall_estimate": {
+      "medians": {
+        "baseline": 36.0704796875,
+        "candidate": 34.7737222085
+      },
+      "samples": {
+        "baseline": [
+          34.940677208,
+          37.200282167000005
+        ],
+        "candidate": [
+          34.502529249999995,
+          35.044915167
+        ]
+      },
+      "speedup": 1.037291304946441
+    },
+    "rgb_convert": {
+      "medians": {
+        "baseline": 0.014924146,
+        "candidate": 0.0155990415
+      },
+      "samples": {
+        "baseline": [
+          0.015357,
+          0.014491292
+        ],
+        "candidate": [
+          0.016873958,
+          0.014324125
+        ]
+      },
+      "speedup": 0.9567348096355791
+    },
+    "stage1": {
+      "medians": {
+        "baseline": 13.9853110205,
+        "candidate": 14.0060748335
+      },
+      "samples": {
+        "baseline": [
+          13.443631833,
+          14.526990208
+        ],
+        "candidate": [
+          13.937053208,
+          14.075096459
+        ]
+      },
+      "speedup": 0.9985175137754986
+    },
+    "stage2": {
+      "medians": {
+        "baseline": 15.7014611045,
+        "candidate": 15.302587104
+      },
+      "samples": {
+        "baseline": [
+          15.215606167,
+          16.187316042
+        ],
+        "candidate": [
+          15.108222583,
+          15.496951625
+        ]
+      },
+      "speedup": 1.0260657886009181
+    },
+    "text_encode": {
+      "medians": {
+        "baseline": 0.0,
+        "candidate": 0.0
+      },
+      "samples": {
+        "baseline": [
+          0,
+          0
+        ],
+        "candidate": [
+          0,
+          0
+        ]
+      },
+      "speedup": null
+    },
+    "text_encoder_load": {
+      "medians": {
+        "baseline": 0.0,
+        "candidate": 0.0
+      },
+      "samples": {
+        "baseline": [
+          0,
+          0
+        ],
+        "candidate": [
+          0,
+          0
+        ]
+      },
+      "speedup": null
+    },
+    "video_export": {
+      "medians": {
+        "baseline": 0.2383752085,
+        "candidate": 0.238270771
+      },
+      "samples": {
+        "baseline": [
+          0.230578792,
+          0.246171625
+        ],
+        "candidate": [
+          0.227238292,
+          0.24930325
+        ]
+      },
+      "speedup": 1.0004383143579116
+    },
+    "video_input_read": {
+      "medians": {
+        "baseline": 0.0007574789999999999,
+        "candidate": 0.0007617500000000001
+      },
+      "samples": {
+        "baseline": [
+          0.000728416,
+          0.000786542
+        ],
+        "candidate": [
+          0.000749333,
+          0.000774167
+        ]
+      },
+      "speedup": 0.9943931736133901
+    },
+    "video_vae_compute": {
+      "medians": {
+        "baseline": 2.7723509374999997,
+        "candidate": 1.9167718335
+      },
+      "samples": {
+        "baseline": [
+          2.733970875,
+          2.810731
+        ],
+        "candidate": [
+          1.923535625,
+          1.910008042
+        ]
+      },
+      "speedup": 1.4463646058684636
+    },
+    "video_vae_decode": {
+      "medians": {
+        "baseline": 2.876617833,
+        "candidate": 2.0129334375
+      },
+      "samples": {
+        "baseline": [
+          2.835977583,
+          2.917258083
+        ],
+        "candidate": [
+          2.020451208,
+          2.005415667
+        ]
+      },
+      "speedup": 1.4290675386527778
+    },
+    "video_vae_weight_load": {
+      "medians": {
+        "baseline": 0.1035094165,
+        "candidate": 0.095399854
+      },
+      "samples": {
+        "baseline": [
+          0.101278292,
+          0.105740541
+        ],
+        "candidate": [
+          0.09616625,
+          0.094633458
+        ]
+      },
+      "speedup": 1.0850060263194952
+    }
+  },
+  "samples": [
+    {
+      "arm": "candidate",
+      "excluded_warmup": true,
+      "process_wall_seconds": 51.85630124999443,
+      "conditioning_cache_hit": false,
+      "timings_seconds": {
+        "model_load": 2.277762042,
+        "video_vae_decode": 2.748771333,
+        "video_vae_weight_load": 0.128003208,
+        "text_encode": 3.525809291,
+        "audio_bwe": 0.480108583,
+        "conditioning_and_rng": 5.2040705,
+        "denoise": 30.962073583000002,
+        "stage2": 14.628186875,
+        "finalizer_wall": 4.136467667,
+        "audio_mux": 0.094486417,
+        "audio_decode": 0.961747417,
+        "audio_vae_decode": 0.047240292,
+        "video_vae_compute": 2.620153833,
+        "audio_input_read": 0.000376917,
+        "video_export": 0.320740208,
+        "connector": 5.203287292,
+        "video_input_read": 0.000614292,
+        "stage1": 16.333886708,
+        "request_wall": 51.458105041,
+        "exec_handoff": 3.7363193740000025,
+        "request_wall_estimate": 47.721785667,
+        "latent_upsample": 0.718664792,
+        "pre_finalizer": 43.585318,
+        "audio_vocoder": 0.434021625,
+        "export": 0.320740208,
+        "text_encoder_load": 0.586634,
+        "pre_model_load": 4.399242291,
+        "rgb_convert": 0.010722292
+      },
+      "denoise_step_seconds": {
+        "stage1": [
+          2.4285045,
+          2.081090083,
+          1.988396042,
+          1.956068875,
+          2.035381167,
+          1.929976041,
+          1.95173875,
+          1.939650292
+        ],
+        "stage2": [
+          4.907608375,
+          4.79732025,
+          4.840000875
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "excluded_warmup": true,
+      "process_wall_seconds": 34.22220366698457,
+      "conditioning_cache_hit": true,
+      "timings_seconds": {
+        "model_load": 0.91013925,
+        "video_vae_decode": 3.123012542,
+        "video_vae_weight_load": 0.168360625,
+        "text_encode": 0,
+        "audio_bwe": 0.482170417,
+        "conditioning_and_rng": 0.000530042,
+        "denoise": 27.553848457999997,
+        "stage2": 14.748262333,
+        "finalizer_wall": 4.708460917,
+        "audio_mux": 0.189589917,
+        "audio_decode": 0.96317325,
+        "audio_vae_decode": 0.042091,
+        "video_vae_compute": 2.95306825,
+        "audio_input_read": 0.000464292,
+        "video_export": 0.418557583,
+        "connector": 0,
+        "video_input_read": 0.001583667,
+        "stage1": 12.805586125,
+        "request_wall": 34.175790375000005,
+        "exec_handoff": 0.15890445800000563,
+        "request_wall_estimate": 34.016885916999996,
+        "latent_upsample": 0.615843708,
+        "pre_finalizer": 29.308425,
+        "audio_vocoder": 0.438447541,
+        "export": 0.418557583,
+        "text_encoder_load": 0,
+        "pre_model_load": 0.211084333,
+        "rgb_convert": 0.014127625
+      },
+      "denoise_step_seconds": {
+        "stage1": [
+          1.718158333,
+          1.561060417,
+          1.570693416,
+          1.563416709,
+          1.584295375,
+          1.5919395,
+          1.58685,
+          1.608421375
+        ],
+        "stage2": [
+          4.822461792,
+          4.864962291,
+          4.970401459
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "excluded_warmup": false,
+      "process_wall_seconds": 35.15702512499411,
+      "conditioning_cache_hit": true,
+      "timings_seconds": {
+        "model_load": 1.331483167,
+        "video_vae_decode": 2.835977583,
+        "video_vae_weight_load": 0.101278292,
+        "text_encode": 0,
+        "audio_bwe": 0.4823155,
+        "conditioning_and_rng": 0.000529625,
+        "denoise": 28.659238000000002,
+        "stage2": 15.215606167,
+        "finalizer_wall": 4.086479208,
+        "audio_mux": 0.042803333,
+        "audio_decode": 0.9617625,
+        "audio_vae_decode": 0.038247416,
+        "video_vae_compute": 2.733970875,
+        "audio_input_read": 0.000362375,
+        "video_export": 0.230578792,
+        "connector": 0,
+        "video_input_read": 0.000728416,
+        "stage1": 13.443631833,
+        "request_wall": 35.104692833,
+        "exec_handoff": 0.1640156250000011,
+        "request_wall_estimate": 34.940677208,
+        "latent_upsample": 0.627580708,
+        "pre_finalizer": 30.854198,
+        "audio_vocoder": 0.440837209,
+        "export": 0.230578792,
+        "text_encoder_load": 0,
+        "pre_model_load": 0.217775458,
+        "rgb_convert": 0.015357
+      },
+      "denoise_step_seconds": {
+        "stage1": [
+          1.709560916,
+          1.6567505,
+          1.669266584,
+          1.676463166,
+          1.669737042,
+          1.674519167,
+          1.677568916,
+          1.687903459
+        ],
+        "stage2": [
+          5.048025209,
+          5.024993125,
+          5.054154291
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "excluded_warmup": false,
+      "process_wall_seconds": 34.7277816660353,
+      "conditioning_cache_hit": true,
+      "timings_seconds": {
+        "model_load": 1.386359833,
+        "video_vae_decode": 2.020451208,
+        "video_vae_weight_load": 0.09616625,
+        "text_encode": 0,
+        "audio_bwe": 0.484611416,
+        "conditioning_and_rng": 0.00053325,
+        "denoise": 29.045275791,
+        "stage2": 15.108222583,
+        "finalizer_wall": 3.27426625,
+        "audio_mux": 0.041223209,
+        "audio_decode": 0.968479583,
+        "audio_vae_decode": 0.047158417,
+        "video_vae_compute": 1.923535625,
+        "audio_input_read": 0.000387833,
+        "video_export": 0.227238292,
+        "connector": 0,
+        "video_input_read": 0.000749333,
+        "stage1": 13.937053208,
+        "request_wall": 34.695132834,
+        "exec_handoff": 0.19260358400000044,
+        "request_wall_estimate": 34.502529249999995,
+        "latent_upsample": 0.576092042,
+        "pre_finalizer": 31.228263,
+        "audio_vocoder": 0.436321917,
+        "export": 0.227238292,
+        "text_encoder_load": 0,
+        "pre_model_load": 0.200664959,
+        "rgb_convert": 0.016873958
+      },
+      "denoise_step_seconds": {
+        "stage1": [
+          1.798522417,
+          1.706086458,
+          1.70244875,
+          1.74464875,
+          1.753297042,
+          1.73572625,
+          1.7428535,
+          1.73164725
+        ],
+        "stage2": [
+          4.9886225,
+          4.983390458,
+          5.046695625
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "excluded_warmup": false,
+      "process_wall_seconds": 35.276467207993846,
+      "conditioning_cache_hit": true,
+      "timings_seconds": {
+        "model_load": 1.409428125,
+        "video_vae_decode": 2.005415667,
+        "video_vae_weight_load": 0.094633458,
+        "text_encode": 0,
+        "audio_bwe": 0.483763125,
+        "conditioning_and_rng": 0.000546,
+        "denoise": 29.572048084,
+        "stage2": 15.496951625,
+        "finalizer_wall": 3.279902167,
+        "audio_mux": 0.042513625,
+        "audio_decode": 0.9683455,
+        "audio_vae_decode": 0.038426084,
+        "video_vae_compute": 1.910008042,
+        "audio_input_read": 0.000359166,
+        "video_export": 0.24930325,
+        "connector": 0,
+        "video_input_read": 0.000774167,
+        "stage1": 14.075096459,
+        "request_wall": 35.243735875,
+        "exec_handoff": 0.19882070799999907,
+        "request_wall_estimate": 35.044915167,
+        "latent_upsample": 0.570051791,
+        "pre_finalizer": 31.765013,
+        "audio_vocoder": 0.445797125,
+        "export": 0.24930325,
+        "text_encoder_load": 0,
+        "pre_model_load": 0.194393333,
+        "rgb_convert": 0.014324125
+      },
+      "denoise_step_seconds": {
+        "stage1": [
+          1.792022917,
+          1.704401833,
+          1.73615475,
+          1.721957209,
+          1.765075083,
+          1.756520167,
+          1.785412625,
+          1.791957291
+        ],
+        "stage2": [
+          4.97878925,
+          5.258950458,
+          5.167060375
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "excluded_warmup": false,
+      "process_wall_seconds": 37.501286957995035,
+      "conditioning_cache_hit": true,
+      "timings_seconds": {
+        "model_load": 1.504622208,
+        "video_vae_decode": 2.917258083,
+        "video_vae_weight_load": 0.105740541,
+        "text_encode": 0,
+        "audio_bwe": 0.482647875,
+        "conditioning_and_rng": 0.000565209,
+        "denoise": 30.71430625,
+        "stage2": 16.187316042,
+        "finalizer_wall": 4.193816167,
+        "audio_mux": 0.046577709,
+        "audio_decode": 0.969317458,
+        "audio_vae_decode": 0.0475195,
+        "video_vae_compute": 2.810731,
+        "audio_input_read": 0.000409417,
+        "video_export": 0.246171625,
+        "connector": 0,
+        "video_input_read": 0.000786542,
+        "stage1": 14.526990208,
+        "request_wall": 37.4664565,
+        "exec_handoff": 0.2661743329999968,
+        "request_wall_estimate": 37.200282167000005,
+        "latent_upsample": 0.56804125,
+        "pre_finalizer": 33.006466,
+        "audio_vocoder": 0.438740666,
+        "export": 0.246171625,
+        "text_encoder_load": 0,
+        "pre_model_load": 0.199367958,
+        "rgb_convert": 0.014491292
+      },
+      "denoise_step_seconds": {
+        "stage1": [
+          1.837483917,
+          1.743719,
+          1.7684285,
+          1.816174083,
+          1.835607208,
+          1.838937375,
+          1.818092875,
+          1.846761417
+        ],
+        "stage2": [
+          5.365944709,
+          5.427207,
+          5.309151208
+        ]
+      }
+    }
+  ],
+  "media_validation": {
+    "complete": true,
+    "samples_checked": 6,
+    "all_video_decodes_equal": true,
+    "all_audio_decodes_equal": true,
+    "video_frames": 97,
+    "fps": 24,
+    "width": 704,
+    "height": 448,
+    "audio_sample_rate": 48000,
+    "audio_channels": 2,
+    "audio_frames": 194000,
+    "duration_seconds": 4.041666666666667,
+    "audio_video_duration_match": true,
+    "strict_monotonic_video_pts": true,
+    "all_audio_nonzero": true,
+    "scope": "Full BGRA video and PCM16 audio decode using AVFoundation after all timings; equality is for this fixed seed/request, not a cross-prompt perceptual study.",
+    "samples": [
+      {
+        "audio_channels": 2,
+        "audio_duration_seconds": 4.041666666666667,
+        "audio_frames": 194000,
+        "audio_pcm_s16le_sha256": "e8a6556a11b2c63afbbc891f444e93c240a27eef37ce43c5f8daef64e8d15cf4",
+        "audio_peak": 0.0394287109375,
+        "audio_rms": 0.006638252906252174,
+        "audio_sample_rate": 48000,
+        "audio_tracks": 1,
+        "fps": 24,
+        "height": 448,
+        "video_bgra_sha256": "ecf8ca8fdfe0bf44b8b136914925c5e1b540254421831dafca8c89d287b079b1",
+        "video_duration_seconds": 4.041666666666667,
+        "video_frames": 97,
+        "video_tracks": 1,
+        "width": 704,
+        "sample": "00-candidate"
+      },
+      {
+        "audio_channels": 2,
+        "audio_duration_seconds": 4.041666666666667,
+        "audio_frames": 194000,
+        "audio_pcm_s16le_sha256": "e8a6556a11b2c63afbbc891f444e93c240a27eef37ce43c5f8daef64e8d15cf4",
+        "audio_peak": 0.0394287109375,
+        "audio_rms": 0.006638252906252174,
+        "audio_sample_rate": 48000,
+        "audio_tracks": 1,
+        "fps": 24,
+        "height": 448,
+        "video_bgra_sha256": "ecf8ca8fdfe0bf44b8b136914925c5e1b540254421831dafca8c89d287b079b1",
+        "video_duration_seconds": 4.041666666666667,
+        "video_frames": 97,
+        "video_tracks": 1,
+        "width": 704,
+        "sample": "01-baseline"
+      },
+      {
+        "audio_channels": 2,
+        "audio_duration_seconds": 4.041666666666667,
+        "audio_frames": 194000,
+        "audio_pcm_s16le_sha256": "e8a6556a11b2c63afbbc891f444e93c240a27eef37ce43c5f8daef64e8d15cf4",
+        "audio_peak": 0.0394287109375,
+        "audio_rms": 0.006638252906252174,
+        "audio_sample_rate": 48000,
+        "audio_tracks": 1,
+        "fps": 24,
+        "height": 448,
+        "video_bgra_sha256": "ecf8ca8fdfe0bf44b8b136914925c5e1b540254421831dafca8c89d287b079b1",
+        "video_duration_seconds": 4.041666666666667,
+        "video_frames": 97,
+        "video_tracks": 1,
+        "width": 704,
+        "sample": "02-baseline"
+      },
+      {
+        "audio_channels": 2,
+        "audio_duration_seconds": 4.041666666666667,
+        "audio_frames": 194000,
+        "audio_pcm_s16le_sha256": "e8a6556a11b2c63afbbc891f444e93c240a27eef37ce43c5f8daef64e8d15cf4",
+        "audio_peak": 0.0394287109375,
+        "audio_rms": 0.006638252906252174,
+        "audio_sample_rate": 48000,
+        "audio_tracks": 1,
+        "fps": 24,
+        "height": 448,
+        "video_bgra_sha256": "ecf8ca8fdfe0bf44b8b136914925c5e1b540254421831dafca8c89d287b079b1",
+        "video_duration_seconds": 4.041666666666667,
+        "video_frames": 97,
+        "video_tracks": 1,
+        "width": 704,
+        "sample": "03-candidate"
+      },
+      {
+        "audio_channels": 2,
+        "audio_duration_seconds": 4.041666666666667,
+        "audio_frames": 194000,
+        "audio_pcm_s16le_sha256": "e8a6556a11b2c63afbbc891f444e93c240a27eef37ce43c5f8daef64e8d15cf4",
+        "audio_peak": 0.0394287109375,
+        "audio_rms": 0.006638252906252174,
+        "audio_sample_rate": 48000,
+        "audio_tracks": 1,
+        "fps": 24,
+        "height": 448,
+        "video_bgra_sha256": "ecf8ca8fdfe0bf44b8b136914925c5e1b540254421831dafca8c89d287b079b1",
+        "video_duration_seconds": 4.041666666666667,
+        "video_frames": 97,
+        "video_tracks": 1,
+        "width": 704,
+        "sample": "04-candidate"
+      },
+      {
+        "audio_channels": 2,
+        "audio_duration_seconds": 4.041666666666667,
+        "audio_frames": 194000,
+        "audio_pcm_s16le_sha256": "e8a6556a11b2c63afbbc891f444e93c240a27eef37ce43c5f8daef64e8d15cf4",
+        "audio_peak": 0.0394287109375,
+        "audio_rms": 0.006638252906252174,
+        "audio_sample_rate": 48000,
+        "audio_tracks": 1,
+        "fps": 24,
+        "height": 448,
+        "video_bgra_sha256": "ecf8ca8fdfe0bf44b8b136914925c5e1b540254421831dafca8c89d287b079b1",
+        "video_duration_seconds": 4.041666666666667,
+        "video_frames": 97,
+        "video_tracks": 1,
+        "width": 704,
+        "sample": "05-baseline"
+      }
+    ]
+  },
+  "validation": {
+    "complete": true,
+    "app_code_sha256": "22fe7b3945880a2516831ca59ed22f99cf2f47066ffafa798c12b3732c9051ef",
+    "checks": [
+      {
+        "command": "TURBOCIDER_BUILD_OUTPUT_DIR=build/ltx-m5-opt-v23 bash tools/native/build_app.sh",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-release-build-app.log"
+      },
+      {
+        "command": "make test-app NATIVE_TEST_OUT=build/ltx-m5-opt-v23",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-release-test-app.log"
+      },
+      {
+        "command": "make test-ltx-optimization; test_ltx_conditioning_cache.py; test_ltx_w8a8.py",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-release-optimization-tests.log"
+      },
+      {
+        "command": "test_ltx_conditioning_cache.py (after EOF cleanup)",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-release-cache-final.log"
+      },
+      {
+        "command": "tests/repository/test_package_in_use.py",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-release-package-guard.log"
+      },
+      {
+        "command": "make test remaining recipes (exact 43-command suffix from test-streaming-contract through test_inventory.py)",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-release-make-test-remainder.log"
+      },
+      {
+        "command": "test_contract.py against final native library",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-v23-native-contract.log"
+      },
+      {
+        "command": "test_contract.py against final packaged library",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-v23-packaged-contract.log"
+      },
+      {
+        "command": "Five actual packaged DiT block cases versus V22",
+        "exit_code": 0,
+        "local_log": "/tmp/tc-ltx-v23-final-packaged-block-units.log"
+      }
+    ],
+    "contract_counts_per_library": {
+      "passed": 149,
+      "skipped": 3
+    },
+    "pruna_math": {
+      "cases": 30,
+      "independent_fp64_witnesses": 450,
+      "all_byte_exact": true
+    },
+    "source_inputs_verified": 697,
+    "make_test_execution": {
+      "single_clean_invocation": false,
+      "initial_exit_code": 2,
+      "initial_log": "/tmp/tc-ltx-release-make-test-verified.log",
+      "completed_prefix": "All make test recipes through test-streaming-host passed. test-streaming-contract failed at direct C++ adapter linkage because the local incremental helper omitted canonical default symbol visibility for ltx_session.mm.",
+      "repair": "Rebuilt with canonical symbol visibility; no runtime source logic change. Also removed an extra EOF blank line before the final rebuild.",
+      "resumed_remaining_exit_code": 0,
+      "all_recipe_scopes_completed": true,
+      "remaining_recipe_source": "Exact unmodified suffix of Makefile test recipe, starting with test-streaming-contract; generated /tmp/tc-ltx-release-resume.mk."
+    },
+    "e2e": {
+      "requests": 6,
+      "excluded_full_warmups": 2,
+      "measured_per_arm": 2,
+      "method": "ABBA after candidate-first cache-miss warmup and baseline warmup",
+      "exit_code": 0,
+      "all_decoded_video_equal": true,
+      "all_decoded_audio_equal": true
+    }
+  },
+  "previous_component_evidence": {
+    "connector": {
+      "complete": true,
+      "scope": "real-weight single connector block per process, first call excluded, 4 balanced ABBA/BAAB rounds and 10 warmed calls per process; exact BF16 outputs; not whole-video throughput",
+      "connector": [
+        {
+          "case": "video0-per-block",
+          "medians_seconds": {
+            "baseline": 0.026126,
+            "candidate": 0.024886
+          },
+          "speedup": 1.0498272120871173,
+          "quartet_speedups": [
+            1.068645939431833,
+            1.0497340345302617,
+            1.0474809206117408,
+            1.0556880659767143
+          ],
+          "output_byte_exact": true,
+          "max_observed_phys_footprint_bytes": 486491336
+        },
+        {
+          "case": "audio0-per-block",
+          "medians_seconds": {
+            "baseline": 0.01218675,
+            "candidate": 0.01059475
+          },
+          "speedup": 1.15026310200807,
+          "quartet_speedups": [
+            1.1474020332934185,
+            1.1353904726093393,
+            1.1477603120198558,
+            1.161633509851629
+          ],
+          "output_byte_exact": true,
+          "max_observed_phys_footprint_bytes": 232113064
+        },
+        {
+          "case": "video3-boat-per-block",
+          "medians_seconds": {
+            "baseline": 0.026494499999999997,
+            "candidate": 0.02481025
+          },
+          "speedup": 1.067885249040215,
+          "quartet_speedups": [
+            1.0657594089403806,
+            1.0642551599300212,
+            1.0668145608550974,
+            1.0743087672933307
+          ],
+          "output_byte_exact": true,
+          "max_observed_phys_footprint_bytes": 485213360
+        }
+      ]
+    },
+    "dit": {
+      "complete": true,
+      "scope": "native original block16 coefficients, real connected text, synthetic BF16 hidden states; one block per process; excluded first call then ten warm calls per arm; balanced fresh-process ABBA/BAAB four quartets; serial AV performance only, fast AV correctness tested separately; no full video/step timing",
+      "default_qk_minimum_rows": 2048,
+      "qk_additional_stage_buffers": 0,
+      "dit": [
+        {
+          "case": "stage2-combined",
+          "summaries": {
+            "wall_seconds": {
+              "medians_seconds": {
+                "baseline": 0.10242224999999999,
+                "candidate": 0.09886524999999999
+              },
+              "speedup": 1.035978263343288
+            },
+            "video_self": {
+              "medians_seconds": {
+                "baseline": 0.0324865,
+                "candidate": 0.030055
+              },
+              "speedup": 1.08090168025287
+            },
+            "video_text": {
+              "medians_seconds": {
+                "baseline": 0.016503,
+                "candidate": 0.01591225
+              },
+              "speedup": 1.037125485082248
+            },
+            "audio_self": {
+              "medians_seconds": {
+                "baseline": 0.0010222500000000002,
+                "candidate": 0.0009205000000000001
+              },
+              "speedup": 1.110537751222162
+            },
+            "audio_text": {
+              "medians_seconds": {
+                "baseline": 0.00178175,
+                "candidate": 0.0017339999999999999
+              },
+              "speedup": 1.0275374855824684
+            },
+            "av_norm_modulation": {
+              "medians_seconds": {
+                "baseline": 0.00197225,
+                "candidate": 0.0019207500000000001
+              },
+              "speedup": 1.0268124430560979
+            },
+            "audio_to_video": {
+              "medians_seconds": {
+                "baseline": 0.00661625,
+                "candidate": 0.00609625
+              },
+              "speedup": 1.0852983391429156
+            },
+            "video_to_audio": {
+              "medians_seconds": {
+                "baseline": 0.00633875,
+                "candidate": 0.00615525
+              },
+              "speedup": 1.0298119491491002
+            },
+            "av_residual": {
+              "medians_seconds": {
+                "baseline": 0.00071575,
+                "candidate": 0.0007125
+              },
+              "speedup": 1.004561403508772
+            },
+            "video_ffn": {
+              "medians_seconds": {
+                "baseline": 0.03366525,
+                "candidate": 0.0341585
+              },
+              "speedup": 0.9855599631131343
+            },
+            "audio_ffn": {
+              "medians_seconds": {
+                "baseline": 0.00103475,
+                "candidate": 0.0009989999999999999
+              },
+              "speedup": 1.035785785785786
+            }
+          },
+          "quartet_speedups": [
+            1.0395940955686496,
+            1.036743145190926,
+            1.0376500200911305,
+            1.034267037312715
+          ],
+          "scope": "workspace+QK fusion vs V20 FFN-only workspace policy",
+          "all_outputs_byte_exact": true,
+          "library_sha256": "a4788371369fc803339871e1f4a697ef795cbd4a677653952d9ce2399c380574"
+        }
+      ]
+    },
+    "vae": {
+      "complete": true,
+      "scope": "Native C++ header qualification against the exact frozen V22 header, one convolution per process.",
+      "method": "original BF16 coefficients; deterministic synthetic BF16 input at actual decoder geometry; two excluded warmups then four balanced ABBA/BAAB quartets with five repeated calls per arm sample; full output byte comparison and fifteen FP64 boundary witnesses after all timing; not whole decoder/video",
+      "vae": [
+        {
+          "complete": true,
+          "input_shape": [
+            1,
+            13,
+            14,
+            22,
+            1024
+          ],
+          "output_channels": 1024,
+          "baseline": "native-scalar-input-tensorops",
+          "candidate": "native-optimized-bf16-input-tensorops",
+          "bf16_byte_exact": true,
+          "relative_l2": 0,
+          "max_abs": 0,
+          "differing_bf16_values": 0,
+          "all_finite": true,
+          "fp64_witnesses": 15,
+          "fp64_max_abs": 0,
+          "phys_footprint_bytes": 204161720,
+          "median_seconds": {
+            "baseline": 0.016030646,
+            "candidate": 0.013981021
+          },
+          "speedup": 1.146600563,
+          "samples_seconds": [
+            [
+              0.017314959,
+              0.016028917,
+              0.015932875,
+              0.016032375,
+              0.015905167,
+              0.016104291,
+              0.01614475,
+              0.01528675
+            ],
+            [
+              0.014054791,
+              0.013605833,
+              0.014422542,
+              0.01414725,
+              0.014430208,
+              0.013684417,
+              0.01390725,
+              0.01325875
+            ]
+          ],
+          "name": "mid0-conv1",
+          "packed_admitted": true,
+          "input_load_policy": "grouped scalar",
+          "quartet_speedups": [
+            1.2054636222234176,
+            1.118847837604138,
+            1.138534054784654,
+            1.1570161230950453
+          ]
+        },
+        {
+          "complete": true,
+          "input_shape": [
+            1,
+            13,
+            14,
+            22,
+            1024
+          ],
+          "output_channels": 4096,
+          "baseline": "native-scalar-input-tensorops",
+          "candidate": "scalar fallback for expanding channels",
+          "bf16_byte_exact": true,
+          "relative_l2": 0,
+          "max_abs": 0,
+          "differing_bf16_values": 0,
+          "all_finite": true,
+          "fp64_witnesses": 15,
+          "fp64_max_abs": 0,
+          "phys_footprint_bytes": 593757024,
+          "median_seconds": {
+            "baseline": 0.071849458,
+            "candidate": 0.070343833
+          },
+          "speedup": 1.021403788,
+          "samples_seconds": [
+            [
+              0.072511042,
+              0.071790375,
+              0.0716625,
+              0.072680125,
+              0.073455292,
+              0.071801708,
+              0.071032833,
+              0.071897208
+            ],
+            [
+              0.070929542,
+              0.071396083,
+              0.069405416,
+              0.071016542,
+              0.066808292,
+              0.070110959,
+              0.070576708,
+              0.069673209
+            ]
+          ],
+          "name": "up1024",
+          "packed_admitted": false,
+          "input_load_policy": "scalar expansion fallback",
+          "quartet_speedups": [
+            1.013882194439687,
+            1.0279206119601323,
+            1.0608953740186615,
+            1.0191096298474103
+          ]
+        },
+        {
+          "complete": true,
+          "input_shape": [
+            1,
+            97,
+            112,
+            176,
+            64
+          ],
+          "output_channels": 48,
+          "baseline": "native-scalar-input-tensorops",
+          "candidate": "native-optimized-bf16-input-tensorops",
+          "bf16_byte_exact": true,
+          "relative_l2": 0,
+          "max_abs": 0,
+          "differing_bf16_values": 0,
+          "all_finite": true,
+          "fp64_witnesses": 15,
+          "fp64_max_abs": 0,
+          "phys_footprint_bytes": 917079216,
+          "median_seconds": {
+            "baseline": 0.031927709,
+            "candidate": 0.019318833
+          },
+          "speedup": 1.652672691,
+          "samples_seconds": [
+            [
+              0.032409208,
+              0.032379791,
+              0.032086542,
+              0.032285667,
+              0.03172825,
+              0.031768875,
+              0.03169925,
+              0.031733875
+            ],
+            [
+              0.019297583,
+              0.019402125,
+              0.019410792,
+              0.019340084,
+              0.019224125,
+              0.019195667,
+              0.019363459,
+              0.019237916
+            ]
+          ],
+          "name": "out48",
+          "packed_admitted": true,
+          "input_load_policy": "aligned vec4 with GPU fallback",
+          "quartet_speedups": [
+            1.6741469728918885,
+            1.661180743372098,
+            1.6527191245595498,
+            1.6432866704877742
+          ]
+        },
+        {
+          "complete": true,
+          "input_shape": [
+            1,
+            97,
+            56,
+            88,
+            128
+          ],
+          "output_channels": 128,
+          "baseline": "native-scalar-input-tensorops",
+          "candidate": "native-optimized-bf16-input-tensorops",
+          "bf16_byte_exact": true,
+          "relative_l2": 0,
+          "max_abs": 0,
+          "differing_bf16_values": 0,
+          "all_finite": true,
+          "fp64_witnesses": 15,
+          "fp64_max_abs": 0,
+          "phys_footprint_bytes": 549618576,
+          "median_seconds": {
+            "baseline": 0.029179854,
+            "candidate": 0.017783291
+          },
+          "speedup": 1.640857907,
+          "samples_seconds": [
+            [
+              0.029174917,
+              0.029184792,
+              0.0291215,
+              0.029160666,
+              0.029212167,
+              0.029171583,
+              0.029558417,
+              0.029471833
+            ],
+            [
+              0.017868625,
+              0.017824208,
+              0.017325792,
+              0.017742375,
+              0.017973084,
+              0.017650583,
+              0.017533417,
+              0.018085416
+            ]
+          ],
+          "name": "res128",
+          "packed_admitted": true,
+          "input_load_policy": "aligned vec4 with GPU fallback",
+          "quartet_speedups": [
+            1.6350539896903113,
+            1.6619678467939314,
+            1.6389034290040945,
+            1.6572763627601161
+          ]
+        },
+        {
+          "complete": true,
+          "input_shape": [
+            1,
+            49,
+            56,
+            88,
+            384
+          ],
+          "output_channels": 384,
+          "baseline": "native-scalar-input-tensorops",
+          "candidate": "native-optimized-bf16-input-tensorops",
+          "bf16_byte_exact": true,
+          "relative_l2": 0,
+          "max_abs": 0,
+          "differing_bf16_values": 0,
+          "all_finite": true,
+          "fp64_witnesses": 15,
+          "fp64_max_abs": 0,
+          "phys_footprint_bytes": 816170016,
+          "median_seconds": {
+            "baseline": 0.131332563,
+            "candidate": 0.082372312
+          },
+          "speedup": 1.594377511,
+          "samples_seconds": [
+            [
+              0.131332875,
+              0.129567791,
+              0.131372875,
+              0.13133225,
+              0.129689041,
+              0.129772083,
+              0.131778125,
+              0.132013584
+            ],
+            [
+              0.082036917,
+              0.082280291,
+              0.082356666,
+              0.081977375,
+              0.08243275,
+              0.082605667,
+              0.082387959,
+              0.083461083
+            ]
+          ],
+          "name": "res384",
+          "packed_admitted": true,
+          "input_load_policy": "aligned vec4 with GPU fallback",
+          "quartet_speedups": [
+            1.587786630357059,
+            1.5986044242653292,
+            1.5721256221210604,
+            1.590553106722196
+          ]
+        },
+        {
+          "complete": true,
+          "input_shape": [
+            1,
+            25,
+            28,
+            44,
+            512
+          ],
+          "output_channels": 512,
+          "baseline": "native-scalar-input-tensorops",
+          "candidate": "native-optimized-bf16-input-tensorops",
+          "bf16_byte_exact": true,
+          "relative_l2": 0,
+          "max_abs": 0,
+          "differing_bf16_values": 0,
+          "all_finite": true,
+          "fp64_witnesses": 15,
+          "fp64_max_abs": 0,
+          "phys_footprint_bytes": 212435616,
+          "median_seconds": {
+            "baseline": 0.030216833,
+            "candidate": 0.019031354
+          },
+          "speedup": 1.587739527,
+          "samples_seconds": [
+            [
+              0.030434083,
+              0.029555542,
+              0.029858167,
+              0.030736125,
+              0.029999583,
+              0.029357375,
+              0.030984458,
+              0.030487375
+            ],
+            [
+              0.019344708,
+              0.019040083,
+              0.018871875,
+              0.019485667,
+              0.01907325,
+              0.018721958,
+              0.019007334,
+              0.019022625
+            ]
+          ],
+          "name": "res512",
+          "packed_admitted": true,
+          "input_load_policy": "aligned vec4 with GPU fallback",
+          "quartet_speedups": [
+            1.5628488116556374,
+            1.5797230177053576,
+            1.5704889889744755,
+            1.6164054502399017
+          ]
+        },
+        {
+          "complete": true,
+          "input_shape": [
+            1,
+            49,
+            56,
+            88,
+            256
+          ],
+          "output_channels": 256,
+          "baseline": "native-scalar-input-tensorops",
+          "candidate": "native-optimized-bf16-input-tensorops",
+          "bf16_byte_exact": true,
+          "relative_l2": 0,
+          "max_abs": 0,
+          "differing_bf16_values": 0,
+          "all_finite": true,
+          "fp64_witnesses": 15,
+          "fp64_max_abs": 0,
+          "phys_footprint_bytes": 560087976,
+          "median_seconds": {
+            "baseline": 0.057535896,
+            "candidate": 0.035415292
+          },
+          "speedup": 1.624606025,
+          "samples_seconds": [
+            [
+              0.057401417,
+              0.058289791,
+              0.05789025,
+              0.057343625,
+              0.056822625,
+              0.056565167,
+              0.057670375,
+              0.057970125
+            ],
+            [
+              0.035566042,
+              0.037508666,
+              0.036117292,
+              0.035222792,
+              0.035264541,
+              0.0347875,
+              0.035029208,
+              0.036383541
+            ]
+          ],
+          "name": "res256",
+          "packed_admitted": true,
+          "input_load_policy": "aligned vec4 with GPU fallback",
+          "quartet_speedups": [
+            1.5831908353297832,
+            1.6152752917980866,
+            1.618622246852165,
+            1.619325703313844
+          ]
+        }
+      ],
+      "source_header_sha256": "e4457b8f69c5615697287cd3d56d61a154bb38951ad6534ca1e30e31bf751e49",
+      "reference_header_sha256": "33be73d720bec337e20ec93e3196a6ed41afaadac630d62626952ef4c44d6d98",
+      "additional_gpu_buffers": 0,
+      "default_policy": "native admitted TensorOps BF16 shapes only, CO<=CI; 1024/1024 grouped scalar input reads, otherwise aligned vec4 with GPU fallback for non-eight-byte-aligned views; expanding projections preserve scalar reads",
+      "limitation": "single-operator results, not whole decoder or video speedup; already-qualified DiT/connector/conditioning-cache defaults retained"
+    }
+  },
+  "limitations": [
+    "One device under normal interactive use, two measured samples per arm; not a cross-machine guarantee.",
+    "Cold denotes prompt-cache state, not a cold OS page cache or first-ever shader compile.",
+    "Nested timings must not be summed; denoise includes stage1/stage2 and audio_decode includes VAE/vocoder/BWE.",
+    "The 12 GiB budget targets denoiser working set, not total process or system RAM. No new process-memory peak measurement is claimed.",
+    "Operator and single-block speedups are separate cohorts and cannot be multiplied or extrapolated to full video speed.",
+    "Matching decoded media establishes equality for this fixed request, not a perceptual evaluation across prompts."
+  ],
+  "desktop_package": {
+    "updated_app_entries": [
+      "dist/TurboCider.app",
+      "dist/prunavaed/TurboCider.app",
+      "dist/qwen-time-condition-cache-auto/TurboCider.app"
+    ],
+    "running_app_entry": "dist/TurboCider.app",
+    "loaded_executable_and_three_libraries_verified": true,
+    "mapped_files_sha256": {
+      "TurboCiderNativeApp": "80492e2d23eaec8c8e9207d7b3fce1e75171e248124b31852313cc24050d5529",
+      "libturbocider.dylib": "787cb98bd935ccd844625a2bad4e8825da84869c8d5fee48ac95f00d059ebcc1",
+      "libmlx.dylib": "f7178a17d01050515309c93b51a12eff2ec2635651b68a191ac833835fa23b02",
+      "libjaccl.dylib": "2edd2a1e40e2e978c06e68b6722e052f84b535a54aa7a204218e51b9064e40c5"
+    },
+    "bundle_build_date_utc": "2026-11-11T06:22:43Z",
+    "minimum_macos": "26.2",
+    "signature": "local ad-hoc; codesign --verify --deep --strict passed for all three App bundles",
+    "archive": "dist/TurboCider-macOS-arm64-20261111-v23.zip",
+    "archive_bytes": 98020551,
+    "archive_sha256": "5f83fb59f8ce9237f1ba2964b2c311e8c61b1d5356f8c1bbc9ac4afa55e4e270",
+    "archive_crc_check_passed": true,
+    "gui_generation_exercised": false,
+    "actual_model_generation": "Same-package CLI, six full audio/video requests; App request conversion/worker/history covered by integration tests"
+  }
+}
