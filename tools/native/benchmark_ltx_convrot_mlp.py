@@ -55,7 +55,7 @@ def main():
         raise ValueError('component fixture changed after extraction')
     kind = 'gated' if provenance['kind'] == 'gemma-mlp' else 'mlp'
     sources = [args.probe.resolve(), ROOT / 'tools/native/ltx_convrot_mlp_probe.c',
-               ROOT / 'native/models/ltx_runtime/ltx_gpu.m', ROOT / 'native/models/ltx_runtime/ltx_w8a8.mm',
+               ROOT / 'native/models/ltx_runtime/ltx_gpu.m', ROOT / 'native/platform/apple/ltx_w8a8.mm',
                ROOT / 'native/models/ltx_runtime/ltx_shaders.metal',
                ROOT / 'native/third_party/cider/kernels/w8a8_matmul.metal',
                ROOT / 'native/third_party/cider/kernels/convrot_quantize.metal']

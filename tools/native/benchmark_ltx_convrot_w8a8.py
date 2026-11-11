@@ -26,7 +26,7 @@ def main():
     if not 1 <= args.runs <= 100 or any(not 1 <= n <= 16384 for n in args.rows):
         parser.error('rows must be 1..16384 and runs 1..100')
     sources = [args.probe, ROOT / 'native/models/ltx_runtime/ltx_gpu.m',
-               ROOT / 'native/models/ltx_runtime/ltx_w8a8.mm',
+               ROOT / 'native/platform/apple/ltx_w8a8.mm',
                ROOT / 'native/models/ltx_runtime/ltx_shaders.metal',
                ROOT / 'native/third_party/cider/kernels/w8a8_matmul.metal',
                ROOT / 'native/third_party/cider/kernels/convrot_quantize.metal']

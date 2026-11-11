@@ -11,7 +11,8 @@ fi
 mkdir -p build/native/ltx-attention-probe-build
 python3 tools/native/embed_qwen21_cider_kernels.py --output build/native/ltx-attention-probe-build/qwen21_cider_kernels_generated.hpp
 xcrun clang++ -std=c++20 -O3 -fobjc-arc -I build/native/ltx-attention-probe-build \
-  -c native/models/ltx_runtime/ltx_w8a8.mm \
+  -I native/models/ltx_runtime \
+  -c native/platform/apple/ltx_w8a8.mm \
   -o build/native/ltx-attention-probe-build/ltx_w8a8.o
 xcrun clang -std=c11 -O3 -fobjc-arc -Wall -Wextra \
   -c native/models/ltx_runtime/ltx_gpu.m \

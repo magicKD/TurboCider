@@ -12,6 +12,6 @@ def compile_w8a8(directory, clangxx, sdk):
                     '--output', str(directory / 'qwen21_cider_kernels_generated.hpp')], check=True)
     output = directory / 'ltx_w8a8.o'
     subprocess.run([clangxx, '-std=c++20', '-O2', '-fobjc-arc', '-isysroot', sdk,
-                    '-I', str(directory), '-c', str(ROOT / 'native/models/ltx_runtime/ltx_w8a8.mm'),
+                    '-I', str(directory), '-I', str(ROOT / 'native/models/ltx_runtime'), '-c', str(ROOT / 'native/platform/apple/ltx_w8a8.mm'),
                     '-o', str(output)], check=True)
     return output
