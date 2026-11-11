@@ -753,7 +753,13 @@ Tensor z_attention(const Tensor &x, const Weights &w, const std::string &prefix,
 
 Tensor z_ffn(const Tensor &x, const Weights &w, const std::string &prefix) {
     const char *shared = std::getenv("TURBOCIDER_Z_CONVROT_SHARED_GATE_UP");
-    return z_image::feed_forward(x, w, prefix, shared && std::strcmp(shared, "1") == 0);
+    // W1 and W3 consume the same activation.  On the ConvRot INT8 path,
+    // project_many rotates it once and preserves each projection's original
+    // Q8 GEMM, bias, and LoRA boundaries.  This is numerically exact against
+    // two independent rotations; retain an explicit escape hatch for field
+    // diagnosis without making the optimized path an experimental opt-in.
+    const bool share_convrot = !shared || std::strcmp(shared, "0") != 0;
+    return z_image::feed_forward(x, w, prefix, share_convrot);
 }
 
 float z_hybrid_output_scale(const HybridSession *hybrid) {
@@ -1635,9 +1641,13 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
                     return false;
             return true;
         }();
-    if (profile.split_gpu() || profile.detail_gpu())
+    if (profile.split_gpu())
         require(fully_dense && !w.has_runtime_loras(),
-                "Z-Image detailed GPU profiling requires dense BF16 weights without runtime LoRA");
+                "Z-Image split GPU profiling requires dense BF16 weights without runtime LoRA");
+    if (profile.detail_gpu())
+        require((fully_dense || w.convrot(prefix + ".attention.qkv")) &&
+                    !w.has_runtime_loras(),
+                "Z-Image detailed GPU profiling requires dense BF16 or packed ConvRot weights without runtime LoRA");
     // A8 normally uses the eager compatibility path. Opt in only for the
     // routed, resident BF16-GPU experiment so its compiled pre/post graphs
     // can be qualified separately without changing the W8 GPU route.
@@ -1682,12 +1692,20 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
     auto scale_mlp = Tensor(1.f, parts[2].dtype()) + parts[2];
     auto gate_mlp = mx::tanh(parts[3]);
     if (profile.detail_gpu()) {
+        // gpu_detail originally materialized dense BF16 matmuls directly.
+        // ConvRot checkpoints store packed Q8 planes, so that diagnostic route
+        // could not profile the production INT8 execution at all. Preserve
+        // its explicit completion boundaries while dispatching through the
+        // same projection helpers used by a normal ConvRot block.
+        const bool convrot_detail = w.convrot(prefix + ".attention.qkv");
         profile.detail("modulation", {scale_msa, gate_msa, scale_mlp, gate_mlp});
         auto attention_input = z_modulate_norm(
             x, w.at(prefix + ".attention_norm1.weight"), parts[0], x, false);
         profile.detail("attention_norm_mod", {attention_input});
-        auto qkv = mx::matmul(attention_input,
-                              mx::transpose(w.at(prefix + ".attention.qkv.weight")));
+        auto qkv = convrot_detail
+            ? linear_compat(attention_input, w, prefix + ".attention.qkv")
+            : mx::matmul(attention_input,
+                         mx::transpose(w.at(prefix + ".attention.qkv.weight")));
         profile.detail("qkv_projection", {qkv});
         auto rotated = z_prepare_qkv(qkv,
             w.at(prefix + ".attention.q_norm.weight"),
@@ -1696,22 +1714,32 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
         auto attended = attend(rotated[0], rotated[1], rotated[2], false, {},
                                !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA"));
         profile.detail("sdpa", {attended});
-        auto attention = mx::matmul(
-            attended, mx::transpose(w.at(prefix + ".attention.out.weight")));
+        auto attention = convrot_detail
+            ? linear_compat(attended, w, prefix + ".attention.out")
+            : mx::matmul(attended, mx::transpose(w.at(prefix + ".attention.out.weight")));
         profile.detail("attention_out_projection", {attention});
         auto value = z_modulate_norm(attention,
             w.at(prefix + ".attention_norm2.weight"), parts[1], x, true);
         auto feed_input = z_modulate_norm(value,
             w.at(prefix + ".ffn_norm1.weight"), parts[2], value, false);
         profile.detail("residual_feed_norm", {value, feed_input});
-        auto up = mx::matmul(feed_input,
-            mx::transpose(w.at(prefix + ".feed_forward.w3.weight")));
-        profile.detail("ffn_up_projection", {up});
-        auto activation = z_metal::swiglu_gemm(
-            feed_input, w.at(prefix + ".feed_forward.w1.weight"), up);
+        Tensor activation = feed_input;
+        if (convrot_detail) {
+            auto gate_up = w.project_many(feed_input,
+                {prefix + ".feed_forward.w1", prefix + ".feed_forward.w3"});
+            profile.detail("ffn_gate_up_projection", gate_up);
+            activation = silu(gate_up[0]) * gate_up[1];
+        } else {
+            auto up = mx::matmul(feed_input,
+                mx::transpose(w.at(prefix + ".feed_forward.w3.weight")));
+            profile.detail("ffn_up_projection", {up});
+            activation = z_metal::swiglu_gemm(
+                feed_input, w.at(prefix + ".feed_forward.w1.weight"), up);
+        }
         profile.detail("ffn_gate_swiglu", {activation});
-        auto feed = mx::matmul(
-            activation, mx::transpose(w.at(prefix + ".feed_forward.w2.weight")));
+        auto feed = convrot_detail
+            ? linear_compat(activation, w, prefix + ".feed_forward.w2")
+            : mx::matmul(activation, mx::transpose(w.at(prefix + ".feed_forward.w2.weight")));
         profile.detail("ffn_down_projection", {feed});
         auto result = z_modulate_norm(feed,
             w.at(prefix + ".ffn_norm2.weight"), parts[3], value, true);

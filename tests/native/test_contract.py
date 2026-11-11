@@ -2623,28 +2623,34 @@ class ContractTests(unittest.TestCase):
     def test_device_optimization_profile(self):
         system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
         expected = system['gpu'] == 'Apple M5 Pro' and system['physical_memory_bytes'] == 24 << 30
+        m5_int8 = system['gpu'] == 'Apple M5' and system['physical_memory_bytes'] == 16 << 30
         self.assertIs(system['optimization_profile']['qwen21_layer_streaming'], expected)
         copy_only = system['gpu'] == 'Apple M4 Pro' and system['physical_memory_bytes'] == 48 << 30
         profile = system['optimization_profile']
-        self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'm4pro48-coreml-copy-v1' if copy_only else 'legacy')
+        self.assertEqual(profile['id'], 'm5pro24-v1' if expected else 'm5-16-z-int8-gpu-stream-v1' if m5_int8 else 'm4pro48-coreml-copy-v1' if copy_only else 'legacy')
         for flag in ['z_image_suffix_streaming', 'z_image_hybrid_segments',
                      'z_image_memory_lifecycle', 'z_image_smallest_partition',
                      'external_automatic_partitions', 'coreml_output_copy', 'z_image_int8_streaming']:
-            self.assertIs(profile[flag], expected or (copy_only and flag == 'coreml_output_copy'))
+            self.assertIs(profile[flag], expected or (m5_int8 and flag == 'z_image_int8_streaming') or (copy_only and flag == 'coreml_output_copy'))
 
     def test_z_image_streaming_contract(self):
         request = dict(model='z-image-turbo', operation='image.generate',
                        prompt='A red fox', width=512, height=512, frames=1,
                        steps=8, audio=False, execution='gpu', residency='streamed',
-                       memory_budget_bytes=10 << 30)
+                       memory_budget_bytes=8 << 30)
         code, result, error = plan(request)
         self.assertEqual(code, 0, error)
         self.assertEqual(result['residency'], 'streamed')
-        self.assertEqual(result['memory_budget_bytes'], 10 << 30)
+        self.assertEqual(result['memory_budget_bytes'], 8 << 30)
         hybrid = {**request, 'execution': 'gpu_ane', 'allow_approximation': True,
                   'ane_manifest': '/tmp/z-image-compiled.json'}
         code, result, error = plan(hybrid)
         system = json.loads(consume(C.c_void_p(lib.tc_system_json())))
+        if system['optimization_profile']['id'] == 'm5-16-z-int8-gpu-stream-v1':
+            for budget_gib in (7, 10):
+                budget_code, _, budget_error = plan({**request, 'memory_budget_bytes': budget_gib << 30})
+                self.assertNotEqual(budget_code, 0)
+                self.assertIn('supports 6 or 8 GiB budgets', budget_error)
         if system['optimization_profile']['z_image_suffix_streaming']:
             self.assertEqual(code, 0, error)
             self.assertEqual(result['execution'], 'gpu_ane_experimental')

@@ -35,7 +35,9 @@ class WeightStreamTests(unittest.TestCase):
         lib.tc_string_free.argtypes = [C.c_void_p]
         result = lib.tc_system_json()
         try:
-            cls.measured_device = json.loads(C.string_at(result))["optimization_profile"].get("z_image_int8_streaming", False)
+            profile = json.loads(C.string_at(result))["optimization_profile"]
+            cls.measured_device = profile.get("z_image_int8_streaming", False)
+            cls.suffix_device = profile.get("z_image_suffix_streaming", False)
         finally:
             lib.tc_string_free(result)
 
@@ -125,10 +127,10 @@ class WeightStreamTests(unittest.TestCase):
 
     def test_convrot_gpu_values_prefetch_depths_and_full_residency(self):
         if not self.measured_device:
-            self.skipTest("INT8 streaming requires the measured M5 Pro 24 GiB profile")
+            self.skipTest("INT8 streaming requires a qualified device")
         path = self.convrot_fixture()
-        for depth in (1, 2, 4, 8):
-            for suffix in (False, True):
+        for depth in ((1, 2, 4, 8) if self.suffix_device else (1,)):
+            for suffix in ((False, True) if self.suffix_device else (False,)):
                 with self.subTest(depth=depth, suffix=suffix):
                     result = self.run_probe(path, f"--convrot-{depth}-{'suffix' if suffix else 'full'}")
                     self.assertEqual(result.returncode, 0, result.stderr)
@@ -136,7 +138,7 @@ class WeightStreamTests(unittest.TestCase):
 
     def test_convrot_rejects_incompatible_scale_layout(self):
         if not self.measured_device:
-            self.skipTest("INT8 streaming requires the measured M5 Pro 24 GiB profile")
+            self.skipTest("INT8 streaming requires a qualified device")
         path = self.convrot_fixture(lambda h: [v.update(shape=[1, v["shape"][0]]) for k, v in h.items()
                                              if k.endswith(".weight_scale")])
         result = self.run_probe(path, "--convrot-1-full")
@@ -148,24 +150,24 @@ class WeightStreamTests(unittest.TestCase):
             self.skipTest("negative hardware path runs on unmeasured devices; policy matrix covers it on this host")
         result = self.run_probe(self.convrot_fixture(), "--convrot-1-full")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("only enabled for Apple M5 Pro 24 GiB", result.stderr)
+        self.assertIn("only enabled for qualified Apple M5 16 GiB or M5 Pro 24 GiB", result.stderr)
 
     def test_compact_suffix_values_bytes_reuse_and_cancel(self):
-        if not self.measured_device:
+        if not self.suffix_device:
             self.skipTest("suffix streaming requires the measured device profile")
         result = self.run_probe(self.suffix_fixture(), "--suffix")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS: compact suffix", result.stdout)
 
     def test_cancel_during_suffix_preparation_then_retry(self):
-        if not self.measured_device:
+        if not self.suffix_device:
             self.skipTest("suffix streaming requires the measured device profile")
         result = self.run_probe(self.suffix_fixture(), "--cancel-pack")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS: compact suffix", result.stdout)
 
     def test_suffix_rejects_incompatible_geometry(self):
-        if not self.measured_device:
+        if not self.suffix_device:
             self.skipTest("suffix streaming requires the measured device profile")
         path = self.suffix_fixture(lambda h: h["noise_refiner.0.feed_forward.w2.weight"].update(shape=[3, 8]))
         result = self.run_probe(path, "--suffix")
@@ -173,7 +175,7 @@ class WeightStreamTests(unittest.TestCase):
         self.assertIn("suffix geometry", result.stderr)
 
     def test_suffix_requires_all_hybrid_weights(self):
-        if not self.measured_device:
+        if not self.suffix_device:
             self.skipTest("suffix streaming requires the measured device profile")
         result = self.run_probe(self.fixture(), "--suffix")
         self.assertNotEqual(result.returncode, 0)

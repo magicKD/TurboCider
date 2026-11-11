@@ -46,6 +46,9 @@ import Foundation
         try check(!ZImageInstallation.requiresResident(variantID: "int8-convrot",
             systemJSON: #"{"optimization_profile":{"id":"m5pro24-v1","z_image_int8_streaming":true}}"#),
                   "Measured device did not expose INT8 streaming")
+        try check(!ZImageInstallation.requiresResident(variantID: "int8-convrot",
+            systemJSON: #"{"optimization_profile":{"id":"m5-16-z-int8-gpu-stream-v1","z_image_int8_streaming":true,"z_image_suffix_streaming":false}}"#),
+                  "M5 16 GiB GPU streaming was hidden in the App")
         let alias = root.appendingPathComponent("current-int8")
         try fm.createSymbolicLink(at: alias, withDestinationURL: URL(fileURLWithPath: int8.path))
         var other = bf16; other.modelID = "flux2-klein-4b"; other.path = root.appendingPathComponent("flux").path
@@ -107,9 +110,21 @@ import Foundation
         studio.draft.acceleration?.policy = "gpu"
         studio.selectInstallation(modelID: "z-image-turbo", path: int8.path)
         try check(!studio.draft.usesANE && studio.draft.accelerationHint.contains("INT8"), "GPU preference or INT8 label was lost")
-        studio.draft.residency = "streamed"
+        studio.draft.streaming.selection = .tier8
+        studio.draft.streaming.userSelected = true
+        try check(!studio.draft.publicStreamingModel && !studio.draft.usesPublicStreaming,
+                  "Unsupported public INT8 tier hid the GPU residency picker")
+        studio.setZImageResidency("streamed")
+        try check(studio.draft.streaming.selection == .off,
+                  "Selecting INT8 GPU streaming retained a stale public tier")
         if int8Streaming {
-            let streamed = try studio.draft.request(output: root.appendingPathComponent("streamed.png"))
+            if !AccelerationDiscovery.optimizationEnabled("z_image_suffix_streaming") {
+                try check(studio.draft.zImageStreamingBudgetGiB == 8,
+                          "M5 INT8 streaming did not choose the supported default budget")
+            }
+            let pair = try studio.draft.publicStreamingRequest(output: root.appendingPathComponent("streamed.png"))
+            try check(pair.v2 == nil, "INT8 GPU streaming was incorrectly sent to the public BF16 selector")
+            let streamed = pair.legacy
             try check(streamed.residency == "streamed", "INT8 streaming request was not preserved")
         } else {
             do {

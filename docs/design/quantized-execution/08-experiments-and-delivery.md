@@ -7,7 +7,23 @@
 
 ## 1. 实际源码改动
 
+<<<<<<< Updated upstream
 [阅读归档章节](../../experiments/quantized-execution/08-experiments-and-delivery.md#1-实际源码改动)。
+=======
+- 新增 `native/models/z_image/ffn.hpp`：复用现有 `Weights::project_many`，使
+  ConvRot gate/up显式共享同一次输入旋转；down仍在SwiGLU后独立旋转。
+- `native/models/z_image/z_image.cpp` 的 `z_ffn` 调用此helper。
+  ConvRot INT8 默认开启；`TURBOCIDER_Z_CONVROT_SHARED_GATE_UP=0` 回退旧路线。
+  不宣称已有streaming/混合channel-slice路线全部覆盖。
+- 新增 `tools/native/convrot_ffn_probe.cpp` 和构建脚本：使用生产inline helper与
+  已有C++ Weights primitives，非Python重写的替代算法。
+- 新增 `tests/native/test_convrot_ffn.py`：一个源码开关契约测试与显式GPU数值回归。
+- 新增 `tools/native/benchmark_convrot_ffn.py`：有benchmark锁、warmup、交错顺序、
+  新路径不覆盖、源码/二进制hash和原始样本。合成数据，不加载真实模型。
+
+没有新增K/IQ生产decoder、通用GGUF pager、M5 INT8 shader或runtime ANE W8A8；
+这些工作的具体实现/验收步骤在02–07。没有放宽unsupported格式、ANE或内存门禁。
+>>>>>>> Stashed changes
 
 ## 2. GPU 数值回归
 

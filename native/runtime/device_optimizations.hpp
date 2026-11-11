@@ -27,7 +27,7 @@ struct DeviceOptimizations {
     unsigned z_image_stream_prefetch(bool convrot, bool hybrid, uint64_t budget,
                                      const char *override = nullptr) const {
         if (!supports_z_image_streaming(convrot))
-            throw std::invalid_argument("Z-Image INT8 streaming is only enabled for Apple M5 Pro 24 GiB; use resident weights on this device");
+            throw std::invalid_argument("Z-Image INT8 streaming is only enabled for qualified Apple M5 16 GiB or M5 Pro 24 GiB devices; use resident weights on this device");
         if (override) {
             if (!z_image_suffix_streaming)
                 throw std::invalid_argument("Z-Image prefetch overrides are only enabled for Apple M5 Pro 24 GiB");
@@ -45,6 +45,8 @@ inline constexpr DeviceOptimizations measured_device_optimizations[] = {
      false, false, false, false, false, true, false},
     {"m5pro24-v1", "Apple M5 Pro", 24ull << 30,
      true, true, true, true, true, true, true, true},
+    {"m5-16-z-int8-gpu-stream-v1", "Apple M5", 16ull << 30,
+     false, false, false, false, false, false, true, false},
 };
 inline const DeviceOptimizations &device_optimizations(std::string_view gpu, uint64_t memory) {
     for (const auto &profile : measured_device_optimizations)

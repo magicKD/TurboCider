@@ -1,0 +1,381 @@
+{
+  "variant": "fused",
+  "library_sha256": "84b5d1b0aa4c53a9284a8b46ac0e6fd4eaa0329e5f4965f17a2fd92f7d363264",
+  "environment": {
+    "TURBOCIDER_Z_PROFILE": "/private/tmp/tc-z-q4-profile-blocks.jsonl",
+    "TURBOCIDER_Z_PROFILE_MODE": "gpu_detail"
+  },
+  "runtime_libraries": {
+    "libturbocider.dylib": {
+      "path": "/private/tmp/tc-z-int8-build/libturbocider.dylib",
+      "sha256": "84b5d1b0aa4c53a9284a8b46ac0e6fd4eaa0329e5f4965f17a2fd92f7d363264"
+    },
+    "libmlx.dylib": {
+      "path": "/Users/kate/Documents/CodeAndProject/TurboCider/.venv/lib/python3.11/site-packages/mlx/lib/libmlx.dylib",
+      "sha256": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51"
+    },
+    "libjaccl.dylib": {
+      "path": "/Users/kate/Documents/CodeAndProject/TurboCider/.venv/lib/python3.11/site-packages/mlx/lib/libjaccl.dylib",
+      "sha256": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e"
+    }
+  },
+  "hardware": {
+    "abi": 1,
+    "engine_version": "0.2.0-native-dev",
+    "gpu": "Apple M5",
+    "gpu_available": true,
+    "mlx_version": "0.32.0",
+    "optimization_profile": {
+      "coreml_output_copy": false,
+      "external_automatic_partitions": false,
+      "id": "legacy",
+      "qwen21_layer_streaming": false,
+      "z_image_hybrid_segments": false,
+      "z_image_int8_streaming": false,
+      "z_image_memory_lifecycle": false,
+      "z_image_smallest_partition": false,
+      "z_image_suffix_streaming": false
+    },
+    "os": "Version 26.4 (Build 25E246)",
+    "physical_memory_bytes": 17179869184,
+    "python_runtime_required": false,
+    "recommended_working_set_bytes": 12713115648,
+    "runtime_dependencies": [
+      "libmlx",
+      "Metal",
+      "Foundation",
+      "ImageIO"
+    ],
+    "z_image_mpp_swiglu_default": false,
+    "z_image_small_shape_metal_default": false,
+    "z_image_virtual_norm_default": false
+  },
+  "system_state": {
+    "boot_time": "{ sec = 1784982277, usec = 780767 } Sat Jul 25 20:24:37 2026",
+    "monotonic_uptime_seconds": 1419440.862163416,
+    "load_average": [
+      1.54931640625,
+      1.7998046875,
+      1.609375
+    ]
+  },
+  "platform": {
+    "macos": "26.4",
+    "kernel": "25.4.0",
+    "machine": "arm64"
+  },
+  "runs": [
+    {
+      "warmup": true,
+      "parity": false,
+      "request": {
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "prompt": "\u4e24\u4e2a\u4eba\u770b\u6d77\u7684\u7167\u7247",
+        "output": "/private/tmp/tc-z-q4-profile/image-0.png",
+        "width": 512,
+        "height": 512,
+        "steps": 9,
+        "seed": 42,
+        "execution": "gpu",
+        "residency": "resident",
+        "audio": false,
+        "dynamic_text": true
+      },
+      "wall_seconds": 19.724591749953106,
+      "error": null,
+      "metrics": {
+        "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+        "actual_denoise_steps": 9,
+        "checkpoint": "z_image_turbo_int8_convrot.safetensors",
+        "encoder_execution": "gpu",
+        "encoder_gpu_graph": "qwen3_gpu_only",
+        "encoder_hybrid": {},
+        "encoder_runtime_backend": "mlx_cpp_metal",
+        "encoder_runtime_precision": "bf16",
+        "encoder_runtime_reuse": null,
+        "encoder_weight_residency": null,
+        "gpu_graph": "eager_blocks",
+        "height": 512,
+        "hybrid": {},
+        "lora_strategy": "none",
+        "memory": {
+          "mlx_active_bytes": 6516709852,
+          "mlx_peak_bytes": 9896811248,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "output": "/private/tmp/tc-z-q4-profile/image-0.png",
+        "plan": {
+          "algorithm_approximations": [],
+          "audio": false,
+          "audio_capability": "not_applicable",
+          "backend": "mlx_cpp_metal_convrot_packed_q8",
+          "decoded_shape": [
+            512,
+            512,
+            1
+          ],
+          "encoder_backend": "mlx_cpp_metal",
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_precision": "bf16",
+          "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+          "executable": true,
+          "execution": "gpu",
+          "executor_operations": null,
+          "gpu_graph": "eager_blocks",
+          "hybrid_mlp_mode": "auto",
+          "limitation": "capabilities depend on model artifacts and configured hardware",
+          "lora_count": 0,
+          "lora_fusion": "none",
+          "lora_strategy": "none",
+          "ltx_backend": "auto",
+          "ltx_fast_av": true,
+          "ltx_sol_dense_edge_blocks": 1,
+          "ltx_sol_dense_edge_steps": 1,
+          "ltx_sol_stage1": false,
+          "ltx_sol_stage2": false,
+          "ltx_sol_tau": 0.5,
+          "ltx_sparse_anchor_stride": 0,
+          "ltx_sparse_keep_blocks": 0,
+          "ltx_sparse_mode": 0,
+          "ltx_sparse_radius": 1,
+          "ltx_sparse_tokens_per_frame": 0,
+          "ltx_stage2_text_rows": 0,
+          "ltx_video_attention_batch": false,
+          "memory_budget_bytes": null,
+          "memory_budget_scope": "unset",
+          "memory_estimate_bytes": 28991029248,
+          "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+          "model": "z-image-turbo",
+          "operation": "image.generate",
+          "precision": "int8_tensorwise_convrot_g256",
+          "profile_identity": "",
+          "prompt_enhance": false,
+          "prompt_enhance_edit_experimental": false,
+          "prompt_enhancer_path": "",
+          "quantized_cache": null,
+          "requested_execution": "gpu",
+          "requested_shape": [
+            512,
+            512,
+            1
+          ],
+          "residency": "resident",
+          "schema_version": 1,
+          "selection_pending": false,
+          "stages": [
+            {
+              "dependencies": [],
+              "id": "text_encode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "text_encode"
+              ],
+              "id": "denoise",
+              "iterations": 9
+            },
+            {
+              "dependencies": [
+                "denoise"
+              ],
+              "id": "vae_decode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "vae_decode"
+              ],
+              "id": "export",
+              "iterations": 1
+            }
+          ],
+          "streaming_offload": false,
+          "validation": "native_candidate",
+          "weight_validation": "comfy-oracle-validated; m4max-a4096-hybrid-qualified"
+        },
+        "prompt_cache_hit": false,
+        "qkv": null,
+        "reference_tokens": 0,
+        "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+        "runtime_precision": "int8_tensorwise_convrot_g256",
+        "schema_version": 1,
+        "seed": 42,
+        "steps": 9,
+        "text_tokens": 12,
+        "timings_seconds": {
+          "denoise": 14.961102625,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 19.673533792,
+          "text_encode": 0.618898666,
+          "vae_decode": 1.701863208
+        },
+        "valid_text_tokens": 12,
+        "validation": "candidate; consult recorded parity suite",
+        "warmup": false,
+        "width": 512
+      }
+    },
+    {
+      "warmup": false,
+      "parity": false,
+      "request": {
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "prompt": "\u4e24\u4e2a\u4eba\u770b\u6d77\u7684\u7167\u7247",
+        "output": "/private/tmp/tc-z-q4-profile/image-1.png",
+        "width": 512,
+        "height": 512,
+        "steps": 9,
+        "seed": 42,
+        "execution": "gpu",
+        "residency": "resident",
+        "audio": false,
+        "dynamic_text": true
+      },
+      "wall_seconds": 26.00439645908773,
+      "error": null,
+      "metrics": {
+        "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+        "actual_denoise_steps": 9,
+        "checkpoint": "z_image_turbo_int8_convrot.safetensors",
+        "encoder_execution": "gpu",
+        "encoder_gpu_graph": "qwen3_gpu_only",
+        "encoder_hybrid": {},
+        "encoder_runtime_backend": "mlx_cpp_metal",
+        "encoder_runtime_precision": "bf16",
+        "encoder_runtime_reuse": null,
+        "encoder_weight_residency": null,
+        "gpu_graph": "eager_blocks",
+        "height": 512,
+        "hybrid": {},
+        "lora_strategy": "none",
+        "memory": {
+          "mlx_active_bytes": 6516709852,
+          "mlx_peak_bytes": 9896811248,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "output": "/private/tmp/tc-z-q4-profile/image-1.png",
+        "plan": {
+          "algorithm_approximations": [],
+          "audio": false,
+          "audio_capability": "not_applicable",
+          "backend": "mlx_cpp_metal_convrot_packed_q8",
+          "decoded_shape": [
+            512,
+            512,
+            1
+          ],
+          "encoder_backend": "mlx_cpp_metal",
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_precision": "bf16",
+          "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+          "executable": true,
+          "execution": "gpu",
+          "executor_operations": null,
+          "gpu_graph": "eager_blocks",
+          "hybrid_mlp_mode": "auto",
+          "limitation": "capabilities depend on model artifacts and configured hardware",
+          "lora_count": 0,
+          "lora_fusion": "none",
+          "lora_strategy": "none",
+          "ltx_backend": "auto",
+          "ltx_fast_av": true,
+          "ltx_sol_dense_edge_blocks": 1,
+          "ltx_sol_dense_edge_steps": 1,
+          "ltx_sol_stage1": false,
+          "ltx_sol_stage2": false,
+          "ltx_sol_tau": 0.5,
+          "ltx_sparse_anchor_stride": 0,
+          "ltx_sparse_keep_blocks": 0,
+          "ltx_sparse_mode": 0,
+          "ltx_sparse_radius": 1,
+          "ltx_sparse_tokens_per_frame": 0,
+          "ltx_stage2_text_rows": 0,
+          "ltx_video_attention_batch": false,
+          "memory_budget_bytes": null,
+          "memory_budget_scope": "unset",
+          "memory_estimate_bytes": 28991029248,
+          "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+          "model": "z-image-turbo",
+          "operation": "image.generate",
+          "precision": "int8_tensorwise_convrot_g256",
+          "profile_identity": "",
+          "prompt_enhance": false,
+          "prompt_enhance_edit_experimental": false,
+          "prompt_enhancer_path": "",
+          "quantized_cache": null,
+          "requested_execution": "gpu",
+          "requested_shape": [
+            512,
+            512,
+            1
+          ],
+          "residency": "resident",
+          "schema_version": 1,
+          "selection_pending": false,
+          "stages": [
+            {
+              "dependencies": [],
+              "id": "text_encode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "text_encode"
+              ],
+              "id": "denoise",
+              "iterations": 9
+            },
+            {
+              "dependencies": [
+                "denoise"
+              ],
+              "id": "vae_decode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "vae_decode"
+              ],
+              "id": "export",
+              "iterations": 1
+            }
+          ],
+          "streaming_offload": false,
+          "validation": "native_candidate",
+          "weight_validation": "comfy-oracle-validated; m4max-a4096-hybrid-qualified"
+        },
+        "prompt_cache_hit": true,
+        "qkv": null,
+        "reference_tokens": 0,
+        "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+        "runtime_precision": "int8_tensorwise_convrot_g256",
+        "schema_version": 1,
+        "seed": 42,
+        "steps": 9,
+        "text_tokens": 12,
+        "timings_seconds": {
+          "denoise": 21.15001125,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 26.003272834,
+          "text_encode": 2.667e-06,
+          "vae_decode": 4.809593625
+        },
+        "valid_text_tokens": 12,
+        "validation": "candidate; consult recorded parity suite",
+        "warmup": false,
+        "width": 512
+      }
+    }
+  ]
+}

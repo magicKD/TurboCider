@@ -1,0 +1,703 @@
+{
+  "library": "/private/tmp/tc-z-int8-build/libturbocider.dylib",
+  "runs": [
+    {
+      "name": "00-resident",
+      "request": {
+        "model": "z-image-turbo",
+        "prompt": "\u4e24\u4e2a\u4eba\u770b\u6d77\u7684\u7167\u7247",
+        "output": "/private/tmp/tc-z-q4-vm-diagnostic/00-resident.png",
+        "width": 512,
+        "height": 512,
+        "steps": 9,
+        "seed": 42,
+        "execution": "gpu",
+        "audio": false,
+        "dynamic_text": true,
+        "residency": "resident"
+      },
+      "wall_seconds": 18.177203208906576,
+      "status": 0,
+      "error": null,
+      "metrics": {
+        "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+        "actual_denoise_steps": 9,
+        "checkpoint": "z_image_turbo_int8_convrot.safetensors",
+        "encoder_execution": "gpu",
+        "encoder_gpu_graph": "qwen3_gpu_only",
+        "encoder_hybrid": {},
+        "encoder_runtime_backend": "mlx_cpp_metal",
+        "encoder_runtime_precision": "bf16",
+        "encoder_runtime_reuse": null,
+        "encoder_weight_residency": null,
+        "gpu_graph": "eager_blocks",
+        "height": 512,
+        "hybrid": {},
+        "lora_strategy": "none",
+        "memory": {
+          "mlx_active_bytes": 6516709852,
+          "mlx_peak_bytes": 9896811248,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "output": "/private/tmp/tc-z-q4-vm-diagnostic/00-resident.png",
+        "plan": {
+          "algorithm_approximations": [],
+          "audio": false,
+          "audio_capability": "not_applicable",
+          "backend": "mlx_cpp_metal_convrot_packed_q8",
+          "decoded_shape": [
+            512,
+            512,
+            1
+          ],
+          "encoder_backend": "mlx_cpp_metal",
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_precision": "bf16",
+          "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+          "executable": true,
+          "execution": "gpu",
+          "executor_operations": null,
+          "gpu_graph": "eager_blocks",
+          "hybrid_mlp_mode": "auto",
+          "limitation": "capabilities depend on model artifacts and configured hardware",
+          "lora_count": 0,
+          "lora_fusion": "none",
+          "lora_strategy": "none",
+          "ltx_backend": "auto",
+          "ltx_fast_av": true,
+          "ltx_sol_dense_edge_blocks": 1,
+          "ltx_sol_dense_edge_steps": 1,
+          "ltx_sol_stage1": false,
+          "ltx_sol_stage2": false,
+          "ltx_sol_tau": 0.5,
+          "ltx_sparse_anchor_stride": 0,
+          "ltx_sparse_keep_blocks": 0,
+          "ltx_sparse_mode": 0,
+          "ltx_sparse_radius": 1,
+          "ltx_sparse_tokens_per_frame": 0,
+          "ltx_stage2_text_rows": 0,
+          "ltx_video_attention_batch": false,
+          "memory_budget_bytes": null,
+          "memory_budget_scope": "unset",
+          "memory_estimate_bytes": 28991029248,
+          "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+          "model": "z-image-turbo",
+          "operation": "image.generate",
+          "precision": "int8_tensorwise_convrot_g256",
+          "profile_identity": "",
+          "prompt_enhance": false,
+          "prompt_enhance_edit_experimental": false,
+          "prompt_enhancer_path": "",
+          "quantized_cache": null,
+          "requested_execution": "gpu",
+          "requested_shape": [
+            512,
+            512,
+            1
+          ],
+          "residency": "resident",
+          "schema_version": 1,
+          "selection_pending": false,
+          "stages": [
+            {
+              "dependencies": [],
+              "id": "text_encode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "text_encode"
+              ],
+              "id": "denoise",
+              "iterations": 9
+            },
+            {
+              "dependencies": [
+                "denoise"
+              ],
+              "id": "vae_decode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "vae_decode"
+              ],
+              "id": "export",
+              "iterations": 1
+            }
+          ],
+          "streaming_offload": false,
+          "validation": "native_candidate",
+          "weight_validation": "comfy-oracle-validated; m4max-a4096-hybrid-qualified"
+        },
+        "prompt_cache_hit": false,
+        "qkv": null,
+        "reference_tokens": 0,
+        "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+        "runtime_precision": "int8_tensorwise_convrot_g256",
+        "schema_version": 1,
+        "seed": 42,
+        "steps": 9,
+        "text_tokens": 12,
+        "timings_seconds": {
+          "denoise": 13.71019,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 18.162147458,
+          "text_encode": 0.462159375,
+          "vae_decode": 1.6009975
+        },
+        "valid_text_tokens": 12,
+        "validation": "candidate; consult recorded parity suite",
+        "warmup": false,
+        "width": 512
+      },
+      "events": [
+        {
+          "completed": 0,
+          "elapsed_seconds": 2.801539166,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 44,
+          "total": 9
+        },
+        {
+          "completed": 1,
+          "elapsed_seconds": 4.38915875,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 76,
+          "total": 9
+        },
+        {
+          "completed": 1,
+          "elapsed_seconds": 4.389267625,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 77,
+          "total": 9
+        },
+        {
+          "completed": 2,
+          "elapsed_seconds": 5.890464583,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 109,
+          "total": 9
+        },
+        {
+          "completed": 2,
+          "elapsed_seconds": 5.890618666,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 110,
+          "total": 9
+        },
+        {
+          "completed": 3,
+          "elapsed_seconds": 7.394113166,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 142,
+          "total": 9
+        },
+        {
+          "completed": 3,
+          "elapsed_seconds": 7.394219708,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 143,
+          "total": 9
+        },
+        {
+          "completed": 4,
+          "elapsed_seconds": 8.904254708,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 175,
+          "total": 9
+        },
+        {
+          "completed": 4,
+          "elapsed_seconds": 8.904327958,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 176,
+          "total": 9
+        },
+        {
+          "completed": 5,
+          "elapsed_seconds": 10.411984083,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 208,
+          "total": 9
+        },
+        {
+          "completed": 5,
+          "elapsed_seconds": 10.412088416,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 209,
+          "total": 9
+        },
+        {
+          "completed": 6,
+          "elapsed_seconds": 11.932196375,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 241,
+          "total": 9
+        },
+        {
+          "completed": 6,
+          "elapsed_seconds": 11.9323015,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 242,
+          "total": 9
+        },
+        {
+          "completed": 7,
+          "elapsed_seconds": 13.455361875,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 274,
+          "total": 9
+        },
+        {
+          "completed": 7,
+          "elapsed_seconds": 13.45546875,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 275,
+          "total": 9
+        },
+        {
+          "completed": 8,
+          "elapsed_seconds": 14.981472583,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 307,
+          "total": 9
+        },
+        {
+          "completed": 8,
+          "elapsed_seconds": 14.981594791,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 308,
+          "total": 9
+        },
+        {
+          "completed": 9,
+          "elapsed_seconds": 16.511619916,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 340,
+          "total": 9
+        },
+        {
+          "completed": 0,
+          "elapsed_seconds": 18.136536208,
+          "phase": "export",
+          "schema_version": 1,
+          "sequence": 341,
+          "total": 1
+        },
+        {
+          "completed": 1,
+          "elapsed_seconds": 18.161901625,
+          "phase": "export",
+          "schema_version": 1,
+          "sequence": 342,
+          "total": 1
+        }
+      ],
+      "step_intervals_seconds": [
+        1.5876485840417445,
+        1.5013509998098016,
+        1.5035995410289615,
+        1.5101114590652287,
+        1.5077565829269588,
+        1.5202140000183135,
+        1.5231679170392454,
+        1.5261236659716815,
+        1.5301338341087103
+      ],
+      "process_lifetime_maxrss_bytes": 3104538624,
+      "process_memory": {
+        "resident_size_bytes": 73351168,
+        "phys_footprint_bytes": 12181603528,
+        "lifetime_max_phys_footprint_bytes": 12326749360,
+        "diskio_bytesread_bytes": 9592496128,
+        "diskio_byteswritten_bytes": 299008
+      },
+      "process_disk_delta_bytes": {
+        "diskio_bytesread": 9560961024,
+        "diskio_byteswritten": 299008
+      },
+      "system_vm_delta_bytes": {
+        "Swapins": 104316928,
+        "Swapouts": 1437990912,
+        "Pageins": 9329623040,
+        "Compressions": 10533060608,
+        "Decompressions": 2700591104
+      },
+      "png_sha256": "08191cfc23523e1cc515a2967bd3b08d0174dfeaee27bee2b24435a12397a1ee"
+    },
+    {
+      "name": "01-resident",
+      "request": {
+        "model": "z-image-turbo",
+        "prompt": "\u4e24\u4e2a\u4eba\u770b\u6d77\u7684\u7167\u7247",
+        "output": "/private/tmp/tc-z-q4-vm-diagnostic/01-resident.png",
+        "width": 512,
+        "height": 512,
+        "steps": 9,
+        "seed": 42,
+        "execution": "gpu",
+        "audio": false,
+        "dynamic_text": true,
+        "residency": "resident"
+      },
+      "wall_seconds": 35.38441625004634,
+      "status": 0,
+      "error": null,
+      "metrics": {
+        "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+        "actual_denoise_steps": 9,
+        "checkpoint": "z_image_turbo_int8_convrot.safetensors",
+        "encoder_execution": "gpu",
+        "encoder_gpu_graph": "qwen3_gpu_only",
+        "encoder_hybrid": {},
+        "encoder_runtime_backend": "mlx_cpp_metal",
+        "encoder_runtime_precision": "bf16",
+        "encoder_runtime_reuse": null,
+        "encoder_weight_residency": null,
+        "gpu_graph": "eager_blocks",
+        "height": 512,
+        "hybrid": {},
+        "lora_strategy": "none",
+        "memory": {
+          "mlx_active_bytes": 6516709852,
+          "mlx_peak_bytes": 9896811248,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "output": "/private/tmp/tc-z-q4-vm-diagnostic/01-resident.png",
+        "plan": {
+          "algorithm_approximations": [],
+          "audio": false,
+          "audio_capability": "not_applicable",
+          "backend": "mlx_cpp_metal_convrot_packed_q8",
+          "decoded_shape": [
+            512,
+            512,
+            1
+          ],
+          "encoder_backend": "mlx_cpp_metal",
+          "encoder_execution": "gpu",
+          "encoder_gpu_graph": "qwen3_gpu_only",
+          "encoder_precision": "bf16",
+          "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+          "executable": true,
+          "execution": "gpu",
+          "executor_operations": null,
+          "gpu_graph": "eager_blocks",
+          "hybrid_mlp_mode": "auto",
+          "limitation": "capabilities depend on model artifacts and configured hardware",
+          "lora_count": 0,
+          "lora_fusion": "none",
+          "lora_strategy": "none",
+          "ltx_backend": "auto",
+          "ltx_fast_av": true,
+          "ltx_sol_dense_edge_blocks": 1,
+          "ltx_sol_dense_edge_steps": 1,
+          "ltx_sol_stage1": false,
+          "ltx_sol_stage2": false,
+          "ltx_sol_tau": 0.5,
+          "ltx_sparse_anchor_stride": 0,
+          "ltx_sparse_keep_blocks": 0,
+          "ltx_sparse_mode": 0,
+          "ltx_sparse_radius": 1,
+          "ltx_sparse_tokens_per_frame": 0,
+          "ltx_stage2_text_rows": 0,
+          "ltx_video_attention_batch": false,
+          "memory_budget_bytes": null,
+          "memory_budget_scope": "unset",
+          "memory_estimate_bytes": 28991029248,
+          "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+          "model": "z-image-turbo",
+          "operation": "image.generate",
+          "precision": "int8_tensorwise_convrot_g256",
+          "profile_identity": "",
+          "prompt_enhance": false,
+          "prompt_enhance_edit_experimental": false,
+          "prompt_enhancer_path": "",
+          "quantized_cache": null,
+          "requested_execution": "gpu",
+          "requested_shape": [
+            512,
+            512,
+            1
+          ],
+          "residency": "resident",
+          "schema_version": 1,
+          "selection_pending": false,
+          "stages": [
+            {
+              "dependencies": [],
+              "id": "text_encode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "text_encode"
+              ],
+              "id": "denoise",
+              "iterations": 9
+            },
+            {
+              "dependencies": [
+                "denoise"
+              ],
+              "id": "vae_decode",
+              "iterations": 1
+            },
+            {
+              "dependencies": [
+                "vae_decode"
+              ],
+              "id": "export",
+              "iterations": 1
+            }
+          ],
+          "streaming_offload": false,
+          "validation": "native_candidate",
+          "weight_validation": "comfy-oracle-validated; m4max-a4096-hybrid-qualified"
+        },
+        "prompt_cache_hit": true,
+        "qkv": null,
+        "reference_tokens": 0,
+        "runtime_backend": "mlx_cpp_metal_convrot_packed_q8",
+        "runtime_precision": "int8_tensorwise_convrot_g256",
+        "schema_version": 1,
+        "seed": 42,
+        "steps": 9,
+        "text_tokens": 12,
+        "timings_seconds": {
+          "denoise": 31.902907709,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 35.382918541,
+          "text_encode": 4.2667e-05,
+          "vae_decode": 3.433670875
+        },
+        "valid_text_tokens": 12,
+        "validation": "candidate; consult recorded parity suite",
+        "warmup": false,
+        "width": 512
+      },
+      "events": [
+        {
+          "completed": 0,
+          "elapsed_seconds": 0.001191208,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 3,
+          "total": 9
+        },
+        {
+          "completed": 1,
+          "elapsed_seconds": 18.502310708,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 35,
+          "total": 9
+        },
+        {
+          "completed": 1,
+          "elapsed_seconds": 18.504308958,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 36,
+          "total": 9
+        },
+        {
+          "completed": 2,
+          "elapsed_seconds": 21.082898167,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 68,
+          "total": 9
+        },
+        {
+          "completed": 2,
+          "elapsed_seconds": 21.082979375,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 69,
+          "total": 9
+        },
+        {
+          "completed": 3,
+          "elapsed_seconds": 22.600618917,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 101,
+          "total": 9
+        },
+        {
+          "completed": 3,
+          "elapsed_seconds": 22.600738125,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 102,
+          "total": 9
+        },
+        {
+          "completed": 4,
+          "elapsed_seconds": 24.137415583,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 134,
+          "total": 9
+        },
+        {
+          "completed": 4,
+          "elapsed_seconds": 24.137532125,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 135,
+          "total": 9
+        },
+        {
+          "completed": 5,
+          "elapsed_seconds": 25.681144708,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 167,
+          "total": 9
+        },
+        {
+          "completed": 5,
+          "elapsed_seconds": 25.681209417,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 168,
+          "total": 9
+        },
+        {
+          "completed": 6,
+          "elapsed_seconds": 27.22676375,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 200,
+          "total": 9
+        },
+        {
+          "completed": 6,
+          "elapsed_seconds": 27.226884458,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 201,
+          "total": 9
+        },
+        {
+          "completed": 7,
+          "elapsed_seconds": 28.774428708,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 233,
+          "total": 9
+        },
+        {
+          "completed": 7,
+          "elapsed_seconds": 28.774554042,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 234,
+          "total": 9
+        },
+        {
+          "completed": 8,
+          "elapsed_seconds": 30.32516175,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 266,
+          "total": 9
+        },
+        {
+          "completed": 8,
+          "elapsed_seconds": 30.325280125,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 267,
+          "total": 9
+        },
+        {
+          "completed": 9,
+          "elapsed_seconds": 31.903715458,
+          "phase": "denoise",
+          "schema_version": 1,
+          "sequence": 299,
+          "total": 9
+        },
+        {
+          "completed": 0,
+          "elapsed_seconds": 35.361308792,
+          "phase": "export",
+          "schema_version": 1,
+          "sequence": 300,
+          "total": 1
+        },
+        {
+          "completed": 1,
+          "elapsed_seconds": 35.382614125,
+          "phase": "export",
+          "schema_version": 1,
+          "sequence": 301,
+          "total": 1
+        }
+      ],
+      "step_intervals_seconds": [
+        18.503086125012487,
+        2.5786765420343727,
+        1.5177539160940796,
+        1.5367944589816034,
+        1.5436812909319997,
+        1.5456696669571102,
+        1.5476690421346575,
+        1.5507267080247402,
+        1.5788149998988956
+      ],
+      "process_lifetime_maxrss_bytes": 3104538624,
+      "process_memory": {
+        "resident_size_bytes": 49725440,
+        "phys_footprint_bytes": 12165760200,
+        "lifetime_max_phys_footprint_bytes": 12326749360,
+        "diskio_bytesread_bytes": 15533436928,
+        "diskio_byteswritten_bytes": 610304
+      },
+      "process_disk_delta_bytes": {
+        "diskio_bytesread": 5940678656,
+        "diskio_byteswritten": 299008
+      },
+      "system_vm_delta_bytes": {
+        "Swapins": 6607126528,
+        "Swapouts": 8057978880,
+        "Pageins": 310919168,
+        "Compressions": 20661387264,
+        "Decompressions": 15257124864
+      },
+      "png_sha256": "08191cfc23523e1cc515a2967bd3b08d0174dfeaee27bee2b24435a12397a1ee"
+    }
+  ],
+  "notes": "Swap deltas are system-wide, not attribution to this process. maxrss is the process lifetime peak.",
+  "all_images_byte_identical": true
+}

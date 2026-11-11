@@ -35,6 +35,23 @@ struct ModelDownloadView: View {
     private var estimatedWeightBytes: Int64 {
         variant.weightBytes + 335_304_388 + (textPrecision == "q4" ? 3_049_229_147 : textPrecision == "q8" ? 4_865_887_491 : 8_044_982_048)
     }
+    private func preferredQ4Components() -> [String: LibraryComponent]? {
+        let current = studio.draft.modelPaths["z-image-turbo"] ?? ""
+        let paths = [current] + library.installations.filter { $0.modelID == "z-image-turbo" }.map(\.path)
+        for path in paths where !path.isEmpty {
+            let root = URL(fileURLWithPath: path)
+            let configURL = root.appendingPathComponent("text_encoder/config.json")
+            guard let data = try? Data(contentsOf: configURL),
+                  let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let quant = config["quantization"] as? [String: Any],
+                  quant["bits"] as? Int == 4, quant["group_size"] as? Int == 32,
+                  quant["mode"] as? String == "affine",
+                  config["turbocider_dense_embedding"] as? Bool == true,
+                  let components = try? SharedTextComponents.inspect(root) else { continue }
+            return components
+        }
+        return nil
+    }
     private var compatibleSelection: Bool { !isComfy || (variant.runnable && (textPrecision == "bf16" || !components.isEmpty)) }
     private var busy: Bool { library.busy || inspectingShared }
     private var fingerprint: String {
@@ -194,6 +211,10 @@ struct ModelDownloadView: View {
             .onAppear {
                 presetID = presets.first(where: { $0.id == initialPresetID })?.id ?? presets.first?.id ?? "default"
                 repository = model.id == "z-image-turbo" ? ZImageVariant.repository : preset?.repository ?? ""
+                if model.id == "z-image-turbo", let preferred = preferredQ4Components() {
+                    components = preferred
+                    textPrecision = "q4"
+                }
                 library.message = nil
             }
             .onChange(of: presetID) { _, _ in
@@ -201,7 +222,6 @@ struct ModelDownloadView: View {
                 guard model.id != "z-image-turbo" else { return }
                 repository = preset?.repository ?? ""; revision = ""
             }
-            .onChange(of: textPrecision) { _, _ in components = [:] }
             .onChange(of: fingerprint) { _, _ in plan = nil; selectedPaths = []; localError = nil }
             .interactiveDismissDisabled(busy)
     }
@@ -224,7 +244,10 @@ struct ModelDownloadView: View {
                 Picker("图像模型", selection: $variantID) { ForEach(ZImageVariant.all) { Text($0.title).tag($0.id) } }
                     .accessibilityIdentifier("downloadModelVariant")
                 Text(variant.note).font(.caption)
-                Picker("Qwen3-4B 文本编码器", selection: $textPrecision) {
+                Picker("Qwen3-4B 文本编码器", selection: Binding(get: { textPrecision }, set: {
+                    textPrecision = $0
+                    components = [:]
+                })) {
                     Text("BF16 · 下载或复用本地").tag("bf16")
                     Text("MLX Q4 · 选择本地转换组件").tag("q4")
                     Text("MLX Q8 · 选择本地转换组件").tag("q8")
