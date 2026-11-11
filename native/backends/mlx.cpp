@@ -743,7 +743,6 @@ std::vector<Tensor> Weights::project_many(
     // Make the ConvRot dependency explicit once so MLX does not build and run
     // two or three equivalent 256-wide Hadamard transforms.
     auto rotated = convrot_rotate(x, metal_convrot_);
-<<<<<<< Updated upstream
     std::optional<std::vector<Tensor>> shared_outputs;
     if(convrot_w8a8_ && convrot_shared_a8_enabled()) {
         require(rotated.ndim()>0 && rotated.shape(-1)>0,"invalid shared ConvRot activation geometry");
@@ -760,13 +759,13 @@ std::vector<Tensor> Weights::project_many(
         const auto dtype=control && std::string_view(control)=="0" ? mx::float32 : x.dtype();
         shared_outputs=cider::convrot_linear_many_typed(
             mx::reshape(rotated,{int(rows),rotated.shape(-1)}),codes,scales,dtype);
-=======
+    }
 
     // Experimental FFN-only path: two independent MLX QMM dispatches become
     // one kernel with a shared [M=32,K=32] activation tile and separate Q8
     // affine decode/accumulators for W1 and W3.  It is opt-in until component
     // and final-image qualification establish an acceptable error envelope.
-    const bool joint_gate_up = prefixes.size() == 2 &&
+    const bool joint_gate_up = !convrot_w8a8_ && prefixes.size() == 2 &&
         std::getenv("TURBOCIDER_Z_CONVROT_FUSED_GATE_UP_Q8") != nullptr;
     if (joint_gate_up) {
         const auto &gate_weight = at(prefixes[0] + ".weight");
@@ -796,7 +795,6 @@ std::vector<Tensor> Weights::project_many(
             }
             return outputs;
         }
->>>>>>> Stashed changes
     }
     std::vector<Tensor> outputs;
     outputs.reserve(prefixes.size());
