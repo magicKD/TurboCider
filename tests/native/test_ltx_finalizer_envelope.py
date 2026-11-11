@@ -11,8 +11,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 FINALIZER = Path(os.environ.get(
-    "TURBOCIDER_LTX_FINALIZER_BINARY", str(ROOT / "build/native/ltx-video-finalizer")
+    "TURBOCIDER_LTX_FINALIZER_BINARY", str(NATIVE / "ltx-video-finalizer")
 ))
 
 

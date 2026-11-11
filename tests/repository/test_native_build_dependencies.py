@@ -105,7 +105,7 @@ else:
     raise SystemExit('unexpected xcrun invocation')
 """)
         self.write_tool("build-python", """import sys
-assert sys.argv[1] == 'tools/native/check_release_binary.py'
+assert sys.argv[1] in ('tools/native/check_release_binary.py', 'tools/native/check_package_in_use.py')
 """)
         # Preserve ordinary host tools but discard ambient build overrides.
         self.env = {k: v for k, v in os.environ.items()

@@ -32,6 +32,9 @@ fi
 }
 MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
+"${TURBOCIDER_BUILD_PYTHON:-python3}" tools/native/check_package_in_use.py \
+ --app "$APP" --cli "$DIST/cli"
+PACKAGE_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 rm -rf "$APP" "$DIST/cli"
 mkdir -p "$BIN" "$RES" "$DIST/cli"
 cp "$OUT"/TurboCiderNativeApp "$BIN/"
@@ -107,6 +110,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>1</string>
+<key>TurboCiderBuildDate</key><string>${PACKAGE_BUILD_DATE}</string>
 <key>LSMinimumSystemVersion</key><string>${PACKAGE_MIN_MACOS}</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>UTExportedTypeDeclarations</key><array><dict>

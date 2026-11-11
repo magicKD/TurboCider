@@ -13,6 +13,7 @@ import tempfile
 from test_ltx_streaming_layout import fixture
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 
 
 def main():
@@ -46,8 +47,8 @@ def main():
                         "-isysroot", sdk,
                         "-I", str(ROOT / "native/models/ltx_runtime"),
                         str(ROOT / "tests/native/ltx_streaming_snapshot_test.cpp"),
-                        "-L", str(ROOT / "build/native"), "-lturbocider",
-                        "-Wl,-rpath," + str(ROOT / "build/native"), "-o", str(binary)], check=True)
+                        "-L", str(NATIVE), "-lturbocider",
+                        "-Wl,-rpath," + str(NATIVE), "-o", str(binary)], check=True)
         subprocess.run([str(binary), str(checkpoint), str(other)], check=True, timeout=60)
         if sanitizer:
             print("SANITIZER SCOPE: parser/failure injection only; v1/v2 dylib tests use the release library")

@@ -31,6 +31,14 @@ struct TurboCiderNativeApp: App {
                 .onChange(of: submitting) { _, value in delegate.submitting = value }
         }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("关于 TurboCider") {
+                    let date = Bundle.main.object(forInfoDictionaryKey: "TurboCiderBuildDate") as? String ?? "开发构建"
+                    NSApplication.shared.orderFrontStandardAboutPanel(options: [
+                        .credits: NSAttributedString(string: "构建时间：\(date)\n应用位置：\(Bundle.main.bundleURL.path)")
+                    ])
+                }
+            }
             CommandGroup(replacing: .newItem) { Button("新建创作") { studio.newDraft() }.keyboardShortcut("n")
                 .disabled(store.busy || submitting || studio.imageInputsBusy) }
             CommandGroup(after: .pasteboard) {
