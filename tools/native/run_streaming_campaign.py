@@ -1193,6 +1193,21 @@ def artifacts_for_worker(command: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def streaming_runtime_audit(
+    block: Any, audit_available: bool, snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    counters = block if isinstance(block, dict) else {}
+    audit = {
+        "audit_available": audit_available,
+        "block_streaming_enabled": bool(counters.get("enabled")),
+        "request_slot_allocations": counters.get("request_slot_allocations"),
+        "request_slot_refills": counters.get("request_slot_refills"),
+    }
+    if snapshot is not None:
+        audit.update(snapshot)
+    return audit
+
+
 def run_native_sample(
     library: Any, engine: c.c_void_p, command: dict[str, Any],
     engine_lifecycle: str,
@@ -1244,7 +1259,7 @@ def run_native_sample(
     )
     if semantic is not None:
         semantic["request"] = request_semantic_identity(command["request"])
-    row = {
+    return {
         "status": "success",
         "native_status": 0,
         "client_wall_seconds": client_wall,
@@ -1261,24 +1276,8 @@ def run_native_sample(
         "block_counters": block,
         "artifacts": artifacts_for_worker(command),
         "process_peak_rss_bytes": peak_rss_bytes(),
-        "runtime_audit": {
-            "audit_available": audit_available,
-            "block_streaming_enabled": (
-                bool(block.get("enabled")) if isinstance(block, dict) else False
-            ),
-            "request_slot_allocations": (
-                block.get("request_slot_allocations")
-                if isinstance(block, dict) else None
-            ),
-            "request_slot_refills": (
-                block.get("request_slot_refills")
-                if isinstance(block, dict) else None
-            ),
-        },
+        "runtime_audit": streaming_runtime_audit(block, audit_available, runtime_audit),
     }
-    if runtime_audit is not None:
-        row["runtime_audit"].update(runtime_audit)
-    return row
 
 
 def run_synthetic_sample(
@@ -1437,22 +1436,10 @@ def run_probe_sample(
     if semantic is not None:
         semantic["request"] = request_semantic_identity(command["request"])
     audit_snapshot = result.get("audit_snapshot")
-    runtime_audit = {
-        "audit_available": isinstance(audit_snapshot, dict),
-        "block_streaming_enabled": (
-            bool(block.get("enabled")) if isinstance(block, dict) else False
-        ),
-        "request_slot_allocations": (
-            block.get("request_slot_allocations")
-            if isinstance(block, dict) else None
-        ),
-        "request_slot_refills": (
-            block.get("request_slot_refills")
-            if isinstance(block, dict) else None
-        ),
-    }
-    if isinstance(audit_snapshot, dict):
-        runtime_audit.update(audit_snapshot)
+    audit_available = isinstance(audit_snapshot, dict)
+    runtime_audit = streaming_runtime_audit(
+        block, audit_available, audit_snapshot if audit_available else None
+    )
     request_wall = float(timings.get("request_wall", client_wall))
     denoise = float(timings.get("denoise", result.get("denoise_seconds", 0.0)))
     resolved, actual = extract_layouts(result)
