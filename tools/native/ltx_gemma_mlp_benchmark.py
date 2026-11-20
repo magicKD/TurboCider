@@ -1,5 +1,7 @@
 """Common probe results and qualification gates for the Gemma MLP benchmarks."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import math
@@ -28,24 +30,35 @@ def validate_limits(parser: argparse.ArgumentParser, args: argparse.Namespace) -
         parser.error("--max-relative-abs must be finite and nonnegative")
 
 
-def run_probe(command: list[str], folder: Path, timeout: int, *,
-              environment: dict[str, str], expected_format: str,
-              failure_label: str, invalid_label: str) -> dict:
+def capture_probe(
+    command: list[str], log_directory: Path, timeout: int,
+    *, environment: dict[str, str],
+) -> tuple[subprocess.CompletedProcess[str], int | None]:
     process = subprocess.run(
         ["/usr/bin/time", "-l", *command], capture_output=True, text=True,
         check=False, timeout=timeout, env=environment,
     )
-    folder.parent.mkdir(parents=True, exist_ok=True)
-    (folder.parent / "stdout.log").write_text(process.stdout)
-    (folder.parent / "stderr.log").write_text(process.stderr)
+    log_directory.mkdir(parents=True, exist_ok=True)
+    (log_directory / "stdout.log").write_text(process.stdout)
+    (log_directory / "stderr.log").write_text(process.stderr)
     peak = re.search(r"(\d+)\s+maximum resident set size", process.stderr)
+    peak_rss_bytes = int(peak.group(1)) if peak else None
     process_record = {
         "command": command,
         "returncode": process.returncode,
-        "process_peak_rss_bytes": int(peak.group(1)) if peak else None,
+        "process_peak_rss_bytes": peak_rss_bytes,
     }
-    (folder.parent / "process.json").write_text(
+    (log_directory / "process.json").write_text(
         json.dumps(process_record, indent=2, sort_keys=True) + "\n"
+    )
+    return process, peak_rss_bytes
+
+
+def run_probe(command: list[str], folder: Path, timeout: int, *,
+              environment: dict[str, str], expected_format: str,
+              failure_label: str, invalid_label: str) -> dict:
+    process, peak_rss_bytes = capture_probe(
+        command, folder.parent, timeout, environment=environment
     )
     if process.returncode:
         raise RuntimeError(
@@ -63,7 +76,7 @@ def run_probe(command: list[str], folder: Path, timeout: int, *,
         "warm_median_seconds": statistics.median(warm),
         "resident_weight_bytes": payload["resident_weight_bytes"],
         "workspace_bytes": payload["workspace_bytes"],
-        "process_peak_rss_bytes": process_record["process_peak_rss_bytes"],
+        "process_peak_rss_bytes": peak_rss_bytes,
         "output": folder / "output.bf16",
     }
 
