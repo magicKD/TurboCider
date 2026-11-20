@@ -9,29 +9,13 @@ import os
 from pathlib import Path
 import tempfile
 
+from streaming_gate_api import load_candidate_library
+
 
 ROOT = Path(__file__).resolve().parents[2]
-NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 MODEL = os.environ.get("TURBOCIDER_TEST_FLUX_MODEL", "flux2-klein-9b")
 assert MODEL in ("flux2-klein-9b", "flux2-klein-4b")
-LIB = C.CDLL(str(NATIVE / "libturbocider.dylib"))
-LIB.tc_engine_create_model.argtypes = [
-    C.c_char_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)
-]
-LIB.tc_engine_create_model_candidate.argtypes = LIB.tc_engine_create_model.argtypes
-LIB.tc_engine_generate.argtypes = [
-    C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p,
-    C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
-]
-LIB.tc_engine_prepare.argtypes = [
-    C.c_void_p, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p,
-    C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
-]
-LIB.tc_engine_resolve_streaming_json.argtypes = [
-    C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
-]
-LIB.tc_engine_free.argtypes = [C.c_void_p]
-LIB.tc_string_free.argtypes = [C.c_void_p]
+LIB = load_candidate_library(ROOT)
 
 
 def consume(pointer: C.c_void_p) -> str:
