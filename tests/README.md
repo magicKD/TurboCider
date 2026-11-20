@@ -72,6 +72,14 @@ Keep the selected library, its manifest and source revision together. Even tests
 using MLX CPU tensors may need Metal device visibility during initialization;
 `test-runtime-ane-cpu-bridge` documents that boundary in the Makefile.
 
+The streaming contract target also accepts a native build and Python interpreter
+located outside the checkout. Point it at a build that includes the native
+library and LTX finalizer:
+
+```sh
+TURBOCIDER_TEST_NATIVE_DIR=/absolute/native-build make test-streaming-contract PYTHON=/absolute/python3
+```
+
 For an isolated App build, use the same directory for compilation and behavior
 tests. The default remains `build/native`:
 

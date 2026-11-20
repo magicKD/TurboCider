@@ -3,11 +3,13 @@
 
 import ctypes as C
 import json
+import os
 from pathlib import Path
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-LIB = C.CDLL(str(ROOT / "build/native/libturbocider.dylib"))
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
+LIB = C.CDLL(str(NATIVE / "libturbocider.dylib"))
 LIB.tc_engine_create_model.argtypes = [
     C.c_char_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)
 ]
