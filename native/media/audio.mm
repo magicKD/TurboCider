@@ -1,4 +1,5 @@
 #include "audio.hpp"
+#include "asset_track.hpp"
 #include "video.hpp"
 
 #import <AVFoundation/AVFoundation.h>
@@ -18,26 +19,6 @@ namespace {
 
 void require_status(bool ok, const std::string& message) {
     if (!ok) throw std::runtime_error(message);
-}
-
-AVAssetTrack* load_first_track(AVAsset* asset, AVMediaType media_type) {
-    dispatch_semaphore_t done = dispatch_semaphore_create(0);
-    __block NSArray<AVAssetTrack*>* tracks = nil;
-    __block NSError* load_error = nil;
-    [asset loadTracksWithMediaType:media_type
-                 completionHandler:^(NSArray<AVAssetTrack*>* loaded,
-                                     NSError* error) {
-        tracks = loaded;
-        load_error = error;
-        dispatch_semaphore_signal(done);
-    }];
-    require_status(dispatch_semaphore_wait(
-        done, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC)) == 0,
-        "timed out while loading media tracks");
-    require_status(load_error == nil,
-                   load_error ? load_error.localizedDescription.UTF8String :
-                                "cannot load media tracks");
-    return tracks.firstObject;
 }
 
 struct PcmBuffer {
@@ -209,7 +190,8 @@ void validate_muxed_audio(const std::filesystem::path& path,
                           int expected_channels) {
     AVURLAsset* asset = [AVURLAsset URLAssetWithURL:
         [NSURL fileURLWithPath:@(path.c_str())] options:nil];
-    AVAssetTrack* track = load_first_track(asset, AVMediaTypeAudio);
+    AVAssetTrack* track = media::load_first_track_or_throw(
+        asset, AVMediaTypeAudio, "timed out while loading media tracks");
     require_status(track != nil, "muxed MP4 does not contain an audio stream");
     const double duration = CMTimeGetSeconds(track.timeRange.duration);
     require_status(std::isfinite(duration) &&
@@ -249,7 +231,8 @@ AudioMediaInfo mux_video_with_audio(const std::filesystem::path& video,
         NSError* error = nil;
         AVURLAsset* asset = [AVURLAsset URLAssetWithURL:
             [NSURL fileURLWithPath:@(video.c_str())] options:nil];
-        AVAssetTrack* video_track = load_first_track(asset, AVMediaTypeVideo);
+        AVAssetTrack* video_track = media::load_first_track_or_throw(
+            asset, AVMediaTypeVideo, "timed out while loading media tracks");
         require_status(video_track != nil, "source video stream is missing");
         const Float64 duration = CMTimeGetSeconds(asset.duration);
         const int fps = video_track.nominalFrameRate > 0.0f ?
