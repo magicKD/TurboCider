@@ -1,6 +1,7 @@
 #include "preset_resolver.hpp"
 
 #include "canonical_encoding.hpp"
+#include "preset_token_encoding.hpp"
 
 #include <stdexcept>
 
@@ -91,16 +92,7 @@ std::string streaming_workload_identity_digest(
         "conditioning_revision", workload.conditioning_revision);
     out.string_field("vae_policy_revision", workload.vae_policy_revision);
     out.string_field("feature_digest", workload.feature_digest);
-    out.begin_list("token_shapes", workload.token_shapes.size());
-    for (const auto &token : workload.token_shapes) {
-        out.string_field("token.encoder", token.encoder);
-        out.string_field(
-            "token.tokenizer_revision", token.tokenizer_revision);
-        out.string_field("token.template_revision", token.template_revision);
-        out.unsigned_field("token.valid_rows", token.valid_rows);
-        out.unsigned_field("token.padded_rows", token.padded_rows);
-        out.unsigned_field("token.compute_rows", token.compute_rows);
-    }
+    encode_preset_token_shapes(out, "token_shapes", workload.token_shapes);
     return out.sha256();
 }
 
