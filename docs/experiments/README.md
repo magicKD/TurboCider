@@ -8,7 +8,7 @@ attempts. They do not by themselves establish supported product behavior.
 
 | Topic | Record | Scope |
 | --- | --- | --- |
-| LTX Stage-2 sparse attention | [Results](ltx-stage2-sparse/results.md) · [Research ledger](ltx-stage2-sparse/research.md) | M4 Max; core, stage and full-request timing; quality failures retained |
+| LTX acceleration and sparse attention | [Experiment records](ltx/README.md) | M5 Pro complete audio/video and desktop validation, plus M4 Max Stage-2 timing and quality failures |
 | Z-Image Metal 历史实验 | [记录与证据边界](z-image-metal/README.md) | 2026-09 M4 Max 重启前无效计时、健康状态对照与独立 M4 Pro 四图 screen |
 | Z-Image BF16 and INT8 streaming | [Device and precision comparisons](z-image-streaming/README.md) | Original BF16 route and distinct M5 / 16 GiB and M5 Pro / 24 GiB INT8 campaigns |
 | SeedVR2 residency and VAE scheduling | [Records and evidence boundaries](seedvr2/README.md) | 2026-10-14–15 residency, row/file scheduling, Core ML/ANE feasibility, causal convolutions and norm packing; component, request and App scopes kept separate |
