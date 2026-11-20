@@ -23,6 +23,14 @@
 | [融合 gate/up 与 SwiGLU](qwen-base512-dual-gup-block-2026-10-19.md) | 合成 oracle、真实 BF16 权重完整 block 与来源重放 |
 | [固定图下融合 GPU 分工](qwen-base512-gpu-dual-runtime-2026-10-19.md) | 40 步匹配请求与 RGBA 逐字节对照，保留未达默认采用门槛的结果 |
 
+## 旋转、归一化和混合精度
+
+| 记录 | 测量范围与限制 |
+| --- | --- |
+| [H512 旋转因式分解](qwen-base512-h512-factorization-2026-10-19.md) | 固定 FP16 算子的延迟和逐点误差门，保留八个未采用的候选 |
+| [归一化倒数与相邻通道分工](qwen-base512-hidden-quant-neighbor-share-2026-10-19.md) | 倒数表达和 5632/6656 通道筛选均无稳定收益 |
+| [FP16 hidden 与 BF16 down 权重](qwen-base512-mixed-hidden-down-2026-10-19.md) | 保留原权重布局的 down 投影重放，没有稳定整块收益 |
+
 相关对照见 [Base QKV 实验](../qwen21-qkv/README.md)和
 [缓存实验](../qwen21-cache/README.md)。复验前先核对原报告的版本、输入和图几何，
 按[实验归档约定](../README.md)记录新的设备和测量范围。
