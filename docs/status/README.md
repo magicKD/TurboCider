@@ -393,7 +393,7 @@ optional 选择统一维护在[决策入口](acceleration.md)，不复制逐轮�
 
 - [Streaming/App 集成](streaming-app-integration-2026-09-27.md)
 - [Z-Image Metal 优化](z-image-metal-2026-09-23.md)
-- [Z-Image INT8 streaming](../experiments/m5/z-image-int8-streaming-2026-09-20.md)
+- [Z-Image BF16 与 INT8 streaming 实验](../experiments/z-image-streaming/README.md)
 - [Encoder prefill 可选路径](../experiments/transformer/2026-09-15-encoder-prefill.md)
 - [ANE 加速分阶段决策](../experiments/transformer/2026-09-15-ane-decisions.md)
 - [2026-09-10 状态快照](current-status-2026-09-10.md)
