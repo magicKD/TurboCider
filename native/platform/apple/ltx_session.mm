@@ -1,5 +1,6 @@
 #include "../../runtime/build_identity.hpp"
 #include "bridge.hpp"
+#include "platform.hpp"
 #include "../../runtime/lora_identity.hpp"
 #include "../../runtime/memory_execution.hpp"
 #include "memory_probe.hpp"
@@ -398,36 +399,6 @@ static std::filesystem::path ltx_runtime_resource(
     return {};
 }
 
-struct HashCache {
-    std::filesystem::path path;
-    std::filesystem::file_time_type mtime{};
-    uintmax_t bytes = 0;
-    std::string sha256;
-};
-
-static std::string sha256_file(const std::filesystem::path& path) {
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream.good()) return {};
-    CC_SHA256_CTX context;
-    if (CC_SHA256_Init(&context) != 1) return {};
-    // Desktop generation runs on a dispatch worker with a small thread stack.
-    std::vector<char> buffer(1 << 20);
-    while (stream.good()) {
-        stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        std::streamsize count = stream.gcount();
-        if (count > 0 && CC_SHA256_Update(&context, buffer.data(),
-                                          static_cast<CC_LONG>(count)) != 1)
-            return {};
-    }
-    if (!stream.eof()) return {};
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    if (CC_SHA256_Final(digest, &context) != 1) return {};
-    char output[CC_SHA256_DIGEST_LENGTH * 2 + 1] = {};
-    for (size_t index = 0; index < CC_SHA256_DIGEST_LENGTH; index++)
-        snprintf(output + index * 2, 3, "%02x", digest[index]);
-    return output;
-}
-
 static std::string sha256_text(const std::string& value) {
     CC_SHA256_CTX context;
     require(CC_SHA256_Init(&context) == 1,
@@ -442,34 +413,6 @@ static std::string sha256_text(const std::string& value) {
     for (size_t index = 0; index < CC_SHA256_DIGEST_LENGTH; index++)
         snprintf(output + index * 2, 3, "%02x", digest[index]);
     return output;
-}
-
-static std::string cached_sha256(const std::filesystem::path& path,
-                                 HashCache& cache) {
-    std::error_code error;
-    auto absolute = std::filesystem::absolute(path, error);
-    require(!error, "cannot resolve LTX checkpoint path: " + path.string());
-    auto bytes = std::filesystem::file_size(absolute, error);
-    require(!error, "cannot inspect LTX checkpoint size: " + absolute.string());
-    auto mtime = std::filesystem::last_write_time(absolute, error);
-    require(!error, "cannot inspect LTX checkpoint timestamp: " + absolute.string());
-    if (absolute != cache.path || bytes != cache.bytes || mtime != cache.mtime) {
-        cache.sha256 = sha256_file(absolute);
-        require(!cache.sha256.empty(),
-                "cannot hash LTX checkpoint: " + absolute.string());
-        auto final_bytes = std::filesystem::file_size(absolute, error);
-        require(!error && final_bytes == bytes,
-                "LTX checkpoint changed while it was being hashed: " +
-                    absolute.string());
-        auto final_mtime = std::filesystem::last_write_time(absolute, error);
-        require(!error && final_mtime == mtime,
-                "LTX checkpoint changed while it was being hashed: " +
-                    absolute.string());
-        cache.path = absolute;
-        cache.bytes = bytes;
-        cache.mtime = mtime;
-    }
-    return cache.sha256;
 }
 
 static std::string checkpoint_stat_identity(const std::filesystem::path& path) {
@@ -687,7 +630,7 @@ static LtxAudioAssetStatus inspect_ltx_audio_assets(
                     CFGetTypeID((__bridge CFTypeRef)channels) != CFBooleanGetTypeID() &&
                     [channels unsignedIntValue] == 2u,
                 "LTX audio asset manifest must declare stereo output");
-        result.artifact_sha256 = sha256_file(result.artifact);
+        result.artifact_sha256 = sha256_file_or_empty(result.artifact);
         require(result.artifact_sha256 == expected_sha,
                 "LTX audio artifact SHA-256 does not match its manifest");
         result.assets_verified = true;
@@ -742,9 +685,9 @@ static void add_manifest_directory(std::vector<std::filesystem::path>& paths,
 static bool inspect_ltx_manifest(
         const std::filesystem::path& manifest_path,
         const LoRAAsset& requested,
-        HashCache& base_hash_cache,
-        HashCache& lora_hash_cache,
-        HashCache& output_hash_cache,
+        CheckpointHashCache& base_hash_cache,
+        CheckpointHashCache& lora_hash_cache,
+        CheckpointHashCache& output_hash_cache,
         LtxCheckpointSelection& selection,
         std::string& failure) {
     try {
@@ -832,11 +775,14 @@ static bool inspect_ltx_manifest(
             require(int8 > 0 && bf16 > 0 && int8 + bf16 == mapping_total,
                     "LTX merged refiner precision mapping is incomplete");
         }
-        require(cached_sha256(base_checkpoint, base_hash_cache) == expected_base_sha,
+        require(cached_checkpoint_sha256(base_checkpoint, base_hash_cache, "LTX") ==
+                    expected_base_sha,
                 "LTX installed base checkpoint SHA-256 does not match the merge manifest");
-        require(cached_sha256(lora_path, lora_hash_cache) == expected_lora_sha,
+        require(cached_checkpoint_sha256(lora_path, lora_hash_cache, "LTX") ==
+                    expected_lora_sha,
                 "LTX requested LoRA SHA-256 does not match the merge manifest");
-        require(cached_sha256(output_path, output_hash_cache) == expected_output_sha,
+        require(cached_checkpoint_sha256(output_path, output_hash_cache, "LTX") ==
+                    expected_output_sha,
                 "LTX premerged checkpoint SHA-256 does not match the merge manifest");
         selection.checkpoint = std::move(output_path);
         selection.manifest = manifest_path;
@@ -854,9 +800,9 @@ static LtxCheckpointSelection resolve_ltx_checkpoint(
         const std::filesystem::path& root,
         const std::filesystem::path& default_checkpoint,
         const LoRAAsset& requested,
-        HashCache& base_hash_cache,
-        HashCache& lora_hash_cache,
-        HashCache& output_hash_cache) {
+        CheckpointHashCache& base_hash_cache,
+        CheckpointHashCache& lora_hash_cache,
+        CheckpointHashCache& output_hash_cache) {
     std::filesystem::path lora_path = requested.path;
     require(std::filesystem::is_regular_file(lora_path),
             "requested LTX LoRA file is missing: " + lora_path.string());
@@ -1641,7 +1587,7 @@ static LtxAneConfig resolve_ltx_ane_config(
             expected_text_rows, checkpoint);
     std::string profile_identity;
     if (std::filesystem::is_regular_file(absolute)) {
-        profile_identity = sha256_file(absolute);
+        profile_identity = sha256_file_or_empty(absolute);
         require(!profile_identity.empty(),
                 "cannot hash LTX ANE profile: " + absolute.string());
     } else {
@@ -1944,24 +1890,6 @@ static bool ltx_mlx_requested(const Request& request) {
     return value && std::strcmp(value, "1") == 0;
 }
 
-static bool ltx_exact_streaming_requested(const Request& request) {
-    if (!request.streaming.active()) return false;
-    const auto stage = request.streaming.stages.find("denoiser");
-    if (stage != request.streaming.stages.end() &&
-        stage->second.residency &&
-        *stage->second.residency == "streamed")
-        return true;
-    const auto stage1 = request.streaming.stages.find(
-        "ltx-stage1-denoiser");
-    const auto stage2 = request.streaming.stages.find(
-        "ltx-stage2-denoiser");
-    return stage1 != request.streaming.stages.end() &&
-        stage2 != request.streaming.stages.end() &&
-        stage1->second.residency && stage2->second.residency &&
-        *stage1->second.residency == "streamed" &&
-        *stage2->second.residency == "streamed";
-}
-
 static bool ltx_split_exact_streaming_requested(const Request& request) {
     if (!request.streaming.active()) return false;
     const auto stage1 = request.streaming.stages.find(
@@ -1973,6 +1901,16 @@ static bool ltx_split_exact_streaming_requested(const Request& request) {
         stage1->second.residency && stage2->second.residency &&
         *stage1->second.residency == "streamed" &&
         *stage2->second.residency == "streamed";
+}
+
+static bool ltx_exact_streaming_requested(const Request& request) {
+    if (!request.streaming.active()) return false;
+    const auto stage = request.streaming.stages.find("denoiser");
+    if (stage != request.streaming.stages.end() &&
+        stage->second.residency &&
+        *stage->second.residency == "streamed")
+        return true;
+    return ltx_split_exact_streaming_requested(request);
 }
 
 static bool ltx_gpu_parallel_av_requested() {
@@ -4542,9 +4480,9 @@ private:
     std::filesystem::path video_vae_finalizer_path_;
     std::string denoiser_key_;
     std::string mlx_denoiser_key_;
-    HashCache base_hash_cache_;
-    HashCache lora_hash_cache_;
-    HashCache output_hash_cache_;
+    CheckpointHashCache base_hash_cache_;
+    CheckpointHashCache lora_hash_cache_;
+    CheckpointHashCache output_hash_cache_;
     LtxMemoryBridge memory_bridge_;
     ltx_gpu_memory_hooks memory_hooks_{};
     tc_memory_schedule_hooks_v1 memory_schedule_hooks_{};
@@ -4605,9 +4543,9 @@ std::string validate_ltx_ane_profile(
 
 NSDictionary* preflight_ltx_lora(const std::filesystem::path& root,
                                  const LoRAAsset& lora) {
-    HashCache base_hash_cache;
-    HashCache lora_hash_cache;
-    HashCache output_hash_cache;
+    CheckpointHashCache base_hash_cache;
+    CheckpointHashCache lora_hash_cache;
+    CheckpointHashCache output_hash_cache;
     auto default_checkpoint = root / "diffusion_models" /
         "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors";
     auto selection = resolve_ltx_checkpoint(

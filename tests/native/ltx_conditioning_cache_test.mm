@@ -32,7 +32,7 @@ static std::string sha256_text(const std::string& text) {
     for (size_t i = 0; i < sizeof(digest); ++i) std::snprintf(hex + 2 * i, 3, "%02x", digest[i]);
     return hex;
 }
-static std::string sha256_file(const std::filesystem::path& path) {
+static std::string sha256_file_or_empty(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) return {};
     return sha256_text(std::string(std::istreambuf_iterator<char>(input), {}));
