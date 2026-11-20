@@ -195,11 +195,7 @@ inline int generate(const char *path) {
         reply[@"runtime_receipt"]=NSNull.null;
         NSDictionary *request=input[@"native_request_v2"];
         verify_environment(input);verify_descriptor(input);require_fresh_output(request);verify_hardware();
-        struct Signals {
-            using Handler=void(*)(int);Handler interrupt,terminate;
-            Signals():interrupt(std::signal(SIGINT,signal_stop)),terminate(std::signal(SIGTERM,signal_stop)){}
-            ~Signals(){std::signal(SIGINT,interrupt);std::signal(SIGTERM,terminate);}
-        } signals;
+        SignalHandlers signals;
         NSString *json=[[NSString alloc] initWithData:canonical_request(request) encoding:NSUTF8StringEncoding];
         char *result=nullptr,*error=nullptr;
         // Plan uses the normal parser/module gate before creating a model
@@ -212,16 +208,7 @@ inline int generate(const char *path) {
         std::unique_ptr<char,decltype(&tc_string_free)> creation_error(error,tc_string_free);
         if(status)throw std::runtime_error(error?error:"worker_engine_create_failed");
         require(engine!=nullptr,"worker_engine_missing");require(!cancelled,"worker_cancelled");
-        struct CancellationRelay {
-            std::atomic<bool> stopping{false};std::thread worker;
-            explicit CancellationRelay(tc_engine *engine):worker([this,engine]{
-                while(!stopping.load(std::memory_order_relaxed)) {
-                    if(cancelled.load(std::memory_order_relaxed))tc_engine_cancel(engine);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(25));
-                }
-            }){}
-            ~CancellationRelay(){stopping.store(true,std::memory_order_relaxed);worker.join();}
-        } cancellation(engine.get());
+        CancellationRelay cancellation(engine.get());
         Events events(input,tc::runtime_build_identity());events.begin_runtime();result=nullptr;error=nullptr;
         status=tc_engine_generate(engine.get(),json.UTF8String,Events::progress,&events,&result,&error);
         NSDictionary *generated=consume(status,result,error);require(!cancelled,"worker_cancelled");
