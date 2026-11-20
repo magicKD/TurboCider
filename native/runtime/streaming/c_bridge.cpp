@@ -60,7 +60,7 @@ public:
         // Group block spans are owned by StageExecutor::State::layout and stay
         // stable until every fill worker is joined.  Borrow them directly so
         // the steady refill path never copies or grows a vector.
-        job.group={g.id,g.slot,uint32_t(g.blocks.size()),g.blocks.data(),g.bytes};
+        job.group=view(g);
         job.error[0]=0;
         return {t,&job,[](void *raw,const tc_stream_slot_ticket_v1 *ticket,
                          const std::atomic<bool> *cancel,uint64_t *bytes){
@@ -129,6 +129,70 @@ int failure(tc_stream_executor *h,char *error,size_t size,const std::exception &
     }
     return fail(error,size,e.what());
 }
+
+PoolLayout make_pool(uint32_t pool_id, uint32_t slots, const uint64_t *capacities) {
+    PoolLayout pool;
+    pool.id = pool_id;
+    pool.slots.reserve(slots);
+    for (uint32_t slot = 0; slot < slots; ++slot)
+        pool.slots.push_back({{}, capacities[slot]});
+    return pool;
+}
+
+template <class GroupPlan>
+Group make_group(const GroupPlan &source, uint32_t pool, uint64_t &blocks,
+                 const char *invalid_group) {
+    blocks += source.block_count;
+    if (!source.blocks || !source.block_count || blocks > max_blocks)
+        throw std::invalid_argument(invalid_group);
+    Group group;
+    group.id = source.group;
+    group.pool = pool;
+    group.slot = source.slot;
+    group.bytes = source.content_bytes;
+    group.blocks.assign(source.blocks, source.blocks + source.block_count);
+    return group;
+}
+
+template <class Plan>
+void add_single_pool_layout(StageLayout &layout, const Plan &plan, const char *invalid_group) {
+    layout.pools.push_back(make_pool(plan.pool, plan.slot_count, plan.slot_capacity_bytes));
+    uint64_t blocks = 0;
+    for (uint32_t index = 0; index < plan.group_count; ++index)
+        layout.groups.push_back(make_group(plan.groups[index], plan.pool, blocks, invalid_group));
+}
+
+template <class Plan, class Adapter, class PopulateLayout>
+int create_executor(const Plan &plan, const Adapter &adapter, tc_stream_executor **out,
+                    char *error, size_t size, const char *unknown_error,
+                    PopulateLayout populate) {
+    std::unique_ptr<tc_stream_executor> handle;
+    try {
+        StageLayout layout;
+        layout.slot_count = plan.slot_count;
+        layout.distance = plan.prefetch_distance;
+        layout.workers = plan.io_workers;
+        layout.pass_count = plan.pass_count;
+        populate(layout);
+        handle = std::make_unique<tc_stream_executor>();
+        handle->adapter = std::make_shared<CAdapter>(adapter, plan.slot_count);
+        handle->executor = std::make_unique<StageExecutor>(
+            plan.stage, plan.request_generation, handle->adapter);
+        handle->executor->begin(layout);
+        *out = handle.release();
+        return 1;
+    } catch (const std::exception &exception) {
+        const int result = failure(handle.get(), error, size, exception);
+        if (handle && handle->executor && handle->executor->quarantined())
+            *out = handle.release();
+        return result;
+    } catch (...) {
+        // Preserve a quarantined owner for retry even on non-standard exceptions.
+        if (handle && handle->executor && handle->executor->quarantined())
+            *out = handle.release();
+        return fail(error, size, unknown_error);
+    }
+}
 }
 extern "C" int tc_stream_executor_create_v1(const tc_stream_stage_plan_v1 *p,const tc_stream_adapter_v1 *a,
                                              tc_stream_executor **out,char *error,size_t size) {
@@ -139,35 +203,10 @@ extern "C" int tc_stream_executor_create_v1(const tc_stream_stage_plan_v1 *p,con
        !p->slot_capacity_bytes || !p->groups || !a->allocate_slot || !a->destroy_pool || !a->fill ||
        !a->prefix || !a->prepare || !a->encode || !a->drain)
         return fail(error,size,"streaming invalid plan/adapter ABI");
-    std::unique_ptr<tc_stream_executor> h;
-    try {
-        StageLayout layout;layout.slot_count=p->slot_count;layout.distance=p->prefetch_distance;
-        layout.workers=p->io_workers;layout.pass_count=p->pass_count;
-        PoolLayout pool;pool.id=p->pool;
-        for(uint32_t i=0;i<p->slot_count;++i)pool.slots.push_back({{},p->slot_capacity_bytes[i]});
-        layout.pools.push_back(std::move(pool));
-        uint64_t blocks=0;
-        for(uint32_t i=0;i<p->group_count;++i){
-            const auto &g=p->groups[i];blocks+=g.block_count;
-            if(!g.blocks || !g.block_count || blocks>max_blocks)throw std::invalid_argument("streaming invalid group blocks");
-            Group group;group.id=g.group;group.slot=g.slot;group.pool=p->pool;group.bytes=g.content_bytes;
-            group.blocks.assign(g.blocks,g.blocks+g.block_count);layout.groups.push_back(std::move(group));
-        }
-        h=std::make_unique<tc_stream_executor>();h->adapter=std::make_shared<CAdapter>(*a,p->slot_count);
-        h->executor=std::make_unique<StageExecutor>(p->stage,p->request_generation,h->adapter);
-        h->executor->begin(layout);*out=h.release();return 1;
-    } catch(const std::exception &e){
-        const int result=failure(h.get(),error,size,e);
-        if(h && h->executor && h->executor->quarantined())*out=h.release();
-        return result;
-    } catch (...) {
-        // Non-standard adapter exceptions need the same ownership handoff as
-        // std::exception. Otherwise the local handle's destructor can terminate
-        // while a partially created pool still has unproven readers.
-        if (h && h->executor && h->executor->quarantined())
-            *out = h.release();
-        return fail(error, size, "streaming unknown create error");
-    }
+    return create_executor(*p, *a, out, error, size, "streaming unknown create error",
+                           [p](StageLayout &layout) {
+        add_single_pool_layout(layout, *p, "streaming invalid group blocks");
+    });
 }
 extern "C" int tc_stream_executor_create_v3(
         const tc_stream_stage_plan_v3 *p, const tc_stream_adapter_v1 *a,
@@ -184,51 +223,13 @@ extern "C" int tc_stream_executor_create_v3(
         !a->allocate_slot || !a->destroy_pool || !a->fill || !a->prefix ||
         !a->prepare || !a->encode || !a->drain)
         return fail(error, size, "streaming invalid v3 plan/adapter ABI");
-    std::unique_ptr<tc_stream_executor> h;
-    try {
-        StageLayout layout;
-        layout.slot_count = p->slot_count;
-        layout.distance = p->prefetch_distance;
-        layout.workers = p->io_workers;
-        layout.pass_count = p->pass_count;
+    return create_executor(*p, *a, out, error, size, "streaming unknown v3 create error",
+                           [p](StageLayout &layout) {
         layout.pass_transition =
             p->pass_transition == TC_STREAM_PASS_CARRY_FIRST_GROUP_V3 ?
                 PassTransition::carry_first_group : PassTransition::reload;
-        PoolLayout pool;
-        pool.id = p->pool;
-        for (uint32_t index = 0; index < p->slot_count; ++index)
-            pool.slots.push_back({{}, p->slot_capacity_bytes[index]});
-        layout.pools.push_back(std::move(pool));
-        uint64_t blocks = 0;
-        for (uint32_t index = 0; index < p->group_count; ++index) {
-            const auto &source = p->groups[index];
-            blocks += source.block_count;
-            if (!source.blocks || !source.block_count || blocks > max_blocks)
-                throw std::invalid_argument("streaming invalid v3 group blocks");
-            Group group;
-            group.id = source.group;
-            group.slot = source.slot;
-            group.pool = p->pool;
-            group.bytes = source.content_bytes;
-            group.blocks.assign(source.blocks,
-                                source.blocks + source.block_count);
-            layout.groups.push_back(std::move(group));
-        }
-        h = std::make_unique<tc_stream_executor>();
-        h->adapter = std::make_shared<CAdapter>(*a, p->slot_count);
-        h->executor = std::make_unique<StageExecutor>(
-            p->stage, p->request_generation, h->adapter);
-        h->executor->begin(layout);
-        *out = h.release();
-        return 1;
-    } catch (const std::exception &e) {
-        const int result = failure(h.get(), error, size, e);
-        if (h && h->executor && h->executor->quarantined()) *out = h.release();
-        return result;
-    } catch (...) {
-        if (h && h->executor && h->executor->quarantined()) *out = h.release();
-        return fail(error, size, "streaming unknown v3 create error");
-    }
+        add_single_pool_layout(layout, *p, "streaming invalid v3 group blocks");
+    });
 }
 extern "C" int tc_stream_executor_create_v2(const tc_stream_stage_plan_v2 *p,
                                              const tc_stream_adapter_v2 *a,
@@ -244,13 +245,8 @@ extern "C" int tc_stream_executor_create_v2(const tc_stream_stage_plan_v2 *p,
         !a->destroy_pool || !a->fill || !a->prefix || !a->prepare ||
         !a->encode || !a->drain)
         return fail(error, size, "streaming invalid v2 plan/adapter ABI");
-    std::unique_ptr<tc_stream_executor> h;
-    try {
-        StageLayout layout;
-        layout.slot_count = p->slot_count;
-        layout.distance = p->prefetch_distance;
-        layout.workers = p->io_workers;
-        layout.pass_count = p->pass_count;
+    return create_executor(*p, *a, out, error, size, "streaming unknown v2 create error",
+                           [p](StageLayout &layout) {
         layout.pools.reserve(p->pool_count);
         for (uint32_t index = 0; index < p->pool_count; ++index) {
             const auto &source = p->pools[index];
@@ -259,43 +255,16 @@ extern "C" int tc_stream_executor_create_v2(const tc_stream_stage_plan_v2 *p,
                 source.slot_count != p->slot_count ||
                 !source.slot_capacity_bytes)
                 throw std::invalid_argument("streaming invalid v2 pool plan");
-            PoolLayout pool;
-            pool.id = source.pool;
-            pool.slots.reserve(source.slot_count);
-            for (uint32_t slot = 0; slot < source.slot_count; ++slot)
-                pool.slots.push_back({{}, source.slot_capacity_bytes[slot]});
-            layout.pools.push_back(std::move(pool));
+            layout.pools.push_back(make_pool(source.pool, source.slot_count,
+                                             source.slot_capacity_bytes));
         }
         uint64_t blocks = 0;
         for (uint32_t index = 0; index < p->group_count; ++index) {
             const auto &source = p->groups[index];
-            blocks += source.block_count;
-            if (!source.blocks || !source.block_count || blocks > max_blocks)
-                throw std::invalid_argument("streaming invalid v2 group blocks");
-            Group group;
-            group.id = source.group;
-            group.pool = source.pool;
-            group.slot = source.slot;
-            group.bytes = source.content_bytes;
-            group.blocks.assign(source.blocks, source.blocks + source.block_count);
-            layout.groups.push_back(std::move(group));
+            layout.groups.push_back(make_group(source, source.pool, blocks,
+                                                "streaming invalid v2 group blocks"));
         }
-        h = std::make_unique<tc_stream_executor>();
-        h->adapter = std::make_shared<CAdapter>(*a, p->slot_count);
-        h->executor = std::make_unique<StageExecutor>(p->stage,
-                                                       p->request_generation,
-                                                       h->adapter);
-        h->executor->begin(layout);
-        *out = h.release();
-        return 1;
-    } catch (const std::exception &e) {
-        const int result = failure(h.get(), error, size, e);
-        if (h && h->executor && h->executor->quarantined()) *out = h.release();
-        return result;
-    } catch (...) {
-        if (h && h->executor && h->executor->quarantined()) *out = h.release();
-        return fail(error, size, "streaming unknown v2 create error");
-    }
+    });
 }
 extern "C" int tc_stream_executor_run_pass(tc_stream_executor *h,uint32_t pass,uint32_t step,char *error,size_t size){
     try {owner(h);h->executor->run_pass(pass,step,h->cancel);return 1;}

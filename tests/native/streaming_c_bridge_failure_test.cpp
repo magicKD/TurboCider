@@ -44,24 +44,48 @@ int drain(void *user, char *, size_t) {
     return static_cast<Model *>(user)->safe_to_destroy ? 1 : 0;
 }
 
-void check_create_failure(bool standard_exception, bool safe_at_failure) {
-    Model model{standard_exception, safe_at_failure};
+int create(uint32_t version, Model &model, tc_stream_executor **executor,
+           char *error, size_t size) {
     const uint32_t block = 0;
     const uint64_t capacity = 8;
+    if (version == TC_STREAM_SLOT_ABI_V2) {
+        const tc_stream_group_v2 group{0, 0, 0, 1, &block, capacity};
+        const tc_stream_pool_plan_v2 pool{sizeof(pool), version, 0, 1, &capacity};
+        const tc_stream_stage_plan_v2 plan{
+            sizeof(plan), version, 1, 1, 1, 0, 1, 1, 1, &pool, 1, &group};
+        const tc_stream_adapter_v2 ops{
+            sizeof(ops), version, &model,
+            [](void *user, uint32_t, uint32_t slot, uint64_t bytes, char *detail, size_t count) {
+                return allocate(user, slot, bytes, detail, count);
+            },
+            [](void *user, uint32_t) { destroy(user); },
+            fill, prefix, prepare, encode, drain};
+        return tc_stream_executor_create_v2(&plan, &ops, executor, error, size);
+    }
     const tc_stream_group_v1 group{0, 0, 1, &block, capacity};
-    const tc_stream_stage_plan_v1 plan{
-        sizeof(plan), TC_STREAM_SLOT_ABI_V1, 1, 0, 1, 0, 1, 1, 1,
-        &capacity, 1, &group};
     const tc_stream_adapter_v1 ops{
         sizeof(ops), TC_STREAM_SLOT_ABI_V1, &model, allocate, destroy,
         fill, prefix, prepare, encode, drain};
+    if (version == TC_STREAM_SLOT_ABI_V3) {
+        const tc_stream_stage_plan_v3 plan{
+            sizeof(plan), version, 1, 0, 1, 0, 1, 1, TC_STREAM_PASS_RELOAD_V3,
+            1, &capacity, 1, &group};
+        return tc_stream_executor_create_v3(&plan, &ops, executor, error, size);
+    }
+    const tc_stream_stage_plan_v1 plan{
+        sizeof(plan), version, 1, 0, 1, 0, 1, 1, 1, &capacity, 1, &group};
+    return tc_stream_executor_create_v1(&plan, &ops, executor, error, size);
+}
+
+void check_create_failure(uint32_t version, const char *unknown_error,
+                          bool standard_exception, bool safe_at_failure) {
+    Model model{standard_exception, safe_at_failure};
     tc_stream_executor *executor = nullptr;
     char error[1024]{};
 
-    assert(!tc_stream_executor_create_v1(&plan, &ops, &executor, error, sizeof(error)));
+    assert(!create(version, model, &executor, error, sizeof(error)));
     assert(model.allocations == 1);
-    assert(std::strstr(error, standard_exception ? "injected allocation failure"
-                                               : "streaming unknown create error"));
+    assert(std::strcmp(error, standard_exception ? "injected allocation failure" : unknown_error) == 0);
     if (safe_at_failure) {
         assert(!executor && model.destroys == 1);
     } else {
@@ -86,8 +110,14 @@ void check_create_failure(bool standard_exception, bool safe_at_failure) {
 
 int main() {
     for (bool standard_exception : {false, true})
-        for (bool safe_at_failure : {false, true})
-            check_create_failure(standard_exception, safe_at_failure);
-    std::cout << "PASS C bridge construction failures: standard/unknown exceptions, "
+        for (bool safe_at_failure : {false, true}) {
+            check_create_failure(TC_STREAM_SLOT_ABI_V1, "streaming unknown create error",
+                                 standard_exception, safe_at_failure);
+            check_create_failure(TC_STREAM_SLOT_ABI_V2, "streaming unknown v2 create error",
+                                 standard_exception, safe_at_failure);
+            check_create_failure(TC_STREAM_SLOT_ABI_V3, "streaming unknown v3 create error",
+                                 standard_exception, safe_at_failure);
+        }
+    std::cout << "PASS v1/v2/v3 C bridge construction failures: standard/unknown exceptions, "
                  "safe cleanup, quarantine ownership and retry\n";
 }
