@@ -5,55 +5,16 @@ from __future__ import annotations
 
 import json
 import os
-import struct
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+from streaming_test_fixtures import H3_MATRICES, byte_vocab, write_bf16_shard
+
 
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
-INNER = 56 * 128
-HIDDEN = 5376
-FFN = 14336
-MATRICES = (
-    ("attn.qkv_proj.weight", 3 * INNER, HIDDEN),
-    ("attn.out_proj.weight", HIDDEN, INNER),
-    ("mlp.fc1.weight", 2 * FFN, HIDDEN),
-    ("mlp.fc2.weight", HIDDEN, FFN),
-)
-
-
-def byte_vocab() -> dict[str, int]:
-    result: dict[str, int] = {}
-    extra = 0
-    for value in range(256):
-        if 33 <= value <= 126 or 161 <= value <= 172 or value >= 174:
-            codepoint = value
-        else:
-            codepoint = 256 + extra
-            extra += 1
-        result[chr(codepoint)] = value
-    return result
-
-
-def write_shard(path: Path, tensors: list[tuple[str, int, int]]) -> None:
-    header: dict[str, object] = {}
-    cursor = 0
-    for name, rows, columns in tensors:
-        size = rows * columns * 2
-        header[name] = {
-            "dtype": "BF16",
-            "shape": [rows, columns],
-            "data_offsets": [cursor, cursor + size],
-        }
-        cursor += size
-    encoded = json.dumps(header, separators=(",", ":")).encode()
-    with path.open("wb") as stream:
-        stream.write(struct.pack("<Q", len(encoded)))
-        stream.write(encoded)
-        stream.truncate(8 + len(encoded) + cursor)
 
 
 def write_model_root(root: Path) -> None:
@@ -62,13 +23,13 @@ def write_model_root(root: Path) -> None:
     shards: list[list[tuple[str, int, int]]] = [[] for _ in range(13)]
     ordinal = 0
     for block in range(50):
-        for suffix, rows, columns in MATRICES:
+        for suffix, rows, columns in H3_MATRICES:
             shards[ordinal % len(shards)].append(
                 (f"blocks.{block}.{suffix}", rows, columns)
             )
             ordinal += 1
     for index, tensors in enumerate(shards, 1):
-        write_shard(
+        write_bf16_shard(
             transformer / f"model-{index:05d}-of-00013.safetensors",
             tensors,
         )

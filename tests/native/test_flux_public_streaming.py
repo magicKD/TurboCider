@@ -10,24 +10,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+from streaming_test_fixtures import byte_vocab
 from test_flux_streaming_descriptor import HIDDEN, SHARD_NAMES, write_fixture
 
 
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
-
-
-def byte_vocab() -> dict[str, int]:
-    result: dict[str, int] = {}
-    extra = 0
-    for value in range(256):
-        if 33 <= value <= 126 or 161 <= value <= 172 or value >= 174:
-            codepoint = value
-        else:
-            codepoint = 256 + extra
-            extra += 1
-        result[chr(codepoint)] = value
-    return result
 
 
 def write_model_root(root: Path, klein4: bool = False) -> None:

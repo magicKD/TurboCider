@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from streaming_test_fixtures import byte_vocab
+
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/native"))
@@ -35,19 +37,6 @@ def consume(library, pointer: c.c_void_p) -> str:
     value = c.string_at(pointer).decode()
     library.tc_string_free(pointer)
     return value
-
-
-def byte_vocab() -> dict[str, int]:
-    result: dict[str, int] = {}
-    extra = 0
-    for value in range(256):
-        if 33 <= value <= 126 or 161 <= value <= 172 or value >= 174:
-            codepoint = value
-        else:
-            codepoint = 256 + extra
-            extra += 1
-        result[chr(codepoint)] = value
-    return result
 
 
 def record() -> dict:

@@ -7,8 +7,8 @@ import tempfile
 
 os.environ['TURBOCIDER_TEST_FLUX_MODEL'] = 'flux2-klein-4b'
 import mlx.core as mx
-from test_flux_candidate_streaming_gate import LIB, create, fixture, generate, prepare, request
-from test_flux_public_streaming import byte_vocab
+from test_flux_candidate_streaming_gate import GATE, fixture, request
+from streaming_test_fixtures import byte_vocab
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
             vocabulary = json.loads(tokenizer.read_text())
             vocabulary["model"]["vocab"] = byte_vocab()
             tokenizer.write_text(json.dumps(vocabulary))
-            engine = create(LIB.tc_engine_create_model_candidate, root)
+            engine = GATE.create(root, candidate=True)
             try:
                 # Exact generation reaches the absent encoder weights after
                 # installing its cache limit. Preparation may be rejected earlier
@@ -32,7 +32,8 @@ def main():
                     if operation == 'prepare':
                         value['execution'].pop('streaming')
                         value['execution']['residency'] = 'component_staged'
-                    status, error = (generate if operation == 'generate' else prepare)(engine, value)
+                    call = GATE.generate if operation == 'generate' else GATE.prepare
+                    status, _, error = call(engine, value)
                     observed = mx.set_cache_limit(sentinel)
                     assert status != 0, 'Missing encoder weights unexpectedly succeeded'
                     if operation == 'generate':
@@ -42,7 +43,7 @@ def main():
                         print('Preparation failure:', error)
                     assert observed == sentinel, (operation, observed, sentinel, error)
             finally:
-                LIB.tc_engine_free(engine)
+                GATE.free(engine)
     finally:
         mx.set_cache_limit(original)
     print('PASS Flux cache scope: exact generation failure restores the embedding cache limit; preparation rejection preserves it')
