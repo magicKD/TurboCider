@@ -556,10 +556,7 @@ ZImageWeightStream::ZImageWeightStream(
         configure_exact(pinned_blocks, slot_count, budget, activation_reserve, fixed, event);
         metadata.check_unchanged();
     } catch (...) {
-        if (packed_fd_ >= 0) ::close(packed_fd_);
-        packed_fd_ = -1;
-        if (fd_ >= 0) ::close(fd_);
-        fd_ = -1;
+        close_sources();
         fixed.clear();
         throw;
     }
@@ -616,10 +613,7 @@ ZImageWeightStream::ZImageWeightStream(const std::filesystem::path &path, uint64
         for (auto &slot : slots_) allocate(slot, blocks_[0]);
         metrics_.request_slot_allocations = slots_.size();
     } catch (...) {
-        if (packed_fd_ >= 0) ::close(packed_fd_);
-        packed_fd_ = -1;
-        if (fd_ >= 0) ::close(fd_);
-        fd_ = -1;
+        close_sources();
         fixed.clear();
         throw;
     }
@@ -643,10 +637,7 @@ ZImageWeightStream::ZImageWeightStream(
             pinned_blocks, slot_count, budget, activation_reserve, fixed,
             event);
     } catch (...) {
-        if (packed_fd_ >= 0) ::close(packed_fd_);
-        packed_fd_ = -1;
-        if (fd_ >= 0) ::close(fd_);
-        fd_ = -1;
+        close_sources();
         fixed.clear();
         throw;
     }
@@ -675,10 +666,7 @@ ZImageWeightStream::ZImageWeightStream(
             pinned_blocks, slot_count, budget, activation_reserve, fixed,
             event);
     } catch (...) {
-        if (packed_fd_ >= 0) ::close(packed_fd_);
-        packed_fd_ = -1;
-        if (fd_ >= 0) ::close(fd_);
-        fd_ = -1;
+        close_sources();
         fixed.clear();
         throw;
     }
@@ -749,10 +737,7 @@ ZImageWeightStream::ZImageWeightStream(
         configure_exact(pinned_blocks, slot_count, budget, activation_reserve, fixed, event);
         suffix_source_->check_unchanged();
     } catch (...) {
-        if (packed_fd_ >= 0) ::close(packed_fd_);
-        packed_fd_ = -1;
-        if (fd_ >= 0) ::close(fd_);
-        fd_ = -1;
+        close_sources();
         fixed.clear();
         throw;
     }
@@ -760,8 +745,13 @@ ZImageWeightStream::ZImageWeightStream(
 ZImageWeightStream::~ZImageWeightStream() {
     for (auto &slot : slots_)
         if (slot.pending.valid()) slot.pending.wait();
+    close_sources();
+}
+void ZImageWeightStream::close_sources() noexcept {
     if (packed_fd_ >= 0) ::close(packed_fd_);
+    packed_fd_ = -1;
     if (fd_ >= 0) ::close(fd_);
+    fd_ = -1;
 }
 void ZImageWeightStream::reset_metrics() {
     metrics_.request_bytes_loaded = metrics_.request_slot_allocations =
