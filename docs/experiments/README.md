@@ -23,6 +23,7 @@ attempts. They do not by themselves establish supported product behavior.
 | Qwen-Image-2.1 residual and prefix caches | [Cache experiment records](qwen21-cache/README.md) | September DBCache, editing K/V reuse and DiT presets, plus October 512² Runtime ANE cache comparisons and their quality limits |
 | Qwen Image 2.1 Base QKV | [Projection and scheduling records](qwen21-qkv/README.md) | October 512² W8/FP16, fixed graphs, weight staging and matched full-request evidence |
 | Qwen Image 2.1 Base FFN | [Projection and activation records](qwen21-ffn/README.md) | October 512² fixed graphs, projection granularity, activation, GPU work and failed candidates |
+| Qwen Image 2.1 Base Runtime ANE | [Fixed program and request records](qwen21-runtime-ane/README.md) | October 512² profiling, joint QKV/FFN, quality, failure handling and fixed row variants |
 | Runtime-weight FFN/QKV and shared-base runtime LoRA | [Fifty historical records](runtime-ane/README.md) | Components, scheduling, memory, LoRA, QKV, precision, graph lifetimes/procedures and matched requests; workload, withdrawn-candidate and placement limits retained |
 | Qwen-Image-2.1 frozen W8A8 | [Records and evidence boundaries](qwen21-w8a8/README.md) | M4 Max component, generator and resident Session comparisons; 512²/1024² and reference-size limits kept separate |
 | Qwen Image 2.1 ConvRot streaming | [November 7–8 records](qwen21-convrot/README.md) | M5 streaming and Runtime ANE, weight-cache budgets, request lifecycle, and projection candidates with their numerical and timing limits |
