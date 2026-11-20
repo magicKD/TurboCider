@@ -711,17 +711,15 @@ streaming::Descriptor StreamingMetadata::describe(
     return descriptor;
 }
 
-StreamingPlanView::StreamingPlanView(
-    const std::string &transformer_directory, const std::string &model_id,
-    const StreamingConfig &config, const StreamingWorkload &workload)
-    : metadata_(transformer_directory, model_id),
-      descriptor_(metadata_.describe(workload)),
-      layout_(streaming::compile_layout(config, descriptor_)) {
-    require_metadata(layout_.materializations_complete,
+namespace {
+
+void validate_plan_layout(const StreamingMetadata &metadata,
+                          const streaming::Layout &layout) {
+    require_metadata(layout.materializations_complete,
                      "FLUX descriptor metadata is incomplete");
-    require_metadata(layout_.stages.size() == 1,
+    require_metadata(layout.stages.size() == 1,
                      "FLUX shadow requires one stage");
-    const auto &stage = layout_.stages.front();
+    const auto &stage = layout.stages.front();
     require_metadata(stage.id == "denoiser" && !stage.resident &&
                          stage.prefix == 0 && stage.group_size == 1 &&
                          stage.slot_count == 2 && stage.distance <= 1 &&
@@ -732,21 +730,32 @@ StreamingPlanView::StreamingPlanView(
                              streaming::PassTransition::reload &&
                          stage.pools.size() == 2,
                      "FLUX exact streaming requires P0/K2/G1/D0..1/Q1..2 reload");
-    const uint32_t dual = metadata_.dual_block_count();
-    const uint32_t total = dual + metadata_.single_block_count();
+    const uint32_t dual = metadata.dual_block_count();
+    const uint32_t total = dual + metadata.single_block_count();
     require_metadata(stage.groups.size() == total,
                      "FLUX compiled suffix differs from the descriptor");
     for (uint32_t index = 0; index < stage.groups.size(); ++index) {
         const auto &group = stage.groups[index];
         const uint32_t expected_pool = index < dual ? 0 : 1;
         const uint64_t expected_bytes = index < dual ?
-            metadata_.dual_block_bytes() : metadata_.single_block_bytes();
+            metadata.dual_block_bytes() : metadata.single_block_bytes();
         require_metadata(group.blocks.size() == 1 &&
                              group.blocks.front() == index &&
                              group.pool == expected_pool &&
                              group.bytes == expected_bytes,
                          "FLUX group/class projection differs from metadata");
     }
+}
+
+} // namespace
+
+StreamingPlanView::StreamingPlanView(
+    const std::string &transformer_directory, const std::string &model_id,
+    const StreamingConfig &config, const StreamingWorkload &workload)
+    : metadata_(transformer_directory, model_id),
+      descriptor_(metadata_.describe(workload)),
+      layout_(streaming::compile_layout(config, descriptor_)) {
+    validate_plan_layout(metadata_, layout_);
 }
 
 StreamingPlanView::StreamingPlanView(
@@ -757,36 +766,7 @@ StreamingPlanView::StreamingPlanView(
       descriptor_(metadata_.source_lease() && metadata_.source_lease()->has_verified_content()
           ? metadata_.describe_verified(workload) : metadata_.describe(workload)),
       layout_(streaming::compile_layout(config, descriptor_)) {
-    require_metadata(layout_.materializations_complete,
-                     "FLUX descriptor metadata is incomplete");
-    require_metadata(layout_.stages.size() == 1,
-                     "FLUX shadow requires one stage");
-    const auto &stage = layout_.stages.front();
-    require_metadata(stage.id == "denoiser" && !stage.resident &&
-                         stage.prefix == 0 && stage.group_size == 1 &&
-                         stage.slot_count == 2 && stage.distance <= 1 &&
-                         stage.workers >= 1 && stage.workers <= 2 &&
-                         stage.multi_pool_policy ==
-                             streaming::MultiPoolPolicy::retain_all &&
-                         stage.pass_transition ==
-                             streaming::PassTransition::reload &&
-                         stage.pools.size() == 2,
-                     "FLUX exact streaming requires P0/K2/G1/D0..1/Q1..2 reload");
-    const uint32_t dual = metadata_.dual_block_count();
-    const uint32_t total = dual + metadata_.single_block_count();
-    require_metadata(stage.groups.size() == total,
-                     "FLUX compiled suffix differs from the descriptor");
-    for (uint32_t index = 0; index < stage.groups.size(); ++index) {
-        const auto &group = stage.groups[index];
-        const uint32_t expected_pool = index < dual ? 0 : 1;
-        const uint64_t expected_bytes = index < dual ?
-            metadata_.dual_block_bytes() : metadata_.single_block_bytes();
-        require_metadata(group.blocks.size() == 1 &&
-                             group.blocks.front() == index &&
-                             group.pool == expected_pool &&
-                             group.bytes == expected_bytes,
-                         "FLUX group/class projection differs from metadata");
-    }
+    validate_plan_layout(metadata_, layout_);
 }
 
 } // namespace tc::flux2
