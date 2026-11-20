@@ -15,6 +15,7 @@ from typing import Any
 from streaming_evidence import sha256_file
 
 from verify_process_tree_samples import (
+    MEMORY_SUMMARY_SCHEMA,
     EvidenceError as MemoryEvidenceError,
     verify as verify_memory_evidence,
 )
@@ -727,7 +728,7 @@ def verify_memory_bundle(
         return result[0], result[1], result[2]
 
     for index, row in enumerate(rows):
-        if row.get("schema") != "turbocider-streaming-memory-summary-v1":
+        if row.get("schema") != MEMORY_SUMMARY_SCHEMA:
             raise EvidenceError(f"memory summary {index} has invalid schema")
         run_id = row.get("run_id")
         if not isinstance(run_id, str) or not run_id or run_id in by_run:

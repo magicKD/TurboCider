@@ -66,6 +66,7 @@ class ZImageWeightStream {
     void pack_exact_suffix(const z_image::StreamingMetadata &, const Event &);
     void prepare_convrot(std::vector<Record> &);
     void check_source() const;
+    void close_sources() noexcept;
     void allocate(Slot &, const std::vector<Record> &);
     ReadResult read(const std::vector<Read> &,
                     const std::atomic<bool> *worker_cancel = nullptr) const;

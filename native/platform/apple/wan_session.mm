@@ -1,4 +1,5 @@
 #include "bridge.hpp"
+#include "platform.hpp"
 #include "../../models/wan/pipeline.hpp"
 #include "../../core/unigram_tokenizer.hpp"
 #include "../../media/video.hpp"
@@ -7,7 +8,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <fstream>
 
 namespace tc {
 namespace {
@@ -31,73 +31,13 @@ static bool valid_sha256(const std::string& value) {
     });
 }
 
-static std::string sha256_file(const std::filesystem::path& path) {
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream.good()) return {};
-    CC_SHA256_CTX context;
-    if (CC_SHA256_Init(&context) != 1) return {};
-    std::vector<char> buffer(1 << 20);
-    while (stream.good()) {
-        stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        const auto count = stream.gcount();
-        if (count > 0 && CC_SHA256_Update(&context, buffer.data(),
-                                          static_cast<CC_LONG>(count)) != 1)
-            return {};
-    }
-    if (!stream.eof()) return {};
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    if (CC_SHA256_Final(digest, &context) != 1) return {};
-    static constexpr char hex[] = "0123456789abcdef";
-    std::string result(CC_SHA256_DIGEST_LENGTH * 2, '0');
-    for (size_t i = 0; i < CC_SHA256_DIGEST_LENGTH; ++i) {
-        result[i * 2] = hex[digest[i] >> 4];
-        result[i * 2 + 1] = hex[digest[i] & 15];
-    }
-    return result;
-}
-
-struct HashCache {
-    std::filesystem::path path;
-    std::filesystem::file_time_type mtime{};
-    uintmax_t bytes = 0;
-    std::string sha256;
-};
-
 struct WanHashCaches {
-    HashCache base_weights;
-    HashCache base_config;
-    HashCache lora;
-    HashCache output_weights;
-    HashCache output_config;
+    CheckpointHashCache base_weights;
+    CheckpointHashCache base_config;
+    CheckpointHashCache lora;
+    CheckpointHashCache output_weights;
+    CheckpointHashCache output_config;
 };
-
-static std::string cached_sha256(const std::filesystem::path& path,
-                                 HashCache& cache) {
-    std::error_code error;
-    auto absolute = std::filesystem::absolute(path, error);
-    require(!error, "cannot resolve Wan checkpoint path: " + path.string());
-    auto bytes = std::filesystem::file_size(absolute, error);
-    require(!error, "cannot inspect Wan checkpoint size: " + absolute.string());
-    auto mtime = std::filesystem::last_write_time(absolute, error);
-    require(!error, "cannot inspect Wan checkpoint timestamp: " + absolute.string());
-    if (absolute != cache.path || bytes != cache.bytes || mtime != cache.mtime) {
-        cache.sha256 = sha256_file(absolute);
-        require(!cache.sha256.empty(),
-                "cannot hash Wan checkpoint: " + absolute.string());
-        auto final_bytes = std::filesystem::file_size(absolute, error);
-        require(!error && final_bytes == bytes,
-                "Wan checkpoint changed while it was being hashed: " +
-                    absolute.string());
-        auto final_mtime = std::filesystem::last_write_time(absolute, error);
-        require(!error && final_mtime == mtime,
-                "Wan checkpoint changed while it was being hashed: " +
-                    absolute.string());
-        cache.path = absolute;
-        cache.bytes = bytes;
-        cache.mtime = mtime;
-    }
-    return cache.sha256;
-}
 
 static void require_regular(const std::filesystem::path& path,
                             const std::string& label) {
@@ -258,7 +198,7 @@ static std::filesystem::path manifest_file(NSDictionary* record,
 static void verify_file_record(const std::filesystem::path& path,
                                NSDictionary* record,
                                const std::string& context,
-                               HashCache& cache,
+                               CheckpointHashCache& cache,
                                NSString* bytes_key = @"bytes",
                                NSString* sha_key = @"sha256",
                                std::string* digest_out = nullptr) {
@@ -268,7 +208,7 @@ static void verify_file_record(const std::filesystem::path& path,
             context + " size does not match its manifest");
     auto expected = string_value(record, sha_key);
     require(valid_sha256(expected), context + " contains a malformed SHA-256");
-    auto actual = cached_sha256(path, cache);
+    auto actual = cached_checkpoint_sha256(path, cache, "Wan");
     require(actual == expected, context + " SHA-256 does not match its manifest");
     if (digest_out) *digest_out = std::move(actual);
 }
@@ -357,7 +297,7 @@ static bool inspect_wan_lora_manifest(
                 "Wan LoRA output config size does not match its manifest");
         auto output_json_sha = string_value(output, @"config_sha256");
         require(valid_sha256(output_json_sha) &&
-                    cached_sha256(output_config_path, caches.output_config) ==
+                    cached_checkpoint_sha256(output_config_path, caches.output_config, "Wan") ==
                         output_json_sha,
                 "Wan LoRA output config SHA-256 does not match its manifest");
         require_wan_checkpoint_config(read_json(output_config_path));
@@ -380,8 +320,8 @@ static bool inspect_wan_lora_manifest(
         verify_file_record(model_root / base_weights, base,
                            "Wan LoRA base weights", caches.base_weights,
                            @"weights_bytes", @"weights_sha256");
-        require(cached_sha256(model_root / base_config, caches.base_config) ==
-                    base_json_sha,
+        require(cached_checkpoint_sha256(model_root / base_config,
+                                         caches.base_config, "Wan") == base_json_sha,
                 "Wan LoRA base config SHA-256 does not match its manifest");
 
         selection.checkpoint_dir = std::filesystem::absolute(output_dir);
@@ -473,9 +413,9 @@ public:
         require_directory(root_ / "text_encoder", "text_encoder directory");
         require_regular(root_ / "vae/taew2_1.safetensors",
                         "native TAEHV decoder; import the offline-converted model package");
-        require(sha256_file(root_ / "mlx_dit.safetensors") == kWanCheckpointSha,
+        require(sha256_file_or_empty(root_ / "mlx_dit.safetensors") == kWanCheckpointSha,
                 "Wan checkpoint SHA-256 does not match the validated QAD release");
-        require(sha256_file(root_ / "mlx_dit.json") == kWanConfigSha,
+        require(sha256_file_or_empty(root_ / "mlx_dit.json") == kWanConfigSha,
                 "Wan mlx_dit.json SHA-256 does not match the validated QAD release");
     }
 

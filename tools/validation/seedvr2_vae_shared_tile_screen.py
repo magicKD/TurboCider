@@ -65,6 +65,7 @@ def main():
         checkpoint_sha256=CHECKPOINT_SHA,manifest_sha256=sha256(args.manifest),
         hybrid_manifest_sha256=sha256(args.hybrid_manifest) if prefix else None,probe_sha256=sha256(probe),
         source_sha256=sha256(Path(__file__)),native_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_shared_tile_probe.mm"),
+        native_io_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_upscale_io.hpp"),
         hardware=dict(chip=subprocess.check_output(["sysctl","-n","machdep.cpu.brand_string"],text=True).strip(),
             memory_bytes=int(subprocess.check_output(["sysctl","-n","hw.memsize"],text=True)),
             macos=subprocess.check_output(["sw_vers","-productVersion"],text=True).strip()),

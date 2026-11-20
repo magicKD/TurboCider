@@ -1,4 +1,5 @@
 #include "models/flux2/streaming_descriptor.hpp"
+#include "streaming_test_assertions.hpp"
 
 #include <cassert>
 #include <fcntl.h>
@@ -29,19 +30,7 @@ tc::flux2::StreamingWorkload workload() {
     return {256, 256, 32, 0, 4};
 }
 
-template <class Function>
-void rejects(Function function, const char *part) {
-    try {
-        function();
-    } catch (const std::invalid_argument &error) {
-        if (std::string(error.what()).find(part) != std::string::npos)
-            return;
-        std::cerr << error.what() << " expected " << part << '\n';
-        std::abort();
-    }
-    std::cerr << "expected rejection containing " << part << '\n';
-    std::abort();
-}
+constexpr auto rejects = tc::test::rejects<std::invalid_argument>;
 
 } // namespace
 

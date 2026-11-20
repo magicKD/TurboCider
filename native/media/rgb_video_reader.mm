@@ -1,4 +1,5 @@
 #include "rgb_video_reader.hpp"
+#include "asset_track.hpp"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
 #include <cmath>
@@ -30,20 +31,10 @@ struct RGB24VideoReader::Impl {
         source_modified = std::filesystem::last_write_time(path);
         checkpoint(cancelled);
         asset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:@(path.c_str())] options:nil];
-        dispatch_semaphore_t ready = dispatch_semaphore_create(0);
-        __block NSArray<AVAssetTrack *> *tracks = nil;
-        __block NSError *track_error = nil;
-        [asset loadTracksWithMediaType:AVMediaTypeVideo completionHandler:^(NSArray<AVAssetTrack *> *value, NSError *error) {
-            tracks = value; track_error = error; dispatch_semaphore_signal(ready);
-        }];
-        const auto deadline = Clock::now()+std::chrono::seconds(30);
-        while (dispatch_semaphore_wait(ready,dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC))) {
-            checkpoint(cancelled);
-            require(Clock::now()<deadline,"timed out loading video input tracks");
-        }
-        checkpoint(cancelled);
-        require(track_error == nil && tracks.count > 0,"video input has no readable video track");
-        AVAssetTrack *track = tracks.firstObject;
+        const auto loaded = media::load_first_track(asset, AVMediaTypeVideo, &cancelled);
+        require(!loaded.timed_out, "timed out loading video input tracks");
+        require(!loaded.error && loaded.track, "video input has no readable video track");
+        AVAssetTrack *track = loaded.track;
         require(near(track.nominalFrameRate,fps),"declared FPS differs from source; no implicit resampling");
         transform = track.preferredTransform;
         rotated = near(transform.a,0) && near(transform.d,0);

@@ -1,6 +1,7 @@
 #include "models/h3_runtime/h3_streaming_descriptor.hpp"
 #include "runtime/session.hpp"
 #include "runtime/streaming/resolved_request.hpp"
+#include "streaming_test_assertions.hpp"
 
 #include <atomic>
 #include <cassert>
@@ -55,19 +56,7 @@ tc::streaming::StreamingDeviceIdentity device() {
             16ull << 30};
 }
 
-template <class Function>
-void rejects(Function &&function, const char *part) {
-    try {
-        function();
-    } catch (const std::exception &error) {
-        if (std::string(error.what()).find(part) != std::string::npos)
-            return;
-        std::cerr << error.what() << " expected " << part << '\n';
-        std::abort();
-    }
-    std::cerr << "expected rejection containing " << part << '\n';
-    std::abort();
-}
+constexpr auto rejects = tc::test::rejects<std::exception>;
 
 std::vector<std::string> transformer_ids(
         const tc::streaming::SourceLease &lease) {

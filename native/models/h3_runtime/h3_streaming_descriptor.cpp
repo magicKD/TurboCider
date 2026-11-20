@@ -23,6 +23,20 @@ void require_metadata(bool ok, const std::string &reason) {
         throw std::invalid_argument("h3_streaming_metadata: " + reason);
 }
 
+streaming::Layout compile_plan_layout(const StreamingConfig &config,
+                                      streaming::Descriptor &descriptor) {
+    const auto it = config.stages.find("denoiser");
+    if (it != config.stages.end() && it->second.residency &&
+        *it->second.residency == "streamed" &&
+        it->second.resident_prefix_blocks &&
+        it->second.slot_count && *it->second.slot_count == 2u &&
+        it->second.block_group_size && *it->second.block_group_size == 1u) {
+        descriptor.stages.front().pass_transition =
+            streaming::PassTransition::carry_first_group;
+    }
+    return streaming::compile_layout(config, descriptor);
+}
+
 std::string hex_u64(uint64_t value) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
@@ -459,19 +473,24 @@ StreamingPlanView::StreamingPlanView(
     const std::string &transformer_directory, const StreamingConfig &config,
     const StreamingWorkload &workload, uint64_t request_generation)
     : metadata_(transformer_directory), descriptor_(metadata_.describe(workload)),
-      layout_([&] {
-          auto it = config.stages.find("denoiser");
-          if (it != config.stages.end() && it->second.residency &&
-              *it->second.residency == "streamed" &&
-              it->second.resident_prefix_blocks &&
-              it->second.slot_count && *it->second.slot_count == 2u &&
-              it->second.block_group_size &&
-              *it->second.block_group_size == 1u) {
-              descriptor_.stages.front().pass_transition =
-                  streaming::PassTransition::carry_first_group;
-          }
-          return streaming::compile_layout(config, descriptor_);
-      }()) {
+      layout_(compile_plan_layout(config, descriptor_)) {
+    bind_c_plan(workload, request_generation, /*validate_directory=*/true);
+}
+
+StreamingPlanView::StreamingPlanView(
+        std::shared_ptr<const streaming::SourceLease> lease,
+        const std::vector<std::string> &transformer_logical_ids,
+        const StreamingConfig &config, const StreamingWorkload &workload,
+        uint64_t request_generation)
+    : metadata_(std::move(lease), transformer_logical_ids),
+      descriptor_(metadata_.describe(workload)),
+      layout_(compile_plan_layout(config, descriptor_)) {
+    bind_c_plan(workload, request_generation, /*validate_directory=*/false);
+}
+
+void StreamingPlanView::bind_c_plan(const StreamingWorkload &workload,
+                                   uint64_t request_generation,
+                                   bool validate_directory) {
     require_metadata(request_generation != 0,
                      "H3 request generation must be nonzero");
     require_metadata(layout_.materializations_complete,
@@ -483,30 +502,35 @@ StreamingPlanView::StreamingPlanView(
                          stage.group_size == 1 && stage.slot_count == 2 &&
                          stage.pools.size() == 1,
                      "H3 exact candidate requires one K=2/G=1 streamed pool");
-    require_metadata(!workload.token_reduction &&
-                         !workload.first_block_cache,
-                     "H3 exact candidate does not yet model dynamic/fused "
-                     "shortcut access");
+    if (validate_directory) {
+        require_metadata(!workload.token_reduction &&
+                             !workload.first_block_cache,
+                         "H3 exact candidate does not yet model dynamic/fused "
+                         "shortcut access");
+    }
     require_metadata(stage.prefix <
                          descriptor_.stages.front().blocks.size(),
                      "H3 exact candidate requires a streamed suffix");
     require_metadata(stage.groups.size() ==
                          descriptor_.stages.front().blocks.size() - stage.prefix,
                      "H3 compiled suffix group count mismatch");
-    for (const auto &group : stage.groups)
-        require_metadata(group.blocks.size() == 1 && group.pool == 0,
-                         "H3 exact candidate requires one block per group");
-
+    if (validate_directory) {
+        for (const auto &group : stage.groups)
+            require_metadata(group.blocks.size() == 1 && group.pool == 0,
+                             "H3 exact candidate requires one block per group");
+    }
     slot_capacities_.reserve(stage.pools.front().slots.size());
     for (const auto &slot : stage.pools.front().slots) {
-        require_metadata(slot.capacity_bytes != 0,
-                         "H3 compiled slot capacity is zero");
+        if (validate_directory)
+            require_metadata(slot.capacity_bytes != 0,
+                             "H3 compiled slot capacity is zero");
         slot_capacities_.push_back(slot.capacity_bytes);
     }
     groups_.reserve(stage.groups.size());
     for (const auto &group : stage.groups) {
-        require_metadata(group.slot < stage.slot_count,
-                         "H3 C plan group identity is outside ABI range");
+        if (validate_directory)
+            require_metadata(group.slot < stage.slot_count,
+                             "H3 C plan group identity is outside ABI range");
         groups_.push_back({group.id, group.slot,
                            static_cast<uint32_t>(group.blocks.size()),
                            group.blocks.data(), group.bytes});
@@ -519,59 +543,6 @@ StreamingPlanView::StreamingPlanView(
                stage.pass_transition == streaming::PassTransition::carry_first_group ?
                    TC_STREAM_PASS_CARRY_FIRST_GROUP_V3 :
                    TC_STREAM_PASS_RELOAD_V3,
-               request_generation, slot_capacities_.data(),
-               static_cast<uint32_t>(groups_.size()), groups_.data()};
-}
-
-StreamingPlanView::StreamingPlanView(
-        std::shared_ptr<const streaming::SourceLease> lease,
-        const std::vector<std::string> &transformer_logical_ids,
-        const StreamingConfig &config, const StreamingWorkload &workload,
-        uint64_t request_generation)
-    : metadata_(std::move(lease), transformer_logical_ids),
-      descriptor_(metadata_.describe(workload)),
-      layout_([&] {
-          auto it = config.stages.find("denoiser");
-          if (it != config.stages.end() && it->second.residency &&
-              *it->second.residency == "streamed" &&
-              it->second.resident_prefix_blocks && it->second.slot_count &&
-              *it->second.slot_count == 2u && it->second.block_group_size &&
-              *it->second.block_group_size == 1u)
-              descriptor_.stages.front().pass_transition =
-                  streaming::PassTransition::carry_first_group;
-          return streaming::compile_layout(config, descriptor_);
-      }()) {
-    require_metadata(request_generation != 0,
-                     "H3 request generation must be nonzero");
-    require_metadata(layout_.materializations_complete,
-                     "H3 descriptor metadata is incomplete");
-    require_metadata(layout_.stages.size() == 1,
-                     "H3 exact candidate requires one stage");
-    const auto &stage = layout_.stages.front();
-    require_metadata(stage.id == "denoiser" && !stage.resident &&
-                         stage.group_size == 1 && stage.slot_count == 2 &&
-                         stage.pools.size() == 1,
-                     "H3 exact candidate requires one K=2/G=1 streamed pool");
-    require_metadata(stage.prefix < descriptor_.stages.front().blocks.size(),
-                     "H3 exact candidate requires a streamed suffix");
-    require_metadata(stage.groups.size() ==
-                         descriptor_.stages.front().blocks.size() - stage.prefix,
-                     "H3 compiled suffix group count mismatch");
-    slot_capacities_.reserve(stage.pools.front().slots.size());
-    for (const auto &slot : stage.pools.front().slots)
-        slot_capacities_.push_back(slot.capacity_bytes);
-    groups_.reserve(stage.groups.size());
-    for (const auto &group : stage.groups)
-        groups_.push_back({group.id, group.slot,
-                           static_cast<uint32_t>(group.blocks.size()),
-                           group.blocks.data(), group.bytes});
-    require_metadata(stage.groups.size() <= UINT32_MAX,
-                     "H3 C plan has too many groups");
-    c_plan_ = {sizeof(c_plan_), TC_STREAM_SLOT_ABI_V3, 0u,
-               stage.pools.front().id, stage.slot_count, stage.distance,
-               stage.workers, stage.pass_count,
-               stage.pass_transition == streaming::PassTransition::carry_first_group ?
-                   TC_STREAM_PASS_CARRY_FIRST_GROUP_V3 : TC_STREAM_PASS_RELOAD_V3,
                request_generation, slot_capacities_.data(),
                static_cast<uint32_t>(groups_.size()), groups_.data()};
 }

@@ -707,23 +707,6 @@ final class NativeJobStore: ObservableObject {
             }
         } catch { if !recordProcessQuarantine(error) { sessionState = "准备未完成 · 可重试" }; throw error }
     }
-    func maintainCache(modelURL: URL, action: String, source: URL? = nil, directory: URL? = nil) async throws -> Data {
-        guard !busy else { throw NativeFailure(message: "请等待当前任务完成。") }
-        let id = UUID(); preparationID = id
-        busy = true; cancelRequested = false; sessionState = "正在管理加速缓存…"
-        defer { preparationID = nil; busy = false }
-        do {
-            let opened = try await acquire(modelURL, modelID: "flux2-klein-4b")
-            if cancelRequested { throw CancellationError() }
-            let data = try await opened.cache(action: action, directory: directory ?? compilationDirectory, source: source) { [weak self] event in
-                DispatchQueue.main.async { [weak self] in self?.preparationEvent(event, id: id) }
-            }
-            resourceReport = String(decoding: data, as: UTF8.self)
-            if action == "clear" { engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil; sessionState = "模型已卸载 · 编译缓存已清除" }
-            else { sessionState = action == "compile_manifest" ? "加速分区预编译完成" : "缓存检查完成" }
-            return data
-        } catch { if !recordProcessQuarantine(error) { sessionState = "缓存操作未完成 · 可重试" }; throw error }
-    }
     private func prepareUpscaleModel(_ modelURL: URL, compute: UpscaleCompute, warmup: Bool = true) async throws -> UpscaleModelInfo {
         upscaleStatus = warmup ? "正在预加载并预热超分模型…" : "正在加载超分模型…"
         let task = Task { try await upscaleSession.prepare(model: modelURL, compute: compute, warmup: warmup) }

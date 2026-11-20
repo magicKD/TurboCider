@@ -1,5 +1,6 @@
 #pragma once
 #include "ane_runtime.hpp"
+#include <stdexcept>
 #include <tuple>
 
 namespace tc::ane::w8_stage {
@@ -61,6 +62,29 @@ inline void validate_column_scale(const DeviceWeightView &source, const W8StageS
     check(scale.buffer != source.buffer && (!source.scales || scale.buffer != source.scales->buffer) &&
           (!source.offsets || scale.buffer != source.offsets->buffer), "W8 S1 aliases source/metadata");
 }
+inline void validate_swiglu_recipe(std::span<const DeviceWeightRegion> weights,
+                                  const GraphShape &shape, W8Basis basis) {
+    if (weights.size() != 3) throw std::runtime_error("W8 SwiGLU requires gate/up/down");
+    const bool comfy = basis == W8Basis::ComfyH256;
+    const int up_block = comfy ? 256 : 128;
+    const int down_block = comfy ? 256 : 512;
+    const uint64_t seed = comfy ? 0 : 20260930;
+    const auto &g = weights[0].selection;
+    const auto &u = weights[1].selection;
+    const auto &d = weights[2].selection;
+    if (!(g.rows == shape.width && g.columns == shape.hidden &&
+          u.rows == shape.width && u.columns == shape.hidden &&
+          d.rows == shape.hidden && d.columns == shape.width &&
+          g.rotation_block == up_block && u.rotation_block == up_block &&
+          d.rotation_block == down_block && !g.transpose && !u.transpose && !d.transpose &&
+          g.rotation_seed == seed && u.rotation_seed == seed && d.rotation_seed == seed &&
+          g.basis == basis && u.basis == basis && d.basis == basis &&
+          g.activation_group_size == 0 && u.activation_group_size == 0 &&
+          d.activation_group_size == 0)) {
+        throw std::runtime_error("W8 source projection selection/recipe mismatch");
+    }
+}
+
 inline void validate_swiglu_column_scales(std::span<const DeviceWeightRegion> weights, int hidden) {
     if (weights.size() != 3) throw CapabilityError("W8 SwiGLU requires gate/up/down");
     const auto &g = weights[0].selection, &u = weights[1].selection, &d = weights[2].selection;

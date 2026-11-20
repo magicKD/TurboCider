@@ -1,4 +1,5 @@
 #include "video_input.hpp"
+#include "asset_track.hpp"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
 #include <cmath>
@@ -15,18 +16,10 @@ Tensor load_video_tensor(const std::filesystem::path &path, int expected_frames,
     checkpoint(cancelled);
     @autoreleasepool {
         AVURLAsset *asset = [AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:@(path.c_str())] options:nil];
-        dispatch_semaphore_t ready = dispatch_semaphore_create(0);
-        __block NSArray<AVAssetTrack *> *tracks = nil;
-        __block NSError *track_error = nil;
-        [asset loadTracksWithMediaType:AVMediaTypeVideo completionHandler:^(NSArray<AVAssetTrack *> *value, NSError *error) {
-            tracks = value;
-            track_error = error;
-            dispatch_semaphore_signal(ready);
-        }];
-        require(dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC)) == 0,
-                "timed out loading video input tracks");
-        require(track_error == nil && tracks.count > 0, "video input has no readable video track");
-        AVAssetTrack *track = tracks.firstObject;
+        const auto loaded = media::load_first_track(asset, AVMediaTypeVideo);
+        require(!loaded.timed_out, "timed out loading video input tracks");
+        require(!loaded.error && loaded.track, "video input has no readable video track");
+        AVAssetTrack *track = loaded.track;
         require(near(track.nominalFrameRate, expected_fps),
                 "declared FPS differs from source; SeedVR2 does not silently resample video");
         NSError *error = nil;

@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from z_image_convrot_fixture import write_convrot_fixture
+
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
 
@@ -92,43 +94,10 @@ class WeightStreamTests(unittest.TestCase):
     def run_probe(self, path, *args):
         return subprocess.run([str(self.binary), str(path), *args], capture_output=True, text=True, timeout=60)
 
-    def convrot_fixture(self, change=None):
-        import numpy as np
-        header, payload = {}, bytearray()
-        def add(name, values, dtype):
-            data = values.tobytes()
-            header[name] = {"dtype": dtype, "shape": list(values.shape),
-                           "data_offsets": [len(payload), len(payload) + len(data)]}
-            payload.extend(data)
-        add("x_embedder.weight", np.array([[1.00390625, 1.01171875], [-0.01, 0.03]], np.float32), "F32")
-        def projection(prefix, rows, cols, block):
-            q = ((np.arange(rows * cols, dtype=np.int32) + block) % 256 - 128).astype(np.int8).reshape(rows, cols)
-            add(prefix + ".weight", q, "I8")
-            # Includes BF16 halfway cases to verify CPU packing matches MLX.
-            add(prefix + ".weight_scale", ((np.arange(rows, dtype=np.float32) % 13 + 1.00390625) / 128).reshape(rows, 1), "F32")
-            add(prefix + ".comfy_quant", np.frombuffer(b'{"format":"int8","rotate":true}', dtype=np.uint8), "U8")
-        for kind in ("noise_refiner", "context_refiner", "layers"):
-            for block in range(30 if kind == "layers" else 2):
-                prefix = f"{kind}.{block}"
-                for w, rows, cols in ((1, 512, 256), (2, 256, 512), (3, 512, 256)):
-                    projection(f"{prefix}.feed_forward.w{w}", rows, cols, block)
-                if kind == "layers":
-                    for name, rows in (("attention.qkv", 24), ("attention.out", 8), ("adaLN_modulation.0", 32)):
-                        projection(f"{prefix}.{name}", rows, 256, block)
-                    for j in range(7):
-                        add(f"{prefix}.norm{j}.weight", np.array([block + 1.00390625, -0.01], np.float32), "F32")
-        if change:
-            change(header)
-        encoded = json.dumps(header).encode()
-        encoded += b" " * (-len(encoded) % 8)
-        path = self.root / "convrot.safetensors"
-        path.write_bytes(struct.pack("<Q", len(encoded)) + encoded + payload)
-        return path
-
     def test_convrot_gpu_values_prefetch_depths_and_full_residency(self):
         if not self.measured_device:
             self.skipTest("INT8 streaming requires a qualified device")
-        path = self.convrot_fixture()
+        path = write_convrot_fixture(self.root)
         for depth in ((1, 2, 4, 8) if self.suffix_device else (1,)):
             for suffix in ((False, True) if self.suffix_device else (False,)):
                 with self.subTest(depth=depth, suffix=suffix):
@@ -139,7 +108,7 @@ class WeightStreamTests(unittest.TestCase):
     def test_convrot_rejects_incompatible_scale_layout(self):
         if not self.measured_device:
             self.skipTest("INT8 streaming requires a qualified device")
-        path = self.convrot_fixture(lambda h: [v.update(shape=[1, v["shape"][0]]) for k, v in h.items()
+        path = write_convrot_fixture(self.root, lambda h: [v.update(shape=[1, v["shape"][0]]) for k, v in h.items()
                                              if k.endswith(".weight_scale")])
         result = self.run_probe(path, "--convrot-1-full")
         self.assertNotEqual(result.returncode, 0)
@@ -148,7 +117,7 @@ class WeightStreamTests(unittest.TestCase):
     def test_convrot_unmeasured_device_is_rejected(self):
         if self.measured_device:
             self.skipTest("negative hardware path runs on unmeasured devices; policy matrix covers it on this host")
-        result = self.run_probe(self.convrot_fixture(), "--convrot-1-full")
+        result = self.run_probe(write_convrot_fixture(self.root), "--convrot-1-full")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("only enabled for qualified Apple M5 16 GiB or M5 Pro 24 GiB", result.stderr)
 

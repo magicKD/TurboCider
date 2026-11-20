@@ -100,6 +100,9 @@ class StreamingPlanView {
     const tc_stream_stage_plan_v3 &c_plan() const noexcept { return c_plan_; }
 
   private:
+    void bind_c_plan(const StreamingWorkload &workload,
+                     uint64_t request_generation, bool validate_directory);
+
     StreamingMetadata metadata_;
     streaming::Descriptor descriptor_;
     streaming::Layout layout_;

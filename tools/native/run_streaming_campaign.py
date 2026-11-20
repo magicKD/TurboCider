@@ -54,6 +54,7 @@ from process_tree_sampler import (
     RoleRule,
 )
 from verify_process_tree_samples import EvidenceError as MemoryEvidenceError
+from verify_process_tree_samples import memory_summary
 from verify_process_tree_samples import verify as verify_memory_evidence
 
 
@@ -541,29 +542,7 @@ class RequestMemorySampler:
             raise CampaignError(f"invalid process-tree evidence: {exc}") from exc
         if verified["correlation_id"] != self.correlation_id:
             raise CampaignError("process-tree evidence correlation differs")
-        return {
-            "schema": "turbocider-streaming-memory-summary-v1",
-            "sampler_revision": verified["sampler_revision"],
-            "root_identity": verified["root_identity"],
-            "correlation_id": self.correlation_id,
-            "status": verified["status"],
-            "complete": verified["complete"],
-            "reasons": verified["reasons"],
-            "sample_count": verified["sample_count"],
-            "max_gap_ns": verified["max_gap_ns"],
-            "allowed_max_gap_ns": verified["allowed_max_gap_ns"],
-            "tree_peak_rss_bytes": verified["tree_peak_rss_bytes"],
-            "tree_peak_phys_footprint_bytes": verified[
-                "tree_peak_phys_footprint_bytes"
-            ],
-            "swap_in_bytes": verified["swap_in_bytes"],
-            "swap_out_bytes": verified["swap_out_bytes"],
-            "compression_bytes": verified["compression_bytes"],
-            "decompression_bytes": verified["decompression_bytes"],
-            "command_exit_code": verified["command_exit_code"],
-            "evidence_digest": verified["final_evidence_digest"],
-            "evidence_path": str(self.evidence_path),
-        }
+        return memory_summary(verified, self.evidence_path)
 
 
 def run_worker_request(
@@ -1214,6 +1193,21 @@ def artifacts_for_worker(command: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def streaming_runtime_audit(
+    block: Any, audit_available: bool, snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    counters = block if isinstance(block, dict) else {}
+    audit = {
+        "audit_available": audit_available,
+        "block_streaming_enabled": bool(counters.get("enabled")),
+        "request_slot_allocations": counters.get("request_slot_allocations"),
+        "request_slot_refills": counters.get("request_slot_refills"),
+    }
+    if snapshot is not None:
+        audit.update(snapshot)
+    return audit
+
+
 def run_native_sample(
     library: Any, engine: c.c_void_p, command: dict[str, Any],
     engine_lifecycle: str,
@@ -1265,7 +1259,7 @@ def run_native_sample(
     )
     if semantic is not None:
         semantic["request"] = request_semantic_identity(command["request"])
-    row = {
+    return {
         "status": "success",
         "native_status": 0,
         "client_wall_seconds": client_wall,
@@ -1282,24 +1276,8 @@ def run_native_sample(
         "block_counters": block,
         "artifacts": artifacts_for_worker(command),
         "process_peak_rss_bytes": peak_rss_bytes(),
-        "runtime_audit": {
-            "audit_available": audit_available,
-            "block_streaming_enabled": (
-                bool(block.get("enabled")) if isinstance(block, dict) else False
-            ),
-            "request_slot_allocations": (
-                block.get("request_slot_allocations")
-                if isinstance(block, dict) else None
-            ),
-            "request_slot_refills": (
-                block.get("request_slot_refills")
-                if isinstance(block, dict) else None
-            ),
-        },
+        "runtime_audit": streaming_runtime_audit(block, audit_available, runtime_audit),
     }
-    if runtime_audit is not None:
-        row["runtime_audit"].update(runtime_audit)
-    return row
 
 
 def run_synthetic_sample(
@@ -1458,22 +1436,10 @@ def run_probe_sample(
     if semantic is not None:
         semantic["request"] = request_semantic_identity(command["request"])
     audit_snapshot = result.get("audit_snapshot")
-    runtime_audit = {
-        "audit_available": isinstance(audit_snapshot, dict),
-        "block_streaming_enabled": (
-            bool(block.get("enabled")) if isinstance(block, dict) else False
-        ),
-        "request_slot_allocations": (
-            block.get("request_slot_allocations")
-            if isinstance(block, dict) else None
-        ),
-        "request_slot_refills": (
-            block.get("request_slot_refills")
-            if isinstance(block, dict) else None
-        ),
-    }
-    if isinstance(audit_snapshot, dict):
-        runtime_audit.update(audit_snapshot)
+    audit_available = isinstance(audit_snapshot, dict)
+    runtime_audit = streaming_runtime_audit(
+        block, audit_available, audit_snapshot if audit_available else None
+    )
     request_wall = float(timings.get("request_wall", client_wall))
     denoise = float(timings.get("denoise", result.get("denoise_seconds", 0.0)))
     resolved, actual = extract_layouts(result)

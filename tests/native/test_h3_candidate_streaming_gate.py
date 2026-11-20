@@ -3,65 +3,15 @@
 
 from __future__ import annotations
 
-import ctypes as C
-import json
 from pathlib import Path
 import tempfile
 
-from streaming_gate_api import load_candidate_library
+from streaming_gate_api import CandidateStreamingGate
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LIB = load_candidate_library(ROOT)
+GATE = CandidateStreamingGate(ROOT, "minimax-h3-turbo")
 
-
-def consume(pointer: C.c_void_p) -> str:
-    if not pointer.value:
-        return ""
-    value = C.string_at(pointer).decode()
-    LIB.tc_string_free(pointer)
-    return value
-
-
-def create(symbol, root: Path) -> C.c_void_p:
-    engine, error = C.c_void_p(), C.c_void_p()
-    status = symbol(
-        b"minimax-h3-turbo", str(root).encode(),
-        C.byref(engine), C.byref(error),
-    )
-    failure = consume(error)
-    assert status == 0 and engine.value, failure
-    return engine
-
-
-def generate(engine: C.c_void_p, request: dict) -> tuple[int, str]:
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_generate(
-        engine, json.dumps(request).encode(), None, None,
-        C.byref(result), C.byref(error),
-    )
-    consume(result)
-    return status, consume(error)
-
-
-def prepare(engine: C.c_void_p, request: dict) -> tuple[int, str]:
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_prepare(
-        engine, json.dumps(request).encode(), 0, None, None,
-        C.byref(result), C.byref(error),
-    )
-    consume(result)
-    return status, consume(error)
-
-
-def resolve(engine: C.c_void_p, request: dict) -> tuple[int, str]:
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_resolve_streaming_json(
-        engine, json.dumps(request).encode(),
-        C.byref(result), C.byref(error),
-    )
-    consume(result)
-    return status, consume(error)
 
 
 def request(slot_count: int = 2) -> dict:
@@ -112,41 +62,41 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="tc-h3-candidate-gate-") as raw:
         root = Path(raw)
 
-        public = create(LIB.tc_engine_create_model, root)
+        public = GATE.create(root)
         try:
-            status, error = generate(public, request())
+            status, _, error = GATE.generate(public, request())
             assert status != 0
             assert "streaming_layout_not_certified" in error, error
-            status, error = generate(public, selector_request())
+            status, _, error = GATE.generate(public, selector_request())
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
-            status, error = prepare(public, selector_request())
+            status, _, error = GATE.prepare(public, selector_request())
             assert status != 0
             assert "streaming_prepare_unsupported" in error, error
-            status, error = resolve(public, selector_request())
+            status, _, error = GATE.resolve(public, selector_request())
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
         finally:
-            LIB.tc_engine_free(public)
+            GATE.free(public)
 
-        candidate = create(LIB.tc_engine_create_model_candidate, root)
+        candidate = GATE.create(root, candidate=True)
         try:
-            status, error = generate(candidate, request(slot_count=1))
+            status, _, error = GATE.generate(candidate, request(slot_count=1))
             assert status != 0
             assert "streaming_route_unsupported: H3 exact candidate" in error, error
-            status, error = prepare(candidate, selector_request())
+            status, _, error = GATE.prepare(candidate, selector_request())
             assert status != 0
             assert "streaming_prepare_unsupported" in error, error
-            status, error = resolve(candidate, selector_request())
+            status, _, error = GATE.resolve(candidate, selector_request())
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
 
-            status, error = generate(candidate, request())
+            status, _, error = GATE.generate(candidate, request())
             assert status != 0
             assert "streaming_layout_not_certified" not in error, error
             assert "streaming_route_unsupported: H3 exact candidate" not in error, error
         finally:
-            LIB.tc_engine_free(candidate)
+            GATE.free(candidate)
 
     api = (ROOT / "native/api/c_api.mm").read_text()
     session = (ROOT / "native/platform/apple/h3_session.mm").read_text()

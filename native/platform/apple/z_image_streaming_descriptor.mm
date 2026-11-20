@@ -1,4 +1,4 @@
-#import <Foundation/Foundation.h>
+#include "streaming_metadata.hpp"
 
 #include "../../models/z_image/streaming_descriptor.hpp"
 #include "../../models/z_image/suffix_materialization.hpp"
@@ -8,8 +8,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cerrno>
-#include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
@@ -21,8 +20,9 @@
 namespace tc::z_image {
 namespace {
 
+namespace header_reader = streaming::metadata;
+
 constexpr uint64_t kMaxHeaderBytes = 16ull << 20;
-constexpr uint64_t kMaxExactJsonInteger = 1ull << 53;
 constexpr uint64_t kHidden = 3840;
 
 void require_metadata(bool ok, const std::string &reason) {
@@ -52,35 +52,6 @@ std::shared_ptr<const streaming::SourceLease> capture_checkpoint_lease(
     file.path = path;
     return streaming::SourceLease::capture(
         std::vector<streaming::SourceFileIdentity>{std::move(file)});
-}
-
-void pread_exact(int descriptor, void *destination, size_t bytes,
-                 uint64_t offset) {
-    auto *output = static_cast<unsigned char *>(destination);
-    size_t done = 0;
-    while (done < bytes) {
-        const ssize_t count = ::pread(
-            descriptor, output + done, bytes - done,
-            static_cast<off_t>(offset + done));
-        if (count < 0 && errno == EINTR)
-            continue;
-        require_metadata(count > 0,
-                         "checkpoint header read failed or was truncated");
-        done += static_cast<size_t>(count);
-    }
-}
-
-uint64_t integer(id value, const char *label) {
-    require_metadata([value isKindOfClass:NSNumber.class] &&
-                         CFGetTypeID((__bridge CFTypeRef)value) !=
-                             CFBooleanGetTypeID(),
-                     std::string("non-integer ") + label);
-    const double number = [value doubleValue];
-    require_metadata(std::isfinite(number) && number >= 0 &&
-                         number == std::floor(number) &&
-                         number <= static_cast<double>(kMaxExactJsonInteger),
-                     std::string("invalid ") + label);
-    return static_cast<uint64_t>(number);
 }
 
 bool fixed_name(const std::string &name) {
@@ -171,32 +142,15 @@ void StreamingMetadata::parse_checkpoint() {
     require_metadata(state_ && state_->descriptor,
                      "checkpoint descriptor is unavailable");
 
-    std::array<unsigned char, 8> prefix{};
-    pread_exact(state_->descriptor.get(), prefix.data(), prefix.size(), 0);
-    uint64_t header_bytes = 0;
-    for (uint32_t index = 0; index < prefix.size(); ++index)
-        header_bytes |= static_cast<uint64_t>(prefix[index]) << (8 * index);
-    require_metadata(header_bytes && header_bytes <= kMaxHeaderBytes &&
-                         header_bytes <= state_->file_bytes - 8,
-                     "invalid safetensors header length");
-    std::vector<unsigned char> encoded(static_cast<size_t>(header_bytes));
-    pread_exact(state_->descriptor.get(), encoded.data(), encoded.size(), 8);
-
     @autoreleasepool {
-        NSData *data = [NSData dataWithBytes:encoded.data()
-                                      length:encoded.size()];
-        NSError *failure = nil;
-        id parsed = [NSJSONSerialization JSONObjectWithData:data
-                                                    options:0
-                                                      error:&failure];
-        require_metadata([parsed isKindOfClass:NSDictionary.class],
-                         failure ? failure.localizedDescription.UTF8String :
-                                   "invalid safetensors JSON root");
-        NSDictionary *root = (NSDictionary *)parsed;
+        const auto [root, payload_offset] = header_reader::read_safetensors_header(
+            state_->descriptor.get(), state_->file_bytes, kMaxHeaderBytes,
+            "checkpoint header read failed or was truncated",
+            "invalid safetensors JSON root", require_metadata);
         NSArray *keys = [[root allKeys]
             sortedArrayUsingSelector:@selector(compare:)];
         std::vector<std::pair<uint64_t, uint64_t>> intervals;
-        const uint64_t payload_bytes = state_->file_bytes - 8 - header_bytes;
+        const uint64_t payload_bytes = state_->file_bytes - payload_offset;
         for (id raw_key in keys) {
             require_metadata([raw_key isKindOfClass:NSString.class],
                              "safetensors key is not a string");
@@ -231,22 +185,24 @@ void StreamingMetadata::parse_checkpoint() {
             tensor.dtype = dtype;
             uint64_t bytes = dtype == "F32" ? 4 : dtype == "BF16" ? 2 : 1;
             for (id raw_dimension in shape) {
-                const uint64_t dimension = integer(raw_dimension,
-                                                   "tensor dimension");
+                const uint64_t dimension = header_reader::json_unsigned_integer(
+                    raw_dimension, "tensor dimension", require_metadata);
                 require_metadata(dimension &&
                                      bytes <= UINT64_MAX / dimension,
                                  "tensor shape size overflow");
                 bytes *= dimension;
                 tensor.shape.push_back(dimension);
             }
-            tensor.data_begin = integer(offsets[0], "tensor offset");
-            tensor.data_end = integer(offsets[1], "tensor offset");
+            tensor.data_begin = header_reader::json_unsigned_integer(
+                offsets[0], "tensor offset", require_metadata);
+            tensor.data_end = header_reader::json_unsigned_integer(
+                offsets[1], "tensor offset", require_metadata);
             require_metadata(tensor.data_end >= tensor.data_begin &&
                                  tensor.data_end - tensor.data_begin == bytes &&
                                  tensor.data_end <= payload_bytes,
                              "tensor range differs from dtype/shape");
             tensor.file_offset = checked_add(
-                8 + header_bytes, tensor.data_begin,
+                payload_offset, tensor.data_begin,
                 "tensor file offset overflow");
             tensor.bytes = bytes;
             intervals.emplace_back(tensor.data_begin, tensor.data_end);

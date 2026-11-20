@@ -29,6 +29,43 @@ def _paeth(left: int, above: int, upper_left: int) -> int:
     return upper_left
 
 
+def decode_png_rows(
+    data: bytes, width: int, height: int, channels: int, path: Path,
+) -> bytearray:
+    """Reconstruct 8-bit samples from length-checked filtered scanlines."""
+    stride = width * channels
+    decoded_rows = bytearray(height * stride)
+    previous = bytearray(stride)
+    source = 0
+    for row in range(height):
+        filter_type = data[source]
+        source += 1
+        encoded = data[source:source + stride]
+        source += stride
+        decoded = bytearray(stride)
+        for index, byte in enumerate(encoded):
+            left = decoded[index - channels] if index >= channels else 0
+            above = previous[index]
+            upper_left = previous[index - channels] if index >= channels else 0
+            if filter_type == 0:
+                prediction = 0
+            elif filter_type == 1:
+                prediction = left
+            elif filter_type == 2:
+                prediction = above
+            elif filter_type == 3:
+                prediction = (left + above) // 2
+            elif filter_type == 4:
+                prediction = _paeth(left, above, upper_left)
+            else:
+                raise ValueError(f"invalid PNG filter {filter_type} in {path}")
+            decoded[index] = (byte + prediction) & 255
+        begin = row * stride
+        decoded_rows[begin:begin + stride] = decoded
+        previous = decoded
+    return decoded_rows
+
+
 def _decode_png_rgb(path: Path) -> tuple[int, int, bytes]:
     data = path.read_bytes()
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -59,35 +96,7 @@ def _decode_png_rgb(path: Path) -> tuple[int, int, bytes]:
     stride = width * channels
     if len(raw) != height * (stride + 1):
         raise ValueError(f"PNG payload size mismatch in {path}")
-    decoded_rows = bytearray(height * stride)
-    previous = bytearray(stride)
-    source = 0
-    for row in range(height):
-        filter_type = raw[source]
-        source += 1
-        encoded = raw[source:source + stride]
-        source += stride
-        decoded = bytearray(stride)
-        for index, byte in enumerate(encoded):
-            left = decoded[index - channels] if index >= channels else 0
-            above = previous[index]
-            upper_left = previous[index - channels] if index >= channels else 0
-            if filter_type == 0:
-                prediction = 0
-            elif filter_type == 1:
-                prediction = left
-            elif filter_type == 2:
-                prediction = above
-            elif filter_type == 3:
-                prediction = (left + above) // 2
-            elif filter_type == 4:
-                prediction = _paeth(left, above, upper_left)
-            else:
-                raise ValueError(f"invalid PNG filter {filter_type} in {path}")
-            decoded[index] = (byte + prediction) & 255
-        begin = row * stride
-        decoded_rows[begin:begin + stride] = decoded
-        previous = decoded
+    decoded_rows = decode_png_rows(raw, width, height, channels, path)
     rgb = bytearray(width * height * 3)
     for pixel in range(width * height):
         source = pixel * channels
