@@ -7,7 +7,9 @@ import json
 from pathlib import Path
 import tempfile
 
-from streaming_gate_api import CandidateStreamingGate
+from streaming_gate_api import (
+    CandidateStreamingGate, image_generation_request, memory_tier_request,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,46 +27,11 @@ def resolve(engine, request: dict) -> tuple[int, str]:
 
 
 def request() -> dict:
-    return {
-        "schema_version": 2,
-        "model": "z-image-turbo",
-        "operation": "image.generate",
-        "inputs": [{"kind": "text", "role": "prompt", "text": "gate"}],
-        "outputs": [{
-            "kind": "image", "path": "/tmp/not-generated-z-image.png",
-            "width": 64, "height": 64,
-        }],
-        "sampling": {"seed": 42, "steps": 1},
-        "execution": {
-            "policy": "gpu",
-            "streaming": {
-                "schema_version": 1,
-                "enabled": True,
-                "selection": "manual",
-                "retention": "request",
-                "stages": {"denoiser": {
-                    "residency": "streamed",
-                    "block_group_size": 1,
-                    "slot_count": 2,
-                    "resident_prefix_blocks": 0,
-                    "prefetch_distance": 0,
-                    "io_workers": 1,
-                }},
-            },
-        },
-    }
+    return image_generation_request("z-image-turbo", "gate", "/tmp/not-generated-z-image.png")
 
 
 def selector_request() -> dict:
-    value = request()
-    value["execution"]["streaming"] = {
-        "schema_version": 2,
-        "enabled": True,
-        "selection": "memory_tier",
-        "retention": "request",
-        "target_request_memory_bytes": 12 << 30,
-    }
-    return value
+    return memory_tier_request(request())
 
 
 def main() -> None:

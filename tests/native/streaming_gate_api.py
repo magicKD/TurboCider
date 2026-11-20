@@ -81,3 +81,45 @@ class CandidateStreamingGate:
             self.library.tc_engine_resolve_streaming_json, engine, request_json,
             result_output=result_output,
         )
+
+
+def image_generation_request(model: str, prompt: str, output_path: str) -> dict:
+    return {
+        "schema_version": 2,
+        "model": model,
+        "operation": "image.generate",
+        "inputs": [{"kind": "text", "role": "prompt", "text": prompt}],
+        "outputs": [{
+            "kind": "image", "path": output_path,
+            "width": 64, "height": 64,
+        }],
+        "sampling": {"seed": 42, "steps": 1},
+        "execution": {
+            "policy": "gpu",
+            "streaming": {
+                "schema_version": 1,
+                "enabled": True,
+                "selection": "manual",
+                "retention": "request",
+                "stages": {"denoiser": {
+                    "residency": "streamed",
+                    "block_group_size": 1,
+                    "slot_count": 2,
+                    "resident_prefix_blocks": 0,
+                    "prefetch_distance": 0,
+                    "io_workers": 1,
+                }},
+            },
+        },
+    }
+
+
+def memory_tier_request(value: dict) -> dict:
+    value["execution"]["streaming"] = {
+        "schema_version": 2,
+        "enabled": True,
+        "selection": "memory_tier",
+        "retention": "request",
+        "target_request_memory_bytes": 12 << 30,
+    }
+    return value
