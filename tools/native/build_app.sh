@@ -36,7 +36,7 @@ STATE+=(apps/macos/RunInsights.swift)
 STATE+=(apps/macos/TensorCacheController.swift)
 STATE+=(apps/macos/LTXWorker.swift)
 STATE+=(apps/macos/ImageOutputTransaction.swift)
-STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/PublicImageQueries.swift apps/macos/WorkerEventStream.swift apps/macos/RuntimeImageWorker.swift)
+STATE+=(apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/PublicImageQueries.swift apps/macos/WorkerEventFraming.swift apps/macos/WorkerEventStream.swift apps/macos/RuntimeImageWorker.swift)
 STATE+=(apps/macos/VideoPreview.swift)
 STATE+=(apps/macos/TinyVAE.swift)
 STATE+=(apps/macos/SeedVR2ResourceAdvice.swift)
@@ -163,5 +163,5 @@ fi
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ImageUpscalerTests.swift -o "$OUT/turbocider-upscaler-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/ImageUpscaler.swift tests/integration/UpscaleComputeBenchmark.swift -o "$OUT/turbocider-upscale-benchmark"
-"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/RuntimeImageWorker.swift tests/integration/RuntimeImageWorkerTests.swift -o "$OUT/turbocider-runtime-image-worker-tests"
+"$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/WorkerRequestEnvelope.swift apps/macos/WorkerTerminalEnvelope.swift apps/macos/WorkerProcessIdentity.swift apps/macos/NativeProcessRunner.swift apps/macos/PublicImageWorker.swift apps/macos/WorkerEventFraming.swift apps/macos/RuntimeImageWorker.swift tests/integration/RuntimeImageWorkerTests.swift -o "$OUT/turbocider-runtime-image-worker-tests"
 printf 'Built Swift App and integration tests\n'

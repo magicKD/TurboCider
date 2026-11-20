@@ -17,13 +17,10 @@ final class WorkerEventStream: @unchecked Sendable {
     private let lock = NSLock()
     private let jobID: String, reference: PublicImageWorker.Reference, request: NativeRequestV2
     private let callback: @Sendable (Event) -> Void
-    private var pending = Data()
-    private var discarding = false
+    private var framing = WorkerEventFraming(invalidMessage: "worker_event_invalid")
     private var sequence = 0
     private var nativeSequence = -1
     private var resolution: NativeStreamingResolution?
-    private var failed = false
-    private static let prefix = Data("TC_EVENT\t".utf8)
     init(jobID: UUID, reference: PublicImageWorker.Reference, request: NativeRequestV2,
          callback: @escaping @Sendable (Event) -> Void) {
         self.jobID = jobID.uuidString.lowercased(); self.reference = reference
@@ -32,25 +29,9 @@ final class WorkerEventStream: @unchecked Sendable {
     private func invalid() -> NativeFailure { NativeFailure(message: "worker_event_invalid") }
     func consume(_ data: Data) throws {
         lock.lock(); defer { lock.unlock() }
-        guard !failed else { throw invalid() }
-        do {
-            for byte in data {
-                if byte == 10 {
-                    if !discarding { try line(pending) }
-                    pending.removeAll(keepingCapacity: true); discarding = false
-                } else if !discarding {
-                    pending.append(byte)
-                    if pending.count > 128 * 1024 + Self.prefix.count {
-                        if pending.starts(with: Self.prefix) { throw invalid() }
-                        pending.removeAll(keepingCapacity: true); discarding = true
-                    }
-                }
-            }
-        } catch { failed = true; throw error }
+        try framing.consume(data, onEvent: handleEvent)
     }
-    private func line(_ data: Data) throws {
-        guard data.starts(with: Self.prefix) else { return } // Ordinary native diagnostics.
-        let json = Data(data.dropFirst(Self.prefix.count))
+    private func handleEvent(_ json: Data) throws {
         let h = try JSONDecoder().decode(Header.self, from: json)
         guard h.event_schema_version == 1, h.sequence > sequence,
               h.job_id == jobID, h.request_id == reference.requestID.uuidString.lowercased(),
@@ -78,7 +59,7 @@ final class WorkerEventStream: @unchecked Sendable {
     }
     func finish(resolution terminal: NativeStreamingResolution?) throws {
         lock.lock(); defer { lock.unlock() }
-        guard !failed, !pending.starts(with: Self.prefix) else { throw invalid() }
+        try framing.finish()
         // No telemetry is required, but if supplied it must agree with success.
         if let resolution, let terminal {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
