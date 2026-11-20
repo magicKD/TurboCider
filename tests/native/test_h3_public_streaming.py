@@ -7,6 +7,7 @@ import json
 import os
 import struct
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -114,7 +115,7 @@ def main() -> None:
         ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
     ).strip()
     mlx_root = Path(subprocess.check_output([
-        str(ROOT / ".venv/bin/python3"), "-I", "-c",
+        sys.executable, "-I", "-c",
         "import sysconfig; print(sysconfig.get_paths()['purelib'] + '/mlx')",
     ], text=True).strip())
     with tempfile.TemporaryDirectory(prefix="tc-h3-public-") as raw:
