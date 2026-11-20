@@ -25,6 +25,20 @@ void copy_fixed(char (&target)[N], const std::string &source,
     std::memcpy(target, source.data(), source.size());
     target[source.size()] = '\0';
 }
+template <class Receipt>
+void copy_receipt_fields(Receipt &target, const ActualStageReceipt &source) {
+    target.stage_index = source.stage_index;
+    target.completed_passes = source.completed_passes;
+    target.completed_groups = source.completed_groups;
+    target.fills = source.fills;
+    target.groups_submitted = source.groups_submitted;
+    target.logical_read_bytes = source.logical_read_bytes;
+    target.reader_fences_issued = source.reader_fences_issued;
+    target.reader_fences_completed = source.reader_fences_completed;
+    target.source_generation = source.source_generation;
+    target.drained = source.drain_completed ? 1 : 0;
+    target.verified = 1;
+}
 class CAdapter final : public ModelSlotAdapter {
 public:
     tc_stream_adapter_v1 ops{};
@@ -320,17 +334,7 @@ extern "C" int tc_stream_executor_receipt_v1(
         tc_stream_receipt_v1 value{};
         value.struct_size = sizeof(value);
         value.version = TC_STREAM_RECEIPT_ABI_V1;
-        value.stage_index = receipt->stage_index;
-        value.completed_passes = receipt->completed_passes;
-        value.completed_groups = receipt->completed_groups;
-        value.fills = receipt->fills;
-        value.groups_submitted = receipt->groups_submitted;
-        value.logical_read_bytes = receipt->logical_read_bytes;
-        value.reader_fences_issued = receipt->reader_fences_issued;
-        value.reader_fences_completed = receipt->reader_fences_completed;
-        value.source_generation = receipt->source_generation;
-        value.drained = receipt->drain_completed ? 1 : 0;
-        value.verified = 1;
+        copy_receipt_fields(value, *receipt);
         std::snprintf(value.event_digest, sizeof(value.event_digest), "%s",
                       receipt->event_digest.c_str());
         std::snprintf(value.canonical_digest,
@@ -378,17 +382,7 @@ extern "C" int tc_stream_executor_receipt_v2(
         tc_stream_receipt_v2 value{};
         value.struct_size = sizeof(value);
         value.version = TC_STREAM_RECEIPT_ABI_V2;
-        value.stage_index = receipt->stage_index;
-        value.completed_passes = receipt->completed_passes;
-        value.completed_groups = receipt->completed_groups;
-        value.fills = receipt->fills;
-        value.groups_submitted = receipt->groups_submitted;
-        value.logical_read_bytes = receipt->logical_read_bytes;
-        value.reader_fences_issued = receipt->reader_fences_issued;
-        value.reader_fences_completed = receipt->reader_fences_completed;
-        value.source_generation = receipt->source_generation;
-        value.drained = receipt->drain_completed ? 1 : 0;
-        value.verified = 1;
+        copy_receipt_fields(value, *receipt);
         copy_fixed(value.stage_id, receipt->stage_id,
                    "streaming invalid receipt stage id");
         copy_fixed(value.layout_digest, receipt->layout_digest,
