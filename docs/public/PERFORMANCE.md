@@ -83,7 +83,7 @@ process**. The first prompt-cache miss took 51.856 s including the process.
 The latest PrunaVAED input-load ablation reduced decoder compute from 2.772 s
 to 1.917 s; the small complete-request sample does not establish a stable
 end-to-end speedup. DiT still accounts for about 83.8% of warm native time.
-See the [full stage timings, exact-output checks and comparison limits](../experiments/m5/README.md#ltx-25-加速与桌面发布验证--2026-11-11).
+See the [full stage timings, exact-output checks and comparison limits](../experiments/ltx/2026-11-11-m5-acceleration.md).
 
 ## How much comes from ANE?
 

@@ -26,6 +26,21 @@
 | [25 verified encoder metadata](25-verified-encoder-metadata-cache.md) | 仅CPU metadata/tokenizer复用、文件/配置/取消失效与publish门；同库cache-hit省约.34s、4.93GB observed fit；非保留Q4约2s CPU repack负结果，速度/整体资格未完成 |
 | [26 lossless fused affine](26-lossless-fused-affine-import.md) | Q4/Q8一次遍历NEON packing、half bias穷举、direct BF16 alias；非保留Q4同库6.716→5.058s、全部block/端点exact；BF16速度门仍失败，10/16GB仅observed fit |
 
+## 512² 本机量化路径实验
+
+这些 2026-10-08 至 10-10 的记录包含真权重组件和完整请求对照。各篇分别记录设备、精度、请求边界及负结果。
+
+| 记录 | 观察范围 |
+| --- | --- |
+| [GPU F32 partial](local512-convrot-mpp-partial-2026-10-08.md) | 真权重投影、原混合和优化 GPU 对照，以及冷溢出失败窗口 |
+| [ConvRot LoRA](local512-convrot-lora-2026-10-08.md) | 共享旋转、MPP/F32 混合、八步 LoRA 和状态切换 |
+| [有界 W8 codes 缓存](local512-weight-code-cache-2026-10-08.md) | 命中、复制成本和完整请求无收益 |
+| [BF16 partial](local512-convrot-bf16-partial-2026-10-09.md) | 额外舍入、完整请求和提示词长度的 bucket 退化 |
+| [共享 packed-word 解码](local512-affine-shared-word-2026-10-10.md) | F32 partial 与 BF16、packed QMM 的组件和请求对照 |
+| [GGUF 准备成本](local512-gguf-prepare-parts-2026-10-10.md) | 分解 typed 解码与 finite scan 的真实权重成本 |
+| [融合解码与 finite status](local512-affine-fused-finite-2026-10-10.md) | 组件准备改善和完整消费仍慢于 packed 的样本 |
+| [有界 GPU ahead-decode](local512-affine-ahead-2026-10-10.md) | 四层真实 FFN 链、缓冲占用、失败和剩余整模型验证 |
+
 ## 如何使用这些证据
 
 - 各阶段的 library/source/checkpoint/profile、输入、设备和测量范围分别保留在原文及回执中。
@@ -42,10 +57,10 @@
 
 ## 存储与复现
 
-每篇正文在这里保留唯一完整副本。原 `docs/design/quantized-execution/` 页面保留
-转发和原章节锚点。已被脚本、测试或其他文档引用的
-[validation 摘要](../../design/quantized-execution/validation/)保持原路径和原字节，
-本次不复制或改写 JSON、源码、构建配置及模型文件。
+每篇正文在这里保留唯一完整副本。原 `docs/design/quantized-execution/` 和
+`docs/status/` 页面保留转发和原章节锚点。原有的
+[量化执行 validation 摘要](../../design/quantized-execution/validation/)和
+[512² 实验机器记录](../../design/validation/)保持原路径和原字节。
 
 复现命令仍从仓库根目录运行。原文中的 `models/`、`build/`、`outputs/` 和本机回执
 只是历史产物位置，不保证随 checkout 提供；先核对原记录要求的版本和身份，再向

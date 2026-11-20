@@ -11,6 +11,7 @@ Run commands from the repository root unless a tool says otherwise. Start with
 | `coreml/` | Offline Core ML conversion and validation |
 | `convert/`, `models/` | Model conversion and model metadata helpers |
 | `h3/`, `ltx/` | Model-specific preparation and comparison tools |
+| [benchmarks/](benchmarks/README.md) | Qwen ConvRot projection, streaming and weight-cache comparisons |
 | [profiling/](profiling/README.md) | Opt-in measurement campaigns and evidence collection |
 | [validation/](validation/README.md) | Reference comparisons, evidence checks and experimental screens |
 | `experimental/` | External reference-source audits and synthetic research fixtures |

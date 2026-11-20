@@ -1,20 +1,14 @@
 #pragma once
 #include "worker_protocol.hpp"
 #include "generate_worker.hpp"
+#include "worker_cancellation.hpp"
 #include "worker_events.hpp"
 #include "../../native/runtime/build_identity.hpp"
 #include "turbocider/turbocider.h"
-#include <atomic>
-#include <csignal>
 #include <iostream>
 #include <memory>
-#include <thread>
-#include <chrono>
 
 namespace tc_worker {
-inline std::atomic<bool> cancelled{false};
-static_assert(std::atomic<bool>::is_always_lock_free);
-inline void signal_stop(int) { cancelled.store(true,std::memory_order_relaxed); }
 inline NSDictionary *consume(int code, char *output, char *error) {
     std::unique_ptr<char,decltype(&tc_string_free)> owned_output(output,tc_string_free),owned_error(error,tc_string_free);
     if(code)throw std::runtime_error(error?error:"worker_native_query_failed");
@@ -36,27 +30,8 @@ inline int run(const char *path,bool generate) {
         std::unique_ptr<char,decltype(&tc_string_free)> creation_error(error,tc_string_free);
         if(status)throw std::runtime_error(error?error:"worker_engine_create_failed");
         cancelled=false;
-        struct Signals {
-            using Handler=void(*)(int);Handler interrupt,terminate;
-            Signals():interrupt(std::signal(SIGINT,signal_stop)),terminate(std::signal(SIGTERM,signal_stop)){}
-            ~Signals(){std::signal(SIGINT,interrupt);std::signal(SIGTERM,terminate);}
-        } signals;
-        // Source verification has no event callback. Relay cancellation from a
-        // normal thread; never invoke the C API inside an async signal handler.
-        struct CancellationRelay {
-            std::atomic<bool> stopping{false};
-            std::thread worker;
-            explicit CancellationRelay(tc_engine *pointer) : worker([this, pointer] {
-                while(!stopping.load(std::memory_order_relaxed)) {
-                    if(cancelled.load(std::memory_order_relaxed)) tc_engine_cancel(pointer);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(25));
-                }
-            }) {}
-            ~CancellationRelay() {
-                stopping.store(true,std::memory_order_relaxed);
-                worker.join();
-            }
-        } cancellation(engine.get());
+        SignalHandlers signals;
+        CancellationRelay cancellation(engine.get());
         char *result=nullptr;error=nullptr;
         status=tc_engine_verify_streaming_sources_json(engine.get(),&result,&error);
         auto sources=consume(status,result,error);

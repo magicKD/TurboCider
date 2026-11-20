@@ -35,8 +35,10 @@ changes follow the packaging requirements in the contribution guide.
 
 Make prefers `.venv/bin/python3`, then `.deps/bin/python3`, and otherwise the
 active Python. Set `PYTHON=/path/to/python3` explicitly when using another local
-environment. Missing packages or unavailable hardware are validation gaps,
-not passing tests; report failures and skips with their reasons.
+environment. The full `make test` also needs Pillow in that environment for
+the Qwen Runtime ANE host checks. Pillow is outside the pinned build and
+Core ML environments. Missing packages or unavailable hardware are validation
+gaps. Report failures and skips with their reasons.
 
 ## Choose a focused check
 
@@ -69,6 +71,14 @@ TURBOCIDER_TEST_NATIVE_DIR=build/native \
 Keep the selected library, its manifest and source revision together. Even tests
 using MLX CPU tensors may need Metal device visibility during initialization;
 `test-runtime-ane-cpu-bridge` documents that boundary in the Makefile.
+
+The streaming contract target also accepts a native build and Python interpreter
+located outside the checkout. Point it at a build that includes the native
+library and LTX finalizer:
+
+```sh
+TURBOCIDER_TEST_NATIVE_DIR=/absolute/native-build make test-streaming-contract PYTHON=/absolute/python3
+```
 
 For an isolated App build, use the same directory for compilation and behavior
 tests. The default remains `build/native`:

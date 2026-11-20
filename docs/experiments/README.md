@@ -8,8 +8,9 @@ attempts. They do not by themselves establish supported product behavior.
 
 | Topic | Record | Scope |
 | --- | --- | --- |
-| LTX Stage-2 sparse attention | [Results](ltx-stage2-sparse/results.md) · [Research ledger](ltx-stage2-sparse/research.md) | M4 Max; core, stage and full-request timing; quality failures retained |
+| LTX acceleration and sparse attention | [Experiment records](ltx/README.md) | M5 Pro complete audio/video and desktop validation, plus M4 Max Stage-2 timing and quality failures |
 | Z-Image Metal 历史实验 | [记录与证据边界](z-image-metal/README.md) | 2026-09 M4 Max 重启前无效计时、健康状态对照与独立 M4 Pro 四图 screen |
+| Z-Image BF16 and INT8 streaming | [Device and precision comparisons](z-image-streaming/README.md) | Original BF16 route and distinct M5 / 16 GiB and M5 Pro / 24 GiB INT8 campaigns |
 | SeedVR2 residency and VAE scheduling | [Records and evidence boundaries](seedvr2/README.md) | 2026-10-14–15 residency, row/file scheduling, Core ML/ANE feasibility, causal convolutions and norm packing; component, request and App scopes kept separate |
 | M5 Pro / 24 GiB GPU/ANE and streaming | [Three historical records](m5/README.md) | 2026-09-16/20 FLUX, Z-Image BF16/INT8, prefetch and generic-streaming comparisons; workload and lifecycle limits retained |
 | M1 Pro streaming | [Implementation and experiments](2026-09-20-m1-streaming.md) · [2026-09-21 checkpoint](2026-09-21-streaming-current-status.md) | FLUX.2 Klein 4B and Z-Image; adjacent dated evidence belongs to this historical campaign |
@@ -19,11 +20,13 @@ attempts. They do not by themselves establish supported product behavior.
 | GGUF / ConvRot quantized execution | [Implementation and experiment ledger](quantized-execution/README.md) | Historical CPU/GPU/ANE component and full-request observations; quality, speed and memory limits retained |
 | Quantization and streaming design | [Quantized execution](../design/quantized-execution/README.md) · [Streaming](../design/streaming/README.md) | Proposals, contracts and links to their validation records |
 | Qwen-Image-2.1 mixed GGUF and original BF16 streaming | [Seven historical records](qwen21-q4km/README.md) | 2026-10-10 M4 Max imports, GPU/ANE, encoder prefill, source registration and matched-memory requests; cold/warm, quality and incomplete qualification boundaries retained |
-| Qwen-Image-2.1 residual and prefix caches | [Three historical records](qwen21-cache/README.md) | 2026-09-27/30 DBCache, editing K/V reuse and DiT presets; reference geometry, approximation, lifetime and timing limits retained |
+| Qwen-Image-2.1 residual and prefix caches | [Cache experiment records](qwen21-cache/README.md) | September DBCache, editing K/V reuse and DiT presets, plus October 512² Runtime ANE cache comparisons and their quality limits |
+| Qwen Image 2.1 Base QKV | [Projection and scheduling records](qwen21-qkv/README.md) | October 512² W8/FP16, fixed graphs, weight staging and matched full-request evidence |
+| Qwen Image 2.1 Base FFN | [Projection and activation records](qwen21-ffn/README.md) | October 512² fixed graphs, projection granularity, activation, GPU work and failed candidates |
+| Qwen Image 2.1 Base Runtime ANE | [Fixed program and request records](qwen21-runtime-ane/README.md) | October 512² profiling, joint QKV/FFN, quality, failure handling and fixed row variants |
 | Runtime-weight FFN/QKV and shared-base runtime LoRA | [Fifty historical records](runtime-ane/README.md) | Components, scheduling, memory, LoRA, QKV, precision, graph lifetimes/procedures and matched requests; workload, withdrawn-candidate and placement limits retained |
 | Qwen-Image-2.1 frozen W8A8 | [Records and evidence boundaries](qwen21-w8a8/README.md) | M4 Max component, generator and resident Session comparisons; 512²/1024² and reference-size limits kept separate |
-| M5 ConvRot streaming / Runtime ANE | [2026-11-07 M5 Pro measurements](qwen21-convrot/2026-11-07-m5-streaming.md) | Exact sparse embedding parity, bounded residency, ABBA/BAAB and FFN sweeps; no stable ANE acceleration qualification |
-| Qwen ConvRot weight-cache budgets | [2026-11-07 M5 Pro cache tradeoff](qwen21-convrot/2026-11-07-m5-weight-cache.md) | Preset/custom budgets, live eviction, exact full trajectories and memory/speed measurements; larger budgets do not guarantee faster generation |
+| Qwen Image 2.1 ConvRot streaming | [November 7–8 records](qwen21-convrot/README.md) | M5 streaming and Runtime ANE, weight-cache budgets, request lifecycle, and projection candidates with their numerical and timing limits |
 | Native Metal / W1 implementation and experiments | [Eight 2026-10-08 records](native-graph/README.md) | M4 Pro block, denoiser, Session, W1 and scale-cache evidence; component/full-request and positive/negative results kept separate |
 | Native LoRA implementation and experiments | [Six 2026-10-08 records](native-lora/README.md) | M4 Pro component, real-FFN and complete-request scopes; negative speed results and budget stop retained |
 | Qwen edit encoder and prefill | [Six 2026-10-08 records](qwen-encoder/README.md) | M4 Pro GPU/ANE and Native Metal experiments; component, full encoder, edit step and cold/warm request boundaries retained |

@@ -8,26 +8,11 @@ import json
 from pathlib import Path
 import tempfile
 
+from streaming_gate_api import load_candidate_library
+
 
 ROOT = Path(__file__).resolve().parents[2]
-LIB = C.CDLL(str(ROOT / "build/native/libturbocider.dylib"))
-LIB.tc_engine_create_model.argtypes = [
-    C.c_char_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)
-]
-LIB.tc_engine_create_model_candidate.argtypes = LIB.tc_engine_create_model.argtypes
-LIB.tc_engine_generate.argtypes = [
-    C.c_void_p, C.c_char_p, C.c_void_p, C.c_void_p,
-    C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
-]
-LIB.tc_engine_prepare.argtypes = [
-    C.c_void_p, C.c_char_p, C.c_int, C.c_void_p, C.c_void_p,
-    C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
-]
-LIB.tc_engine_resolve_streaming_json.argtypes = [
-    C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
-]
-LIB.tc_engine_free.argtypes = [C.c_void_p]
-LIB.tc_string_free.argtypes = [C.c_void_p]
+LIB = load_candidate_library(ROOT)
 
 
 def consume(pointer: C.c_void_p) -> str:

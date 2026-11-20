@@ -478,35 +478,19 @@ enum RuntimeImageWorker {
 /// Runtime progress is correlated independently; no streaming resolution exists.
 final class RuntimeWorkerEventStream: @unchecked Sendable {
     private let lock = NSLock()
-    private var pending = Data(), discarding = false, failed = false
+    private var framing = WorkerEventFraming(invalidMessage: "runtime_worker_event_invalid")
     private var sequence = 0, nativeSequence = -1
     private let jobID: String, reference: PublicImageWorker.Reference
     private let callback: @Sendable (NativeEvent) -> Void
-    private static let prefix = Data("TC_EVENT\t".utf8)
     init(jobID: UUID, reference: PublicImageWorker.Reference, callback: @escaping @Sendable (NativeEvent) -> Void) {
         self.jobID = jobID.uuidString.lowercased(); self.reference = reference; self.callback = callback
     }
     func consume(_ data: Data) throws {
         lock.lock(); defer { lock.unlock() }
-        do {
-            guard !failed else { throw NativeFailure(message: "runtime_worker_event_invalid") }
-            for byte in data {
-                if byte == 10 {
-                    if !discarding { try line(pending) }
-                    pending.removeAll(keepingCapacity: true); discarding = false
-                } else if !discarding {
-                    pending.append(byte)
-                    if pending.count > 128 * 1024 + Self.prefix.count {
-                        guard !pending.starts(with: Self.prefix) else { throw NativeFailure(message: "runtime_worker_event_invalid") }
-                        pending.removeAll(keepingCapacity: true); discarding = true
-                    }
-                }
-            }
-        } catch { failed = true; throw error }
+        try framing.consume(data, onEvent: handleEvent)
     }
-    private func line(_ data: Data) throws {
-        guard data.starts(with: Self.prefix) else { return }
-        guard let object = try JSONSerialization.jsonObject(with: Data(data.dropFirst(Self.prefix.count))) as? [String: Any],
+    private func handleEvent(_ json: Data) throws {
+        guard let object = try JSONSerialization.jsonObject(with: json) as? [String: Any],
               let version = object["event_schema_version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version == 1,
               let next = object["sequence"] as? NSNumber, CFGetTypeID(next) != CFBooleanGetTypeID(), next.intValue > sequence,
               next.doubleValue == Double(next.intValue), object["kind"] as? String == "progress",
@@ -522,6 +506,6 @@ final class RuntimeWorkerEventStream: @unchecked Sendable {
     }
     func finish() throws {
         lock.lock(); defer { lock.unlock() }
-        guard !failed, !pending.starts(with: Self.prefix) else { throw NativeFailure(message: "runtime_worker_event_invalid") }
+        try framing.finish()
     }
 }
