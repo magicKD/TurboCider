@@ -35,8 +35,10 @@ changes follow the packaging requirements in the contribution guide.
 
 Make prefers `.venv/bin/python3`, then `.deps/bin/python3`, and otherwise the
 active Python. Set `PYTHON=/path/to/python3` explicitly when using another local
-environment. Missing packages or unavailable hardware are validation gaps,
-not passing tests; report failures and skips with their reasons.
+environment. The full `make test` also needs Pillow in that environment for
+the Qwen Runtime ANE host checks. Pillow is outside the pinned build and
+Core ML environments. Missing packages or unavailable hardware are validation
+gaps. Report failures and skips with their reasons.
 
 ## Choose a focused check
 
