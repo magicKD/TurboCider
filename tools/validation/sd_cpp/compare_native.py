@@ -24,12 +24,17 @@ import socket
 import statistics
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
 import zlib
 from pathlib import Path
 from typing import Optional
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "native"))
+from quality_gate import decode_png_rows  # noqa: E402
 
 
 def free_port() -> int:
@@ -163,12 +168,6 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def paeth(left: int, above: int, upper_left: int) -> int:
-    estimate = left + above - upper_left
-    distances = (abs(estimate - left), abs(estimate - above), abs(estimate - upper_left))
-    return (left, above, upper_left)[distances.index(min(distances))]
-
-
 def decode_png(path: Path) -> tuple[int, int, int, bytes]:
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
@@ -197,35 +196,7 @@ def decode_png(path: Path) -> tuple[int, int, int, bytes]:
     expected = height * (stride + 1)
     if len(raw) != expected:
         raise ValueError(f"PNG payload size mismatch in {path}: {len(raw)} != {expected}")
-    pixels = bytearray(height * stride)
-    previous = bytearray(stride)
-    source = 0
-    for row in range(height):
-        filter_type = raw[source]
-        source += 1
-        encoded = raw[source:source + stride]
-        source += stride
-        decoded = bytearray(stride)
-        for index, byte in enumerate(encoded):
-            left = decoded[index - channels] if index >= channels else 0
-            above = previous[index]
-            upper_left = previous[index - channels] if index >= channels else 0
-            if filter_type == 0:
-                prediction = 0
-            elif filter_type == 1:
-                prediction = left
-            elif filter_type == 2:
-                prediction = above
-            elif filter_type == 3:
-                prediction = (left + above) // 2
-            elif filter_type == 4:
-                prediction = paeth(left, above, upper_left)
-            else:
-                raise ValueError(f"invalid PNG filter {filter_type} in {path}")
-            decoded[index] = (byte + prediction) & 255
-        begin = row * stride
-        pixels[begin:begin + stride] = decoded
-        previous = decoded
+    pixels = decode_png_rows(raw, width, height, channels, path)
     return width, height, channels, bytes(pixels)
 
 
