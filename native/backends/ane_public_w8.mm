@@ -1,4 +1,5 @@
 #include "ane_public_w8.hpp"
+#include "ane_executor_support.hpp"
 #include "ane_gpu.hpp"
 #include "ane_memory.hpp"
 #include "ane_w8a8_math.hpp"
@@ -18,11 +19,13 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
-#include <thread>
 #include <tuple>
 
 namespace tc::ane {
 namespace {
+using executor_support::Buffer;
+using executor_support::QuantizationDrain;
+using executor_support::Worker;
 using Clock = std::chrono::steady_clock;
 using gpu::Surface;
 using gpu::Element;
@@ -153,41 +156,6 @@ class PublicProgram {
         }};
     }
 };
-class Worker {
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    std::function<void()> job_;
-    std::exception_ptr error_;
-    bool busy_ = false, stop_ = false;
-    std::thread thread_;
-  public:
-    Worker() : thread_([this] {
-        for (;;) {
-            std::function<void()> job;
-            { std::unique_lock lock(mutex_); cv_.wait(lock, [&] { return stop_ || job_; });
-                if (stop_) return; job = std::exchange(job_, {}); }
-            std::exception_ptr error;
-            @autoreleasepool { try { job(); } catch (...) { error = std::current_exception(); } }
-            { std::lock_guard lock(mutex_); busy_ = false; error_ = error; } cv_.notify_all();
-        }
-    }) {}
-    ~Worker() { try { join(); } catch (...) {} { std::lock_guard lock(mutex_); stop_ = true; } cv_.notify_all(); thread_.join(); }
-    void join() { std::unique_lock lock(mutex_); cv_.wait(lock, [&] { return !busy_; }); auto error = std::exchange(error_, {}); if (error) std::rethrow_exception(error); }
-    void submit(std::function<void()> job) { join(); { std::lock_guard lock(mutex_); job_ = std::move(job); busy_ = true; } cv_.notify_all(); }
-};
-struct Buffer {
-    id<MTLBuffer> value;
-    std::shared_ptr<void> owner;
-    Buffer(id<MTLDevice> d, size_t bytes) {
-        value = [d newBufferWithLength:bytes options:MTLResourceStorageModeShared];
-        if (!value) throw MemoryBudgetError("W8 self-test buffer allocation failed");
-        owner = {(__bridge_retained void *)value, [](void *p) { CFRelease(p); }}; std::memset(value.contents, 0, bytes);
-    }
-    DeviceWeightView weight(int rows, int cols) { return {(__bridge void *)value, value.length, 0, size_t(cols) * 4, rows, cols,
-        DeviceWeightEncoding::Dense, DType::FP32, 32, {}, {}, owner}; }
-    DeviceMatrixView matrix(int rows, int cols, DType dtype = DType::FP32) { return {(__bridge void *)value, value.length, 0, rows, cols,
-        size_t(cols) * (dtype == DType::FP32 ? 4 : 2), dtype, owner}; }
-};
 }
 struct PublicW8Graph::Impl {
     GraphShape shape;
@@ -234,34 +202,16 @@ struct PublicW8Graph::Impl {
     Worker worker; // destroyed first, draining before any source/slot release
     void build(float scale) { program->set_headroom(scale);headroom=scale; }
     void fill_bank(int target,const std::vector<DeviceWeightRegion> &weights) {
-        check(weights.size() == 3, "W8 SwiGLU requires gate/up/down");
-        const auto &s = shape;
-        const bool comfy=basis==W8Basis::ComfyH256;
-        const int up_block=comfy?256:128,down_block=comfy?256:512;
-        const uint64_t seed=comfy?0:20260930;
-        const auto &gsel = weights[0].selection, &usel = weights[1].selection, &dsel = weights[2].selection;
-        check(gsel.rows == s.width && gsel.columns == s.hidden && usel.rows == s.width && usel.columns == s.hidden &&
-            dsel.rows == s.hidden && dsel.columns == s.width && gsel.rotation_block == up_block && usel.rotation_block == up_block &&
-            dsel.rotation_block == down_block && !gsel.transpose && !usel.transpose && !dsel.transpose &&
-            gsel.rotation_seed == seed && usel.rotation_seed == seed && dsel.rotation_seed == seed &&
-            gsel.basis==basis && usel.basis==basis && dsel.basis==basis &&
-            gsel.activation_group_size==0 && usel.activation_group_size==0 && dsel.activation_group_size==0,
-            "W8 source projection selection/recipe mismatch");
+        w8_stage::validate_swiglu_recipe(weights, shape, basis);
+        const auto &gsel = weights[0].selection;
+        const auto &usel = weights[1].selection;
+        const auto &dsel = weights[2].selection;
         auto &b = *banks[target]; b.ready = false;
         // Reset ONLY this retired execution slot to its original writable
         // scratch. A cached binding is immutable and must never be refilled.
         b.bound={b.g,b.sg,b.u,b.su,b.d,b.sd};
         std::array<std::optional<gpu::QuantStage>,3> producers;
-        struct ProducerDrain {
-            decltype(producers) &tickets;
-            std::atomic<bool> &disabled;
-            ~ProducerDrain() {
-                for(auto &ticket:tickets)if(ticket) {
-                    try {if(ticket->finish().timed_out)disabled=true;}
-                    catch(...) {disabled=true;}
-                }
-            }
-        } drain{producers,disabled};
+        QuantizationDrain drain{producers, disabled};
         producers[0]=device.bind_w8(weights[0].source,gsel,b.bound[0],b.bound[1]);
         producers[1]=device.bind_w8(weights[1].source,usel,b.bound[2],b.bound[3]);
         producers[2]=device.bind_w8(weights[2].source,dsel,b.bound[4],b.bound[5]);
@@ -298,16 +248,7 @@ struct PublicW8Graph::Impl {
         // failure, or a failed ANE/epilogue. Never allow recovery to overwrite
         // a slot still used by a previous GPU producer. A timed-out producer
         // disables this executor; its ticket retains the resources itself.
-        struct ActivationDrain {
-            decltype(activations) &tickets;
-            std::atomic<bool> &disabled;
-            ~ActivationDrain() {
-                for (auto &ticket : tickets) if (ticket) {
-                    try { if (ticket->finish().timed_out) disabled = true; }
-                    catch (...) { disabled = true; }
-                }
-            }
-        } drain{activations, disabled};
+        QuantizationDrain drain{activations, disabled};
         auto stage_activation = [&](int row, int slot) {
             DeviceWeightView activation{input.buffer,input.buffer_bytes,input.offset_bytes + size_t(row)*(input.row_stride_bytes ? input.row_stride_bytes : size_t(s.hidden)*(input.dtype==DType::FP32?4:2)),
                 input.row_stride_bytes,s.rows,s.hidden,DeviceWeightEncoding::Dense,input.dtype,32,{}, {},input.owner};

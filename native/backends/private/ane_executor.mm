@@ -1,4 +1,5 @@
 #include "ane_executor.hpp"
+#include "../ane_executor_support.hpp"
 #include "ane_program.hpp"
 #include "ane_mil.hpp"
 #include "../ane_fp16_value_config.hpp"
@@ -7,14 +8,12 @@
 #import <Foundation/Foundation.h>
 #include <array>
 #include <chrono>
-#include <condition_variable>
 #include <cstdlib>
 #include <functional>
-#include <mutex>
-#include <thread>
 
 namespace tc::ane {
 namespace {
+using executor_support::Worker;
 using Clock = std::chrono::steady_clock;
 using private_api::Surface;
 using private_api::Element;
@@ -27,37 +26,6 @@ void validate(const MatrixView &v) {
     validate_packed_storage(v.data, v.bytes, v.rows, v.cols, stride(v), size_t(v.cols) * (v.dtype == DType::FP32 ? 4 : 2));
 }
 uint16_t *row(Surface &s, size_t r) { return reinterpret_cast<uint16_t *>(static_cast<char *>(s.data()) + r * s.pitch()); }
-class Worker {
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    std::function<void()> job_;
-    std::exception_ptr error_;
-    bool busy_ = false, stop_ = false;
-    std::thread thread_;
-  public:
-    Worker() : thread_([this] {
-        for (;;) {
-            std::function<void()> job;
-            { std::unique_lock lock(mutex_); cv_.wait(lock, [&] { return stop_ || job_; });
-              if (stop_) return; job = std::exchange(job_, {}); }
-            std::exception_ptr error;
-            @autoreleasepool { try { job(); } catch (...) { error = std::current_exception(); } }
-            { std::lock_guard lock(mutex_); error_ = error; busy_ = false; }
-            cv_.notify_all();
-        }
-    }) {}
-    ~Worker() {
-        try { join(); } catch (...) {}
-        { std::lock_guard lock(mutex_); stop_ = true; } cv_.notify_all(); thread_.join();
-    }
-    void join() {
-        std::unique_lock lock(mutex_); cv_.wait(lock, [&] { return !busy_; });
-        auto error = std::exchange(error_, {}); if (error) std::rethrow_exception(error);
-    }
-    void submit(std::function<void()> job) {
-        join(); { std::lock_guard lock(mutex_); job_ = std::move(job); busy_ = true; } cv_.notify_all();
-    }
-};
 void fill_weight(Surface &s, const WeightView &source, float scale = 1.f) {
     std::visit([&](const auto &v) {
         using V = std::decay_t<decltype(v)>;
