@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstring>
 #include <filesystem>
+#include <fcntl.h>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -400,6 +401,38 @@ void test_invalid_setup(const std::filesystem::path &root) {
         MlxWeightPager pager(root, fixture.descriptor,
                              fixture.descriptor.stages.front(), invalid_layout);
     }, "field geometry");
+
+    // A size rejection happens after taking ownership of an open descriptor.
+    // Opening and closing a probe file reveals the next free descriptor number.
+    const auto next_fd = [] {
+        tc::streaming::OwnedSourceFd probe(::open("/dev/null", O_RDONLY | O_CLOEXEC));
+        assert(probe);
+        return probe.get();
+    };
+    auto invalid_size = fixture.descriptor;
+    ++invalid_size.artifacts.front().bytes;
+    const auto &stage = invalid_size.stages.front();
+    const int before_named = next_fd();
+    rejects([&] {
+        MlxWeightPager pager(root, invalid_size, stage, fixture.layout);
+    }, "artifact size or type changed");
+    const bool closed_named = next_fd() == before_named;
+
+    std::vector<SourceFileIdentity> identities;
+    for (const auto &artifact : fixture.descriptor.artifacts) {
+        SourceFileIdentity identity;
+        identity.logical_id = artifact.id;
+        identity.path = root / artifact.id;
+        identities.push_back(std::move(identity));
+    }
+    auto lease = tc::streaming::SourceLease::capture(std::move(identities));
+    const int before_lease = next_fd();
+    rejects([&] {
+        MlxWeightPager pager(lease, invalid_size, stage, fixture.layout);
+    }, "leased artifact size or type changed");
+    const bool closed_lease = next_fd() == before_lease;
+    if (!closed_named || !closed_lease)
+        throw std::runtime_error("failed pager construction leaked an artifact descriptor");
 }
 
 } // namespace
@@ -416,10 +449,10 @@ int main(int argc, char **argv) {
         std::filesystem::create_directories(short_read);
         std::filesystem::create_directories(lease_backed);
         std::filesystem::create_directories(invalid);
+        test_invalid_setup(invalid);
         test_valid(valid);
         test_short_read(short_read);
         test_lease_backed(lease_backed);
-        test_invalid_setup(invalid);
         std::cout << "PASS MLX weight pager: resident load, retained dual/single "
                      "pool fill/bind, cancellation, short read, stale path, "
                      "lease-backed source validation, and pool recreate\n";
