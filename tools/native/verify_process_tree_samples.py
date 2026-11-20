@@ -13,6 +13,9 @@ from typing import Any, Sequence
 from process_tree_sampler import EXIT_INCONCLUSIVE, SCHEMA, canonical_json
 
 
+MEMORY_SUMMARY_SCHEMA = "turbocider-streaming-memory-summary-v1"
+
+
 class EvidenceError(ValueError):
     pass
 
@@ -281,6 +284,30 @@ def verify(path: Path) -> dict[str, Any]:
         "decompression_bytes": terminal["decompression_bytes"],
         "reasons": reasons,
         "command_exit_code": command_exit,
+    }
+
+
+def memory_summary(verified: dict[str, Any], evidence_path: Path) -> dict[str, Any]:
+    return {
+        "schema": MEMORY_SUMMARY_SCHEMA,
+        "sampler_revision": verified["sampler_revision"],
+        "root_identity": verified["root_identity"],
+        "correlation_id": verified["correlation_id"],
+        "status": verified["status"],
+        "complete": verified["complete"],
+        "reasons": verified["reasons"],
+        "sample_count": verified["sample_count"],
+        "max_gap_ns": verified["max_gap_ns"],
+        "allowed_max_gap_ns": verified["allowed_max_gap_ns"],
+        "tree_peak_rss_bytes": verified["tree_peak_rss_bytes"],
+        "tree_peak_phys_footprint_bytes": verified["tree_peak_phys_footprint_bytes"],
+        "swap_in_bytes": verified["swap_in_bytes"],
+        "swap_out_bytes": verified["swap_out_bytes"],
+        "compression_bytes": verified["compression_bytes"],
+        "decompression_bytes": verified["decompression_bytes"],
+        "command_exit_code": verified["command_exit_code"],
+        "evidence_digest": verified["final_evidence_digest"],
+        "evidence_path": str(evidence_path),
     }
 
 

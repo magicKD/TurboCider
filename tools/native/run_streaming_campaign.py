@@ -54,6 +54,7 @@ from process_tree_sampler import (
     RoleRule,
 )
 from verify_process_tree_samples import EvidenceError as MemoryEvidenceError
+from verify_process_tree_samples import memory_summary
 from verify_process_tree_samples import verify as verify_memory_evidence
 
 
@@ -541,29 +542,7 @@ class RequestMemorySampler:
             raise CampaignError(f"invalid process-tree evidence: {exc}") from exc
         if verified["correlation_id"] != self.correlation_id:
             raise CampaignError("process-tree evidence correlation differs")
-        return {
-            "schema": "turbocider-streaming-memory-summary-v1",
-            "sampler_revision": verified["sampler_revision"],
-            "root_identity": verified["root_identity"],
-            "correlation_id": self.correlation_id,
-            "status": verified["status"],
-            "complete": verified["complete"],
-            "reasons": verified["reasons"],
-            "sample_count": verified["sample_count"],
-            "max_gap_ns": verified["max_gap_ns"],
-            "allowed_max_gap_ns": verified["allowed_max_gap_ns"],
-            "tree_peak_rss_bytes": verified["tree_peak_rss_bytes"],
-            "tree_peak_phys_footprint_bytes": verified[
-                "tree_peak_phys_footprint_bytes"
-            ],
-            "swap_in_bytes": verified["swap_in_bytes"],
-            "swap_out_bytes": verified["swap_out_bytes"],
-            "compression_bytes": verified["compression_bytes"],
-            "decompression_bytes": verified["decompression_bytes"],
-            "command_exit_code": verified["command_exit_code"],
-            "evidence_digest": verified["final_evidence_digest"],
-            "evidence_path": str(self.evidence_path),
-        }
+        return memory_summary(verified, self.evidence_path)
 
 
 def run_worker_request(
