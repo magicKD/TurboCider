@@ -3,6 +3,7 @@
 #include "models/ltx_runtime/ltx_weights.h"
 #include "runtime/session.hpp"
 #include "runtime/streaming/resolved_request.hpp"
+#include "streaming_test_assertions.hpp"
 
 #include <atomic>
 #include <cassert>
@@ -61,19 +62,7 @@ tc::streaming::StreamingDeviceIdentity device() {
             16ull << 30};
 }
 
-template <class Function>
-void rejects(Function &&function, const char *part) {
-    try {
-        function();
-    } catch (const std::exception &error) {
-        if (std::string(error.what()).find(part) != std::string::npos)
-            return;
-        std::cerr << error.what() << " expected " << part << '\n';
-        std::abort();
-    }
-    std::cerr << "expected rejection containing " << part << '\n';
-    std::abort();
-}
+constexpr auto rejects = tc::test::rejects<std::exception>;
 
 void verify_gemma_fd_authority(const std::filesystem::path &root) {
     const auto named = root / "gemma-fd-authority.safetensors";
