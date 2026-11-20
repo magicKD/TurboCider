@@ -160,19 +160,19 @@ screen重放及当前Private实模型/Public拒绝门禁通过，不改变默认
 反序翻转，继续cache off，避免额外1.0–1.3GB。保留双图大budget准入
 拒绝/完整GPU回退，不放宽guard、不以首步/缓存组件标签代替整图收益。
 
-2026-10-10 [实际独立stream有界ahead与四层真实FFN链](local512-affine-ahead-2026-10-10.md)
+2026-10-10 [实际独立stream有界ahead与四层真实FFN链](../experiments/quantized-execution/local512-affine-ahead-2026-10-10.md)
 已实现producer/ready消费、in-flight/escaped claims与独立target epoch，
 不是同步window重新贴标签。12个不同原source的链对immediate更快，
 但Q4/Q8仍输packed，ConvRot仅约.9–1.3%组件信号；不默认接入、不当完整
 模型/LoRA/图像验收，保留GPU库、失败及retirement成本。
 
-2026-10-10 [GPU融合typed解码与finite status](local512-affine-fused-finite-2026-10-10.md)
+2026-10-10 [GPU融合typed解码与finite status](../experiments/quantized-execution/local512-affine-fused-finite-2026-10-10.md)
 已实现并实测：75MiB准备约3.9→1.7–1.8ms，actual R1 decode+GEMM
 约10.3–10.5→8.0ms，仍慢于packed约6.1–6.6ms。不接默认每层dense重解码；
 继续真正有界ahead-decode，不把准备/组件收益或精确系数当完整模型验收。
 
 2026-10-10 GGUF/ConvRot准备路径接续见
-[typed解码与finite scan的实际成本](local512-gguf-prepare-parts-2026-10-10.md)。
+[typed解码与finite scan的实际成本](../experiments/quantized-execution/local512-gguf-prepare-parts-2026-10-10.md)。
 三个真实75MiB权重的归因中finite graph+eval约2.6ms，解码约1.9ms；
 额外eval会扰动调度，不相减宣称盈利。下一步研究融合finite status，
 保留所有guard；真正异步ahead-decode和完整消费者收益仍未实现/资格化。
@@ -189,7 +189,7 @@ base40全阶段并行有约20%名义GPU-relative收益；LoRA6不显著，生成
 encoder不共用未经验证的最快假设。竞争负载与少量swap-in均如实保留。
 
 2026-10-10 的实际GPU kernel接续见
-[共享packed-word解码与完整ConvRot base/LoRA](local512-affine-shared-word-2026-10-10.md)。
+[共享packed-word解码与完整ConvRot base/LoRA](../experiments/quantized-execution/local512-affine-shared-word-2026-10-10.md)。
 新核加速既有opt-in F32 partial到接近BF16路线；同库完整请求已有验证，
 但未超过更快BF16选择，不改普通packed QMM/default，真正跨层ahead-decode
 及Qwen/encoder完整目标仍待推进。
