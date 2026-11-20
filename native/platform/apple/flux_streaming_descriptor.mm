@@ -1,12 +1,9 @@
-#import <Foundation/Foundation.h>
+#include "streaming_metadata.hpp"
 
 #include "../../models/flux2/streaming_descriptor.hpp"
 #include "../../runtime/memory_manifest.hpp"
 
 #include <algorithm>
-#include <array>
-#include <cerrno>
-#include <cmath>
 #include <fcntl.h>
 #include <filesystem>
 #include <limits>
@@ -23,8 +20,9 @@
 namespace tc::flux2 {
 namespace {
 
+namespace header_reader = streaming::metadata;
+
 constexpr uint64_t kMaxHeaderBytes = 32ull << 20;
-constexpr uint64_t kMaxExactJsonInteger = 1ull << 53;
 constexpr uint32_t kHeadDimension = 128;
 
 void require_metadata(bool ok, const std::string &reason) {
@@ -63,33 +61,11 @@ struct stat checked_status(const std::string &path) {
     return status;
 }
 
-void pread_exact(int descriptor, void *destination, size_t bytes,
-                 uint64_t offset) {
-    auto *output = static_cast<unsigned char *>(destination);
-    size_t done = 0;
-    while (done < bytes) {
-        const ssize_t count = ::pread(
-            descriptor, output + done, bytes - done,
-            static_cast<off_t>(offset + done));
-        if (count < 0 && errno == EINTR)
-            continue;
-        require_metadata(count > 0,
-                         "safetensors header read failed or was truncated");
-        done += static_cast<size_t>(count);
-    }
-}
-
 NSDictionary *json_object(const std::string &path, const char *label) {
     NSData *data = [NSData dataWithContentsOfFile:@(path.c_str())];
     require_metadata(data != nil, std::string("cannot read ") + label);
-    NSError *failure = nil;
-    id parsed = [NSJSONSerialization JSONObjectWithData:data
-                                                options:0
-                                                  error:&failure];
-    require_metadata([parsed isKindOfClass:NSDictionary.class],
-                     failure ? failure.localizedDescription.UTF8String :
-                               std::string("invalid ") + label);
-    return (NSDictionary *)parsed;
+    return header_reader::json_dictionary(data, std::string("invalid ") + label,
+                                          require_metadata);
 }
 
 NSDictionary *json_object(int descriptor, uint64_t bytes,
@@ -97,36 +73,15 @@ NSDictionary *json_object(int descriptor, uint64_t bytes,
     require_metadata(descriptor >= 0 && bytes > 0 &&
                          bytes <= kMaxHeaderBytes,
                      std::string("invalid ") + label + " size");
-    std::vector<unsigned char> encoded(static_cast<size_t>(bytes));
-    pread_exact(descriptor, encoded.data(), encoded.size(), 0);
-    NSData *data = [NSData dataWithBytes:encoded.data()
-                                  length:encoded.size()];
-    NSError *failure = nil;
-    id parsed = [NSJSONSerialization JSONObjectWithData:data
-                                                options:0
-                                                  error:&failure];
-    require_metadata([parsed isKindOfClass:NSDictionary.class],
-                     failure ? failure.localizedDescription.UTF8String :
-                               std::string("invalid ") + label);
-    return (NSDictionary *)parsed;
-}
-
-uint64_t integer(id value, const char *label) {
-    require_metadata([value isKindOfClass:NSNumber.class] &&
-                         CFGetTypeID((__bridge CFTypeRef)value) !=
-                             CFBooleanGetTypeID(),
-                     std::string("non-integer ") + label);
-    const double number = [value doubleValue];
-    require_metadata(std::isfinite(number) && number >= 0 &&
-                         number == std::floor(number) &&
-                         number <= static_cast<double>(kMaxExactJsonInteger),
-                     std::string("invalid ") + label);
-    return static_cast<uint64_t>(number);
+    return header_reader::read_json_dictionary(
+        descriptor, bytes, 0, "safetensors header read failed or was truncated",
+        std::string("invalid ") + label, require_metadata);
 }
 
 uint32_t config_integer(NSDictionary *object, NSString *key,
                         const char *label) {
-    const uint64_t value = integer(object[key], label);
+    const uint64_t value = header_reader::json_unsigned_integer(
+        object[key], label, require_metadata);
     require_metadata(value <= UINT32_MAX, std::string(label) + " overflows");
     return static_cast<uint32_t>(value);
 }
@@ -138,7 +93,8 @@ std::vector<uint64_t> shape_vector(NSArray *shape) {
     std::vector<uint64_t> result;
     result.reserve(shape.count);
     for (id raw_dimension in shape) {
-        const uint64_t dimension = integer(raw_dimension, "tensor dimension");
+        const uint64_t dimension = header_reader::json_unsigned_integer(
+            raw_dimension, "tensor dimension", require_metadata);
         require_metadata(dimension > 0, "zero tensor dimension");
         result.push_back(dimension);
     }
@@ -376,8 +332,8 @@ StreamingMetadata::StreamingMetadata(
             require_metadata([weight_map isKindOfClass:NSDictionary.class] &&
                                  [metadata isKindOfClass:NSDictionary.class],
                              "invalid FLUX safetensors index");
-            indexed_total = integer(metadata[@"total_size"],
-                                                   "index total_size");
+            indexed_total = header_reader::json_unsigned_integer(
+                metadata[@"total_size"], "index total_size", require_metadata);
             for (id raw_key in weight_map) {
                 require_metadata([raw_key isKindOfClass:NSString.class] &&
                                      [weight_map[raw_key]
@@ -435,34 +391,15 @@ StreamingMetadata::StreamingMetadata(
         for (uint32_t artifact_index = 0;
              artifact_index < state_->artifacts.size(); ++artifact_index) {
             auto &artifact = state_->artifacts[artifact_index];
-            std::array<unsigned char, 8> prefix{};
-            pread_exact(artifact.descriptor, prefix.data(), prefix.size(), 0);
-            uint64_t header_bytes = 0;
-            for (uint32_t index_byte = 0; index_byte < prefix.size(); ++index_byte)
-                header_bytes |= static_cast<uint64_t>(prefix[index_byte]) <<
-                    (8 * index_byte);
-            require_metadata(header_bytes && header_bytes <= kMaxHeaderBytes &&
-                                 header_bytes <= artifact.file_bytes - 8,
-                             "invalid safetensors header length");
-            std::vector<unsigned char> encoded(
-                static_cast<size_t>(header_bytes));
-            pread_exact(artifact.descriptor, encoded.data(), encoded.size(), 8);
-            NSData *header_data = [NSData dataWithBytes:encoded.data()
-                                                  length:encoded.size()];
-            NSError *header_failure = nil;
-            id parsed = [NSJSONSerialization JSONObjectWithData:header_data
-                                                        options:0
-                                                          error:&header_failure];
-            require_metadata([parsed isKindOfClass:NSDictionary.class],
-                             header_failure ?
-                                 header_failure.localizedDescription.UTF8String :
-                                 "invalid safetensors header JSON");
-            NSDictionary *root = (NSDictionary *)parsed;
+            const auto [root, payload_offset] = header_reader::read_safetensors_header(
+                artifact.descriptor, artifact.file_bytes, kMaxHeaderBytes,
+                "safetensors header read failed or was truncated",
+                "invalid safetensors header JSON", require_metadata);
             NSArray *keys = [[root allKeys]
                 sortedArrayUsingSelector:@selector(compare:)];
             std::vector<std::pair<uint64_t, uint64_t>> intervals;
             const uint64_t payload_bytes =
-                artifact.file_bytes - 8 - header_bytes;
+                artifact.file_bytes - payload_offset;
             for (id raw_key in keys) {
                 require_metadata([raw_key isKindOfClass:NSString.class],
                                  "safetensors tensor name is not a string");
@@ -493,8 +430,10 @@ StreamingMetadata::StreamingMetadata(
                 for (uint64_t dimension : shape)
                     bytes = checked_multiply(
                         bytes, dimension, "tensor shape size overflow");
-                const uint64_t begin = integer(offsets[0], "tensor offset");
-                const uint64_t end = integer(offsets[1], "tensor offset");
+                const uint64_t begin = header_reader::json_unsigned_integer(
+                    offsets[0], "tensor offset", require_metadata);
+                const uint64_t end = header_reader::json_unsigned_integer(
+                    offsets[1], "tensor offset", require_metadata);
                 require_metadata(end >= begin && end - begin == bytes &&
                                      end <= payload_bytes,
                                  "tensor range differs from BF16 shape");
@@ -505,7 +444,7 @@ StreamingMetadata::StreamingMetadata(
                 tensor.shape = shape;
                 tensor.artifact = artifact_index;
                 tensor.file_offset = checked_add(
-                    8 + header_bytes, begin,
+                    payload_offset, begin,
                     "tensor file offset overflow");
                 tensor.bytes = bytes;
                 discovered_total = checked_add(
