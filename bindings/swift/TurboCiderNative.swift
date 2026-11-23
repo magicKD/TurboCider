@@ -524,6 +524,12 @@ private let eventCallback: @convention(c) (UnsafePointer<CChar>?, UnsafeMutableR
 
 /// Native embedded session. Generation runs on a serial queue. C strings never escape.
 public final class NativeEngine: @unchecked Sendable {
+    private typealias CStringOutput = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+    private typealias EventOperation = @Sendable (
+        OpaquePointer, UnsafeMutableRawPointer, CStringOutput, CStringOutput
+    ) -> Int32
+    private typealias JSONOperation = (UnsafePointer<CChar>, CStringOutput, CStringOutput) -> Int32
+
     private let handle: OpaquePointer
     private let queue = DispatchQueue(label: "org.turbocider.native.inference", qos: .userInitiated)
     public init(modelURL: URL, modelID: String = "flux2-klein-4b") throws {
@@ -542,20 +548,23 @@ public final class NativeEngine: @unchecked Sendable {
         }.value
     }
     public func load(onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
-        try await resources(load: true, onEvent: onEvent)
+        try await perform(onEvent: onEvent) { handle, context, result, error in
+            tc_engine_load(handle, eventCallback, context, result, error)
+        }
     }
     public func unload() async throws -> Data {
-        try await resources(load: false, onEvent: { _ in })
+        try await perform(onEvent: { _ in }) { handle, _, result, error in
+            tc_engine_unload(handle, result, error)
+        }
     }
-    private func resources(load: Bool, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+    private func perform(onEvent: @escaping @Sendable (NativeEvent) -> Void,
+                         _ operation: @escaping EventOperation) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 let context = Unmanaged.passRetained(EventBox(onEvent)).toOpaque()
                 defer { Unmanaged<EventBox>.fromOpaque(context).release() }
-                var result: UnsafeMutablePointer<CChar>?
-                var error: UnsafeMutablePointer<CChar>?
-                let status = load ? tc_engine_load(handle, eventCallback, context, &result, &error)
-                                  : tc_engine_unload(handle, &result, &error)
+                var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
+                let status = operation(handle, context, &result, &error)
                 let message = consume(error), output = consume(result)
                 if status == 0 { continuation.resume(returning: Data(output.utf8)) }
                 else if status == 2 { continuation.resume(throwing: CancellationError()) }
@@ -572,19 +581,10 @@ public final class NativeEngine: @unchecked Sendable {
         return try await preparation(payload: JSONEncoder().encode(value), warmup: false, cache: true, onEvent: onEvent)
     }
     private func preparation(payload: Data, warmup: Bool, cache: Bool, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
-                let context = Unmanaged.passRetained(EventBox(onEvent)).toOpaque()
-                defer { Unmanaged<EventBox>.fromOpaque(context).release() }
-                var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
-                let status = String(decoding: payload, as: UTF8.self).withCString {
-                    cache ? tc_engine_cache(handle, $0, eventCallback, context, &result, &error)
-                          : tc_engine_prepare(handle, $0, warmup ? 1 : 0, eventCallback, context, &result, &error)
-                }
-                let message = consume(error), output = consume(result)
-                if status == 0 { continuation.resume(returning: Data(output.utf8)) }
-                else if status == 2 { continuation.resume(throwing: CancellationError()) }
-                else { continuation.resume(throwing: NativeFailure(message: message)) }
+        try await perform(onEvent: onEvent) { handle, context, result, error in
+            String(decoding: payload, as: UTF8.self).withCString {
+                cache ? tc_engine_cache(handle, $0, eventCallback, context, result, error)
+                      : tc_engine_prepare(handle, $0, warmup ? 1 : 0, eventCallback, context, result, error)
             }
         }
     }
@@ -644,27 +644,21 @@ public final class NativeEngine: @unchecked Sendable {
         guard !input.contains(0), let text = String(data: input, encoding: .utf8) else {
             throw NativeFailure(message: "Workflow input must be UTF-8 JSON without NUL bytes.")
         }
-        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
-        let status = text.withCString { tc_workflow_request_json($0, &result, &error) }
-        let message = consume(error), output = consume(result)
-        guard status == 0 else { throw NativeFailure(message: message) }
-        return Data(output.utf8)
+        return try jsonQuery(text, using: tc_workflow_request_json)
     }
     public static func plan(_ request: NativeRequest) throws -> Data {
-        let data = try JSONEncoder().encode(request)
-        var result: UnsafeMutablePointer<CChar>?
-        var error: UnsafeMutablePointer<CChar>?
-        let status = String(decoding: data, as: UTF8.self).withCString { tc_plan_json($0, &result, &error) }
-        let message = consume(error), output = consume(result)
-        guard status == 0 else { throw NativeFailure(message: message) }
-        return Data(output.utf8)
+        try requestQuery(request, using: tc_plan_json)
     }
     public static func plan(_ request: NativeRequestV2) throws -> Data {
+        try requestQuery(request, using: tc_plan_json)
+    }
+    private static func requestQuery(_ request: some Encodable, using operation: JSONOperation) throws -> Data {
         let data = try JSONEncoder().encode(request)
+        return try jsonQuery(String(decoding: data, as: UTF8.self), using: operation)
+    }
+    private static func jsonQuery(_ text: String, using operation: JSONOperation) throws -> Data {
         var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
-        let status = String(decoding: data, as: UTF8.self).withCString {
-            tc_plan_json($0, &result, &error)
-        }
+        let status = text.withCString { operation($0, &result, &error) }
         let message = consume(error), output = consume(result)
         guard status == 0 else { throw NativeFailure(message: message) }
         return Data(output.utf8)
@@ -672,28 +666,16 @@ public final class NativeEngine: @unchecked Sendable {
     /// Candidate metadata for the controlled CLI worker; availability still
     /// requires a one-shot worker query against the selected installation.
     public static func workerStreamingOptions(_ request: NativeRequestV2) throws -> NativeStreamingOptions {
-        let data = try JSONEncoder().encode(request)
-        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
-        let status = String(decoding: data, as: UTF8.self).withCString {
-            tc_worker_streaming_options_json($0, &result, &error)
-        }
-        let message = consume(error), output = consume(result)
-        guard status == 0 else { throw NativeFailure(message: message) }
-        let options = try JSONDecoder().decode(NativeStreamingOptions.self, from: Data(output.utf8))
+        let data = try requestQuery(request, using: tc_worker_streaming_options_json)
+        let options = try JSONDecoder().decode(NativeStreamingOptions.self, from: data)
         guard options.schema_version == 2, options.execution_container == "cli_worker" else {
             throw NativeFailure(message: "worker_options_invalid")
         }
         return options
     }
     public static func streamingOptions(_ request: NativeRequestV2) throws -> NativeStreamingOptions {
-        let data = try JSONEncoder().encode(request)
-        var result: UnsafeMutablePointer<CChar>?, error: UnsafeMutablePointer<CChar>?
-        let status = String(decoding: data, as: UTF8.self).withCString {
-            tc_streaming_options_json($0, &result, &error)
-        }
-        let message = consume(error), output = consume(result)
-        guard status == 0 else { throw NativeFailure(message: message) }
-        return try JSONDecoder().decode(NativeStreamingOptions.self, from: Data(output.utf8))
+        let data = try requestQuery(request, using: tc_streaming_options_json)
+        return try JSONDecoder().decode(NativeStreamingOptions.self, from: data)
     }
     public static func streamingOptions(_ request: NativeRequestV2, modelURL: URL?) async throws -> NativeStreamingOptions {
         let candidates = try await Task.detached(priority: .utility) {
@@ -751,20 +733,9 @@ public final class NativeEngine: @unchecked Sendable {
         try await generate(payload: JSONEncoder().encode(request), onEvent: onEvent)
     }
     private func generate(payload data: Data, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
-        return try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
-                let box = EventBox(onEvent)
-                let context = Unmanaged.passRetained(box).toOpaque()
-                defer { Unmanaged<EventBox>.fromOpaque(context).release() }
-                var result: UnsafeMutablePointer<CChar>?
-                var error: UnsafeMutablePointer<CChar>?
-                let status = String(decoding: data, as: UTF8.self).withCString {
-                    tc_engine_generate(handle, $0, eventCallback, context, &result, &error)
-                }
-                let message = consume(error), output = consume(result)
-                if status == 0 { continuation.resume(returning: Data(output.utf8)) }
-                else if status == 2 { continuation.resume(throwing: CancellationError()) }
-                else { continuation.resume(throwing: NativeFailure(message: message)) }
+        try await perform(onEvent: onEvent) { handle, context, result, error in
+            String(decoding: data, as: UTF8.self).withCString {
+                tc_engine_generate(handle, $0, eventCallback, context, result, error)
             }
         }
     }

@@ -8,8 +8,13 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from process_tree_sampler import EXIT_INCONCLUSIVE, SamplerError, main as sampler_main
-from verify_process_tree_samples import EvidenceError, verify
+from process_tree_sampler import SamplerError, main as sampler_main
+from verify_process_tree_samples import (
+    MEMORY_SUMMARY_SCHEMA,
+    EvidenceError,
+    memory_summary,
+    verify,
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -51,7 +56,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         verified = verify(args.output)
     except EvidenceError as exc:
         summary = {
-            "schema": "turbocider-streaming-memory-summary-v1",
+            "schema": MEMORY_SUMMARY_SCHEMA,
             "correlation_id": args.correlation_id,
             "status": "invalid",
             "complete": False,
@@ -59,39 +64,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "error": str(exc),
             "evidence_path": str(args.output),
         }
-        with args.summary.open("x", encoding="utf-8") as stream:
-            json.dump(summary, stream, indent=2)
-            stream.write("\n")
-        return 2
-    if verified["correlation_id"] != args.correlation_id:
-        raise SamplerError("verified evidence correlation id differs")
-    summary = {
-        "schema": "turbocider-streaming-memory-summary-v1",
-        "sampler_revision": verified.get("sampler_revision"),
-        "root_identity": verified["root_identity"],
-        "correlation_id": args.correlation_id,
-        "status": verified["status"],
-        "complete": verified["complete"],
-        "reasons": verified["reasons"],
-        "sample_count": verified["sample_count"],
-        "max_gap_ns": verified["max_gap_ns"],
-        "allowed_max_gap_ns": verified["allowed_max_gap_ns"],
-        "tree_peak_rss_bytes": verified["tree_peak_rss_bytes"],
-        "tree_peak_phys_footprint_bytes": verified[
-            "tree_peak_phys_footprint_bytes"
-        ],
-        "swap_in_bytes": verified["swap_in_bytes"],
-        "swap_out_bytes": verified["swap_out_bytes"],
-        "compression_bytes": verified["compression_bytes"],
-        "decompression_bytes": verified["decompression_bytes"],
-        "command_exit_code": verified["command_exit_code"],
-        "evidence_digest": verified["final_evidence_digest"],
-        "evidence_path": str(args.output),
-    }
+        status = 2
+    else:
+        if verified["correlation_id"] != args.correlation_id:
+            raise SamplerError("verified evidence correlation id differs")
+        summary = memory_summary(verified, args.output)
     with args.summary.open("x", encoding="utf-8") as stream:
         json.dump(summary, stream, indent=2)
         stream.write("\n")
-    return status if status in (0, EXIT_INCONCLUSIVE) else status
+    return status
 
 
 if __name__ == "__main__":

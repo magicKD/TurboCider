@@ -195,9 +195,9 @@ static Conditioning load_conditioning_directory(
         require(valid_sha256(video_hash) && valid_sha256(audio_hash) &&
                     valid_sha256(mask_hash),
                 "LTX conditioning cache hashes are invalid");
-        require(sha256_file(result.directory / video_name) == video_hash &&
-                    sha256_file(result.directory / audio_name) == audio_hash &&
-                    sha256_file(result.directory / mask_name) == mask_hash,
+        require(sha256_file_or_empty(result.directory / video_name) == video_hash &&
+                    sha256_file_or_empty(result.directory / audio_name) == audio_hash &&
+                    sha256_file_or_empty(result.directory / mask_name) == mask_hash,
                 "LTX conditioning cache content hash mismatch");
     }
     return result;
@@ -287,9 +287,9 @@ static void write_ltx_conditioning_cache(
                     conditioning.mask.data(),
                     conditioning.mask.size() * sizeof(uint16_t),
                     "LTX cached text mask");
-        const auto video_hash = sha256_file(video_path);
-        const auto audio_hash = sha256_file(audio_path);
-        const auto mask_hash = sha256_file(mask_path);
+        const auto video_hash = sha256_file_or_empty(video_path);
+        const auto audio_hash = sha256_file_or_empty(audio_path);
+        const auto mask_hash = sha256_file_or_empty(mask_path);
         require(valid_sha256(video_hash) && valid_sha256(audio_hash) &&
                     valid_sha256(mask_hash),
                 "cannot hash LTX conditioning cache tensors");

@@ -13,10 +13,13 @@ import json
 import math
 import os
 import platform
-import re
 import statistics
 import subprocess
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ltx_gemma_mlp_benchmark import GPU_PROBE_FORMAT, capture_probe  # noqa: E402
 
 
 DEFAULT_ROWS = (64, 128, 256, 512, 1024)
@@ -51,11 +54,6 @@ def arguments() -> argparse.Namespace:
     return args
 
 
-def parse_peak_rss(stderr: str):
-    match = re.search(r"(\d+)\s+maximum resident set size", stderr)
-    return int(match.group(1)) if match else None
-
-
 def run_case(args: argparse.Namespace, rows: int, folder: Path) -> dict:
     command = [
         str(args.probe), str(args.checkpoint), str(args.shader),
@@ -65,21 +63,8 @@ def run_case(args: argparse.Namespace, rows: int, folder: Path) -> dict:
     environment.pop("TURBOCIDER_LTX_GEMMA_FUSED_MLP", None)
     if args.fused_mlp:
         environment["TURBOCIDER_LTX_GEMMA_FUSED_MLP"] = "1"
-    process = subprocess.run(
-        ["/usr/bin/time", "-l", *command],
-        capture_output=True, text=True, check=False, timeout=args.timeout,
-        env=environment,
-    )
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "stdout.log").write_text(process.stdout)
-    (folder / "stderr.log").write_text(process.stderr)
-    record = {
-        "command": command,
-        "returncode": process.returncode,
-        "process_peak_rss_bytes": parse_peak_rss(process.stderr),
-    }
-    (folder / "process.json").write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\n"
+    process, peak_rss_bytes = capture_probe(
+        command, folder, args.timeout, environment=environment
     )
     if process.returncode:
         raise RuntimeError(
@@ -89,7 +74,7 @@ def run_case(args: argparse.Namespace, rows: int, folder: Path) -> dict:
     if len(lines) != 1:
         raise ValueError(f"probe produced unexpected stdout for rows={rows}")
     payload = json.loads(lines[0])
-    if payload.get("format") != "turbocider-ltx-gemma-mlp-gpu-probe-v1":
+    if payload.get("format") != GPU_PROBE_FORMAT:
         raise ValueError(f"probe format mismatch for rows={rows}")
     if (payload.get("rows") != rows or payload.get("hidden") != HIDDEN or
             payload.get("intermediate") != INTERMEDIATE or
@@ -108,7 +93,7 @@ def run_case(args: argparse.Namespace, rows: int, folder: Path) -> dict:
             payload["first_seconds"] <= 0):
         raise ValueError(f"probe timing sample mismatch for rows={rows}")
     payload["warm_median_seconds"] = statistics.median(warm)
-    payload["process_peak_rss_bytes"] = record["process_peak_rss_bytes"]
+    payload["process_peak_rss_bytes"] = peak_rss_bytes
     return payload
 
 

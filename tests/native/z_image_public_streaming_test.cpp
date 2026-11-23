@@ -1,6 +1,7 @@
 #include "models/z_image/z_image.hpp"
 #include "models/z_image/streaming_descriptor.hpp"
 #include "runtime/streaming/resolved_request.hpp"
+#include "streaming_test_assertions.hpp"
 
 #include <cassert>
 #include <filesystem>
@@ -43,19 +44,7 @@ tc::streaming::StreamingDeviceIdentity device() {
     return {"Apple Test GPU", "Apple Test GPU/16GiB", "test-os", 16ull << 30};
 }
 
-template <class Function>
-void rejects(Function &&function, const char *part) {
-    try {
-        function();
-    } catch (const std::exception &error) {
-        if (std::string(error.what()).find(part) != std::string::npos)
-            return;
-        std::cerr << error.what() << " expected " << part << '\n';
-        std::abort();
-    }
-    std::cerr << "expected rejection containing " << part << '\n';
-    std::abort();
-}
+constexpr auto rejects = tc::test::rejects<std::exception>;
 
 } // namespace
 

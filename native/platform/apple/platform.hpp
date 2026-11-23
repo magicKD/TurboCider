@@ -19,6 +19,16 @@ struct FluxConfiguration {
 };
 FluxConfiguration flux_configuration(const std::filesystem::path &, const std::string &);
 std::string sha256_file(const std::filesystem::path &);
+// File and hash failures return an empty digest so callers can report context.
+std::string sha256_file_or_empty(const std::filesystem::path &);
 // Cancellable CPU-only overload. Caller retains and validates source identity.
 std::string sha256_file(int source_fd, const std::atomic<bool> &cancelled);
+struct CheckpointHashCache {
+    std::filesystem::path path;
+    std::filesystem::file_time_type mtime{};
+    uintmax_t bytes = 0;
+    std::string sha256;
+};
+std::string cached_checkpoint_sha256(const std::filesystem::path &,
+                                     CheckpointHashCache &, const char *model);
 } // namespace tc

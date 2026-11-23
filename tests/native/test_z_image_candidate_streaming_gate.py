@@ -3,64 +3,22 @@
 
 from __future__ import annotations
 
-import ctypes as C
 import json
 from pathlib import Path
 import tempfile
 
-from streaming_gate_api import load_candidate_library
+from streaming_gate_api import (
+    CandidateStreamingGate, image_generation_request, memory_tier_request,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LIB = load_candidate_library(ROOT)
+GATE = CandidateStreamingGate(ROOT, "z-image-turbo")
 
 
-def consume(pointer: C.c_void_p) -> str:
-    if not pointer.value:
-        return ""
-    value = C.string_at(pointer).decode()
-    LIB.tc_string_free(pointer)
-    return value
 
-
-def create(symbol, root: Path) -> C.c_void_p:
-    engine, error = C.c_void_p(), C.c_void_p()
-    status = symbol(
-        b"z-image-turbo", str(root).encode(),
-        C.byref(engine), C.byref(error),
-    )
-    failure = consume(error)
-    assert status == 0 and engine.value, failure
-    return engine
-
-
-def generate(engine: C.c_void_p, request: dict) -> tuple[int, str]:
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_generate(
-        engine, json.dumps(request).encode(), None, None,
-        C.byref(result), C.byref(error),
-    )
-    consume(result)
-    return status, consume(error)
-
-
-def prepare(engine: C.c_void_p, request: dict) -> tuple[int, str]:
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_prepare(
-        engine, json.dumps(request).encode(), 0, None, None,
-        C.byref(result), C.byref(error),
-    )
-    consume(result)
-    return status, consume(error)
-
-
-def resolve(engine: C.c_void_p, request: dict) -> tuple[int, str]:
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_resolve_streaming_json(
-        engine, json.dumps(request).encode(),
-        C.byref(result), C.byref(error),
-    )
-    value, failure = consume(result), consume(error)
+def resolve(engine, request: dict) -> tuple[int, str]:
+    status, value, failure = GATE.resolve(engine, request)
     if status == 0:
         assert value and not failure, (value, failure)
     else:
@@ -68,56 +26,12 @@ def resolve(engine: C.c_void_p, request: dict) -> tuple[int, str]:
     return status, failure
 
 
-def resolve_raw(engine, request_json, result_output=True) -> tuple[int, str, str]:
-    result, error = C.c_void_p(), C.c_void_p()
-    result_pointer = C.byref(result) if result_output else None
-    status = LIB.tc_engine_resolve_streaming_json(
-        engine, request_json, result_pointer, C.byref(error),
-    )
-    return status, consume(result), consume(error)
-
-
 def request() -> dict:
-    return {
-        "schema_version": 2,
-        "model": "z-image-turbo",
-        "operation": "image.generate",
-        "inputs": [{"kind": "text", "role": "prompt", "text": "gate"}],
-        "outputs": [{
-            "kind": "image", "path": "/tmp/not-generated-z-image.png",
-            "width": 64, "height": 64,
-        }],
-        "sampling": {"seed": 42, "steps": 1},
-        "execution": {
-            "policy": "gpu",
-            "streaming": {
-                "schema_version": 1,
-                "enabled": True,
-                "selection": "manual",
-                "retention": "request",
-                "stages": {"denoiser": {
-                    "residency": "streamed",
-                    "block_group_size": 1,
-                    "slot_count": 2,
-                    "resident_prefix_blocks": 0,
-                    "prefetch_distance": 0,
-                    "io_workers": 1,
-                }},
-            },
-        },
-    }
+    return image_generation_request("z-image-turbo", "gate", "/tmp/not-generated-z-image.png")
 
 
 def selector_request() -> dict:
-    value = request()
-    value["execution"]["streaming"] = {
-        "schema_version": 2,
-        "enabled": True,
-        "selection": "memory_tier",
-        "retention": "request",
-        "target_request_memory_bytes": 12 << 30,
-    }
-    return value
+    return memory_tier_request(request())
 
 
 def main() -> None:
@@ -141,12 +55,12 @@ def main() -> None:
             "added_tokens": [],
         }))
 
-        public = create(LIB.tc_engine_create_model, root)
+        public = GATE.create(root)
         try:
-            status, error = generate(public, request())
+            status, _, error = GATE.generate(public, request())
             assert status != 0
             assert "streaming_layout_not_certified" in error, error
-            status, error = generate(public, selector_request())
+            status, _, error = GATE.generate(public, selector_request())
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
             status, error = resolve(public, selector_request())
@@ -196,40 +110,40 @@ def main() -> None:
             assert "not a published target" in error, error
 
             # C ABI failure ownership: no result on failure, exactly one error.
-            status, value, failure = resolve_raw(
+            status, value, failure = GATE.resolve_raw(
                 public, json.dumps(selector_request()).encode())
             assert status != 0 and not value
             assert "catalog_has_no_public_records" in failure, failure
 
             # Null inputs are rejected without dereferencing output storage.
-            status, value, failure = resolve_raw(
+            status, value, failure = GATE.resolve_raw(
                 None, json.dumps(selector_request()).encode())
             assert status != 0 and not value
             assert "missing streaming resolve input/output" in failure, failure
-            status, value, failure = resolve_raw(public, None)
+            status, value, failure = GATE.resolve_raw(public, None)
             assert status != 0 and not value
             assert "missing streaming resolve input/output" in failure, failure
-            status, _, failure = resolve_raw(
+            status, _, failure = GATE.resolve_raw(
                 public, json.dumps(selector_request()).encode(),
                 result_output=False)
             assert status != 0
             assert "missing streaming resolve input/output" in failure, failure
         finally:
-            LIB.tc_engine_free(public)
+            GATE.free(public)
 
-        candidate = create(LIB.tc_engine_create_model_candidate, root)
+        candidate = GATE.create(root, candidate=True)
         try:
-            status, error = generate(candidate, request())
+            status, _, error = GATE.generate(candidate, request())
             assert status != 0
             assert "streaming_layout_not_certified" not in error, error
-            status, error = prepare(candidate, selector_request())
+            status, _, error = GATE.prepare(candidate, selector_request())
             assert status != 0
             assert "streaming_prepare_unsupported" in error, error
             status, error = resolve(candidate, selector_request())
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
         finally:
-            LIB.tc_engine_free(candidate)
+            GATE.free(candidate)
 
     api = (ROOT / "native/api/c_api.mm").read_text()
     implementation = (ROOT / "native/models/z_image/z_image.cpp").read_text()

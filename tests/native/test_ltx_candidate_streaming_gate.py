@@ -1,64 +1,15 @@
 #!/usr/bin/env python3
 """Host-only proof that exact execution is candidate-scoped, not public."""
 
-import ctypes as C
 import json
 from pathlib import Path
 import tempfile
 
-from streaming_gate_api import load_candidate_library
+from streaming_gate_api import CandidateStreamingGate
 
 ROOT = Path(__file__).resolve().parents[2]
-LIB = load_candidate_library(ROOT)
+GATE = CandidateStreamingGate(ROOT, "ltx-2.5-distilled")
 
-
-def consume(pointer):
-    if not pointer.value:
-        return ""
-    value = C.string_at(pointer).decode()
-    LIB.tc_string_free(pointer)
-    return value
-
-
-def create(symbol, root):
-    engine, error = C.c_void_p(), C.c_void_p()
-    status = symbol(
-        b"ltx-2.5-distilled", str(root).encode(),
-        C.byref(engine), C.byref(error),
-    )
-    failure = consume(error)
-    assert status == 0 and engine.value, failure
-    return engine
-
-
-def generate(engine, request):
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_generate(
-        engine, json.dumps(request).encode(), None, None,
-        C.byref(result), C.byref(error),
-    )
-    value, failure = consume(result), consume(error)
-    return status, value, failure
-
-
-def prepare(engine, request):
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_prepare(
-        engine, json.dumps(request).encode(), 0, None, None,
-        C.byref(result), C.byref(error),
-    )
-    value, failure = consume(result), consume(error)
-    return status, value, failure
-
-
-def resolve(engine, request):
-    result, error = C.c_void_p(), C.c_void_p()
-    status = LIB.tc_engine_resolve_streaming_json(
-        engine, json.dumps(request).encode(),
-        C.byref(result), C.byref(error),
-    )
-    value, failure = consume(result), consume(error)
-    return status, value, failure
 
 
 def main():
@@ -111,36 +62,36 @@ def main():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"fixture")
 
-        public = create(LIB.tc_engine_create_model, root)
+        public = GATE.create(root)
         try:
-            status, _, error = generate(public, request)
+            status, _, error = GATE.generate(public, request)
             assert status != 0
             assert "streaming_layout_not_certified" in error, error
-            status, _, error = generate(public, selector_request)
+            status, _, error = GATE.generate(public, selector_request)
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
-            status, _, error = prepare(public, selector_request)
+            status, _, error = GATE.prepare(public, selector_request)
             assert status != 0
             assert "streaming_prepare_unsupported" in error, error
-            status, _, error = resolve(public, selector_request)
+            status, _, error = GATE.resolve(public, selector_request)
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
         finally:
-            LIB.tc_engine_free(public)
+            GATE.free(public)
 
-        candidate = create(LIB.tc_engine_create_model_candidate, root)
+        candidate = GATE.create(root, candidate=True)
         try:
-            status, _, error = generate(candidate, selector_request)
+            status, _, error = GATE.generate(candidate, selector_request)
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
-            status, _, error = prepare(candidate, selector_request)
+            status, _, error = GATE.prepare(candidate, selector_request)
             assert status != 0
             assert "streaming_prepare_unsupported" in error, error
-            status, _, error = resolve(candidate, selector_request)
+            status, _, error = GATE.resolve(candidate, selector_request)
             assert status != 0
             assert "catalog_has_no_public_records" in error, error
         finally:
-            LIB.tc_engine_free(candidate)
+            GATE.free(candidate)
 
         # Candidate execution itself is covered by the opt-in real-Metal
         # harness. Keep this default contract host-only while proving the
@@ -158,7 +109,7 @@ def main():
             "tc_engine_test_ltx_retry_process_quarantine",
         ):
             try:
-                getattr(LIB, symbol)
+                getattr(GATE.library, symbol)
             except AttributeError:
                 continue
             raise AssertionError(f"release library exports private test hook: {symbol}")

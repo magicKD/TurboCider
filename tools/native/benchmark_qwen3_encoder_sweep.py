@@ -18,16 +18,15 @@ import json
 import math
 import os
 import platform
-import re
 import statistics
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 
 # Keep direct CLI invocation and file-based tooling imports working.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from benchmark_encoder_process import capture_encoder_probe  # noqa: E402
 from mlx_encoder_quality import INVALID_METRIC, tensor_quality as _tensor_quality  # noqa: E402
 
 
@@ -249,23 +248,8 @@ def run_probe(command: list[str], folder: Path, timeout: int,
         # threshold so the report can show both executed and rejected buckets.
         environment["TURBOCIDER_QWEN3_ANE_MIN_TOKENS"] = "1"
         environment["TURBOCIDER_QWEN3_MLP_MAX_PADDING_PERCENT"] = "10000"
-    started = time.perf_counter()
-    process = subprocess.run(
-        ["/usr/bin/time", "-l", *command], text=True, capture_output=True,
-        env=environment, timeout=timeout, check=False,
-    )
-    wall_seconds = time.perf_counter() - started
-    (folder / "stdout.log").write_text(process.stdout)
-    (folder / "stderr.log").write_text(process.stderr)
-    match = re.search(r"(\d+)\s+maximum resident set size", process.stderr)
-    process_record = {
-        "command": command,
-        "returncode": process.returncode,
-        "process_wall_seconds": wall_seconds,
-        "process_peak_rss_bytes": int(match.group(1)) if match else None,
-    }
-    (folder / "process.json").write_text(
-        json.dumps(process_record, indent=2, sort_keys=True) + "\n"
+    process, process_record = capture_encoder_probe(
+        command, folder, timeout, environment=environment
     )
     if process.returncode:
         raise RuntimeError(
@@ -292,23 +276,8 @@ def run_mlx_reference(command: list[str], folder: Path, timeout: int) -> dict:
     environment = os.environ.copy()
     environment.setdefault("HF_HUB_OFFLINE", "1")
     environment.setdefault("TRANSFORMERS_OFFLINE", "1")
-    started = time.perf_counter()
-    process = subprocess.run(
-        ["/usr/bin/time", "-l", *command], text=True, capture_output=True,
-        env=environment, timeout=timeout, check=False,
-    )
-    wall_seconds = time.perf_counter() - started
-    (folder / "stdout.log").write_text(process.stdout)
-    (folder / "stderr.log").write_text(process.stderr)
-    match = re.search(r"(\d+)\s+maximum resident set size", process.stderr)
-    process_record = {
-        "command": command,
-        "returncode": process.returncode,
-        "process_wall_seconds": wall_seconds,
-        "process_peak_rss_bytes": int(match.group(1)) if match else None,
-    }
-    (folder / "process.json").write_text(
-        json.dumps(process_record, indent=2, sort_keys=True) + "\n"
+    process, process_record = capture_encoder_probe(
+        command, folder, timeout, environment=environment
     )
     if process.returncode:
         raise RuntimeError(

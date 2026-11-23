@@ -33,6 +33,27 @@ uint64_t checked_subtract(uint64_t budget, uint64_t reserve,
                 " non-denoiser reserve exhausts the effective budget");
     return budget - reserve;
 }
+
+void set_streamed_candidate_budget(EffectiveMemoryPolicy &policy) {
+    policy.capability_level = MemoryCapabilityLevel::HookBridged;
+    policy.certification_state = MemoryCertificationState::PlanOnly;
+    policy.effective_residency = "streamed";
+    policy.non_denoiser_reserve_bytes = 4ull * gib;
+    policy.denoiser_budget_bytes = checked_subtract(
+        policy.effective_budget_bytes, policy.non_denoiser_reserve_bytes,
+        policy.adapter_candidate.c_str());
+}
+
+void normalize_streamed_candidate(Request &request,
+                                  EffectiveMemoryPolicy &policy) {
+    request.residency = "streamed";
+    request.memory_budget_bytes = policy.denoiser_budget_bytes;
+    request.memory_constrained.normalized = true;
+    request.memory_constrained.denoiser_budget_bytes =
+        policy.denoiser_budget_bytes;
+    request.memory_constrained.refill_slots = policy.refill_slots;
+    policy.admission_state = "plan_only";
+}
 } // namespace
 
 const char *memory_capability_level_name(MemoryCapabilityLevel level) {
@@ -151,26 +172,13 @@ void resolve_memory_constrained_candidate(Request &request,
         policy.candidate_model_variant = "fl2va_t2v_video_only";
         policy.candidate_sampler_mode = "h3_distilled_euler_v1";
         policy.candidate_tiling_mode = "h3_video_vae_tiled_v1";
-        policy.capability_level = MemoryCapabilityLevel::HookBridged;
-        policy.certification_state = MemoryCertificationState::PlanOnly;
-        policy.effective_residency = "streamed";
-        policy.non_denoiser_reserve_bytes = 4ull * gib;
-        policy.denoiser_budget_bytes = checked_subtract(
-            policy.effective_budget_bytes,
-            policy.non_denoiser_reserve_bytes,
-            policy.adapter_candidate.c_str());
+        set_streamed_candidate_budget(policy);
         policy.refill_slots = 2;
         require(policy.max_refill_slots >= policy.refill_slots,
                 "memory_policy_unsupported: H3 C/Metal currently requires "
                 "two certified refill slots");
         request.execution = "gpu";
-        request.residency = "streamed";
-        request.memory_budget_bytes = policy.denoiser_budget_bytes;
-        request.memory_constrained.normalized = true;
-        request.memory_constrained.denoiser_budget_bytes =
-            policy.denoiser_budget_bytes;
-        request.memory_constrained.refill_slots = policy.refill_slots;
-        policy.admission_state = "plan_only";
+        normalize_streamed_candidate(request, policy);
         policy.reason =
             "H3 C/Metal route is plan-only: no verified capability manifest "
             "matches this checkpoint, shape, device, and runtime";
@@ -190,24 +198,11 @@ void resolve_memory_constrained_candidate(Request &request,
             "ltx_2_5_distilled_t2v_video_only";
         policy.candidate_sampler_mode = "ltx_distilled_euler_v1";
         policy.candidate_tiling_mode = "ltx_video_vae_helper_v1";
-        policy.capability_level = MemoryCapabilityLevel::HookBridged;
-        policy.certification_state = MemoryCertificationState::PlanOnly;
-        policy.effective_residency = "streamed";
-        policy.non_denoiser_reserve_bytes = 4ull * gib;
-        policy.denoiser_budget_bytes = checked_subtract(
-            policy.effective_budget_bytes,
-            policy.non_denoiser_reserve_bytes,
-            policy.adapter_candidate.c_str());
+        set_streamed_candidate_budget(policy);
         policy.refill_slots = policy.max_refill_slots;
         request.execution = "gpu";
         request.ltx_backend = "c_metal";
-        request.residency = "streamed";
-        request.memory_budget_bytes = policy.denoiser_budget_bytes;
-        request.memory_constrained.normalized = true;
-        request.memory_constrained.denoiser_budget_bytes =
-            policy.denoiser_budget_bytes;
-        request.memory_constrained.refill_slots = policy.refill_slots;
-        policy.admission_state = "plan_only";
+        normalize_streamed_candidate(request, policy);
         policy.reason =
             "LTX C/Metal video route is plan-only: no verified capability "
             "manifest matches this checkpoint, shape, device, and runtime";

@@ -3,25 +3,16 @@
 
 from __future__ import annotations
 
-import json
 import os
-import struct
 import subprocess
 import tempfile
 from pathlib import Path
 
+from streaming_test_fixtures import H3_MATRICES, write_bf16_shard
+
 
 ROOT = Path(__file__).resolve().parents[2]
 H3 = ROOT / "native/models/h3_runtime"
-INNER = 56 * 128
-HIDDEN = 5376
-FFN = 14336
-MATRICES = (
-    ("attn.qkv_proj.weight", 3 * INNER, HIDDEN),
-    ("attn.out_proj.weight", HIDDEN, INNER),
-    ("mlp.fc1.weight", 2 * FFN, HIDDEN),
-    ("mlp.fc2.weight", HIDDEN, FFN),
-)
 
 
 def active_ids(active: int) -> list[int]:
@@ -35,30 +26,12 @@ def active_ids(active: int) -> list[int]:
     return [index for index, enabled in enumerate(mask) if enabled]
 
 
-def write_shard(path: Path, tensors: list[tuple[str, int, int]]) -> None:
-    header: dict[str, object] = {}
-    cursor = 0
-    for name, rows, columns in tensors:
-        size = rows * columns * 2
-        header[name] = {
-            "dtype": "BF16",
-            "shape": [rows, columns],
-            "data_offsets": [cursor, cursor + size],
-        }
-        cursor += size
-    encoded = json.dumps(header, separators=(",", ":")).encode()
-    with path.open("wb") as stream:
-        stream.write(struct.pack("<Q", len(encoded)))
-        stream.write(encoded)
-        stream.truncate(8 + len(encoded) + cursor)
-
-
 def write_fixture(directory: Path, *, missing=False,
                   wrong_shape=False, duplicate=False) -> None:
     blocks = list(range(50))
     shards: list[list[tuple[str, int, int]]] = [[], [], [], []]
     for block in blocks:
-        for field_index, (suffix, rows, columns) in enumerate(MATRICES):
+        for field_index, (suffix, rows, columns) in enumerate(H3_MATRICES):
             if missing and block == blocks[-1] and field_index == 3:
                 continue
             if wrong_shape and block == blocks[0] and field_index == 0:
@@ -68,7 +41,7 @@ def write_fixture(directory: Path, *, missing=False,
             if duplicate and block == blocks[0] and field_index == 0:
                 shards[(field_index + 1) % 4].append((name, rows, columns))
     for index, tensors in enumerate(shards, 1):
-        write_shard(directory / f"model-{index:05d}.safetensors", tensors)
+        write_bf16_shard(directory / f"model-{index:05d}.safetensors", tensors)
 
 
 def compile_and_run() -> None:

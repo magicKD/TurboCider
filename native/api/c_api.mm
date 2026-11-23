@@ -88,6 +88,18 @@ int fail(char **error, const std::exception &e) {
     return dynamic_cast<const tc::Cancelled *>(&e) ? 2 : 1;
 }
 
+std::string progress_json(uint64_t sequence, const std::string &phase,
+                          int current, int total, tc::Clock::time_point begin) {
+    return tc::json(@{
+        @"sequence" : @(sequence),
+        @"phase" : @(phase.c_str()),
+        @"completed" : @(current),
+        @"total" : @(total),
+        @"elapsed_seconds" :
+            @(std::chrono::duration<double>(tc::Clock::now() - begin).count())
+    });
+}
+
 tc::streaming::StreamingDeviceIdentity streaming_device_identity() {
     const auto device = tc::device_info();
     const auto version = NSProcessInfo.processInfo.operatingSystemVersion;
@@ -1591,14 +1603,7 @@ int tc_engine_load(tc_engine *e, tc_event_callback cb, void *ctx, char **out, ch
                 tc::checkpoint(e->cancelled);
                 if (cb) {
                     @autoreleasepool {
-                        auto text = tc::json(@{
-                            @"sequence" : @(++sequence),
-                            @"phase" : @(phase.c_str()),
-                            @"completed" : @(current),
-                            @"total" : @(total),
-                            @"elapsed_seconds" :
-                                @(std::chrono::duration<double>(tc::Clock::now() - begin).count())
-                        });
+                        auto text = progress_json(++sequence, phase, current, total, begin);
                         cb(text.c_str(), ctx);
                     }
                 }
@@ -1735,14 +1740,7 @@ static int preparation_call(tc_engine *e, const char *request, int warmup, bool 
                     memory_execution->checkpoint(phase);
                 tc::checkpoint(e->cancelled);
                 if (cb) {
-                    auto text = tc::json(@{
-                        @"sequence" : @(++sequence),
-                        @"phase" : @(phase.c_str()),
-                        @"completed" : @(current),
-                        @"total" : @(total),
-                        @"elapsed_seconds" :
-                            @(std::chrono::duration<double>(tc::Clock::now() - begin).count())
-                    });
+                    auto text = progress_json(++sequence, phase, current, total, begin);
                     cb(text.c_str(), ctx);
                 }
             };
@@ -1851,14 +1849,7 @@ int tc_coreml_resources_json(const char *request, tc_event_callback cb, void *ct
             tc::Event event = [&](const std::string &phase, int current, int total) {
                 tc::checkpoint(cancelled);
                 if (cb) {
-                    auto text = tc::json(@{
-                        @"sequence" : @(++sequence),
-                        @"phase" : @(phase.c_str()),
-                        @"completed" : @(current),
-                        @"total" : @(total),
-                        @"elapsed_seconds" :
-                            @(std::chrono::duration<double>(tc::Clock::now() - begin).count())
-                    });
+                    auto text = progress_json(++sequence, phase, current, total, begin);
                     cb(text.c_str(), ctx);
                 }
             };

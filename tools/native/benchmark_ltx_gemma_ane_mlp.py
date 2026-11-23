@@ -5,11 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import platform
-import re
-import statistics
 import subprocess
 import sys
 from pathlib import Path
@@ -17,10 +14,11 @@ from pathlib import Path
 
 # Keep direct CLI invocation and file-based tooling imports working.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ltx_gemma_mlp_benchmark import (  # noqa: E402
+    DEFAULT_ROWS, GPU_PROBE_FORMAT, passes_quality_gate, run_probe,
+    validate_limits, write_report,
+)
 from ltx_gemma_quality import INVALID_METRIC, bf16, tensor_quality  # noqa: E402
-
-
-DEFAULT_ROWS = (64, 128, 256, 512, 1024)
 
 
 def arguments() -> argparse.Namespace:
@@ -49,18 +47,7 @@ def arguments() -> argparse.Namespace:
     if (not args.rows or len(set(args.rows)) != len(args.rows) or
             any(row not in DEFAULT_ROWS for row in args.rows)):
         parser.error(f"--rows values must be unique members of {DEFAULT_ROWS}")
-    if args.runs < 1 or args.runs > 50:
-        parser.error("--runs must be in 1...50")
-    if args.timeout < 1:
-        parser.error("--timeout must be positive")
-    if not math.isfinite(args.min_speedup) or args.min_speedup <= 0:
-        parser.error("--min-speedup must be finite and positive")
-    if not math.isfinite(args.max_relative_l2) or args.max_relative_l2 < 0:
-        parser.error("--max-relative-l2 must be finite and nonnegative")
-    if not math.isfinite(args.min_cosine) or not -1 <= args.min_cosine <= 1:
-        parser.error("--min-cosine must be in [-1, 1]")
-    if not math.isfinite(args.max_relative_abs) or args.max_relative_abs < 0:
-        parser.error("--max-relative-abs must be finite and nonnegative")
+    validate_limits(parser, args)
     return args
 
 
@@ -79,42 +66,10 @@ def run_case(command: list[str], folder: Path, timeout: int,
     # The native probes create their artifact directory directly.  Ensure its
     # parent exists, but leave the leaf absent as required by the probe.
     folder.parent.mkdir(parents=True, exist_ok=True)
-    process = subprocess.run(
-        ["/usr/bin/time", "-l", *command], capture_output=True, text=True,
-        check=False, timeout=timeout, env=os.environ.copy(),
+    return run_probe(
+        command, folder, timeout, environment=os.environ.copy(), expected_format=expected_format,
+        failure_label=f"Gemma {expected_format}", invalid_label="Gemma",
     )
-    folder.parent.mkdir(parents=True, exist_ok=True)
-    (folder.parent / "stdout.log").write_text(process.stdout)
-    (folder.parent / "stderr.log").write_text(process.stderr)
-    peak = re.search(r"(\d+)\s+maximum resident set size", process.stderr)
-    process_record = {
-        "command": command,
-        "returncode": process.returncode,
-        "process_peak_rss_bytes": int(peak.group(1)) if peak else None,
-    }
-    (folder.parent / "process.json").write_text(
-        json.dumps(process_record, indent=2, sort_keys=True) + "\n"
-    )
-    if process.returncode:
-        raise RuntimeError(
-            f"Gemma {expected_format} probe failed in {folder.parent}:\n"
-            f"{process.stderr[-4000:]}"
-        )
-    payload = json.loads(process.stdout)
-    warm = payload.get("warm_seconds")
-    if (payload.get("format") != expected_format or
-            payload.get("output_all_finite") is not True or
-            not isinstance(warm, list) or len(warm) != payload.get("warm_runs")):
-        raise ValueError(f"invalid Gemma probe output in {folder.parent}")
-    return {
-        "first_seconds": payload["first_seconds"],
-        "warm_seconds": warm,
-        "warm_median_seconds": statistics.median(warm),
-        "resident_weight_bytes": payload["resident_weight_bytes"],
-        "workspace_bytes": payload["workspace_bytes"],
-        "process_peak_rss_bytes": process_record["process_peak_rss_bytes"],
-        "output": folder / "output.bf16",
-    }
 
 
 def main() -> int:
@@ -188,7 +143,7 @@ def main() -> int:
     }
     report_path = args.output / "report.json"
     formats = {
-        "gpu": "turbocider-ltx-gemma-mlp-gpu-probe-v1",
+        "gpu": GPU_PROBE_FORMAT,
         "hybrid": "turbocider-ltx-gemma-ane-mlp-probe-v1",
     }
     for item in planned:
@@ -203,13 +158,7 @@ def main() -> int:
                                  results["gpu"]["output"])
         speedup = (results["gpu"]["warm_median_seconds"] /
                    results["hybrid"]["warm_median_seconds"])
-        quality_passed = (
-            quality.get("shape_match", False) and
-            quality.get("all_finite", False) and
-            quality["relative_l2"] <= args.max_relative_l2 and
-            quality["cosine"] >= args.min_cosine and
-            quality["relative_max_abs"] <= args.max_relative_abs
-        )
+        quality_passed = passes_quality_gate(quality, args)
         for result in results.values():
             result["output"] = str(result["output"])
         case = {
@@ -224,9 +173,7 @@ def main() -> int:
             "retain": quality_passed and speedup >= args.min_speedup,
         }
         report["cases"].append(case)
-        temporary = report_path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-        temporary.replace(report_path)
+        write_report(report_path, report)
         print(json.dumps(case, sort_keys=True), flush=True)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0

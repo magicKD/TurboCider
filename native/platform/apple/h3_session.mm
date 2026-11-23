@@ -13,14 +13,12 @@
 #include "../../runtime/streaming/canonical_encoding.hpp"
 #include "../../runtime/streaming/resolved_request.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
-#include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <exception>
-#include <fstream>
 #include <limits>
 #include <memory>
 #include <new>
@@ -254,28 +252,6 @@ static uint64_t h3_allocator_domain(const void* owner) {
     const uint64_t value = static_cast<uint64_t>(
         reinterpret_cast<uintptr_t>(owner)) ^ salt;
     return value ? value : salt;
-}
-
-static std::string sha256_file(const std::filesystem::path& path) {
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream.good()) return {};
-    CC_SHA256_CTX context;
-    if (CC_SHA256_Init(&context) != 1) return {};
-    std::vector<char> buffer(1 << 20);
-    while (stream.good()) {
-        stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        std::streamsize count = stream.gcount();
-        if (count > 0 && CC_SHA256_Update(&context, buffer.data(),
-                                          static_cast<CC_LONG>(count)) != 1)
-            return {};
-    }
-    if (!stream.eof()) return {};
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    if (CC_SHA256_Final(digest, &context) != 1) return {};
-    char output[CC_SHA256_DIGEST_LENGTH * 2 + 1];
-    for (size_t index = 0; index < CC_SHA256_DIGEST_LENGTH; index++)
-        snprintf(output + index * 2, 3, "%02x", digest[index]);
-    return output;
 }
 
 constexpr const char *kH3PublicImplementation =
@@ -526,7 +502,7 @@ public:
         std::error_code error;
         tc::require(std::filesystem::is_regular_file(manifest, error) && !error,
                     "streaming_route_unsupported: H3 provenance manifest is missing");
-        const auto manifest_digest = sha256_file(manifest);
+        const auto manifest_digest = tc::sha256_file_or_empty(manifest);
         tc::require(!manifest_digest.empty(),
                     "streaming_source_identity: cannot hash H3 provenance manifest");
         std::vector<tc::streaming::SourceFileIdentity> files;
@@ -865,7 +841,7 @@ public:
             if(absolute_path!=verified_lora_path_||
                lora_bytes!=verified_lora_bytes_||
                lora_mtime!=verified_lora_mtime_) {
-                verified_lora_sha256_=sha256_file(absolute_path);
+                verified_lora_sha256_=sha256_file_or_empty(absolute_path);
                 require(!verified_lora_sha256_.empty(),
                         "cannot hash H3 requested LoRA");
                 verified_lora_path_=absolute_path;
@@ -887,7 +863,7 @@ public:
         // artifact after the sidecar changed.  Include the selected component
         // and the tiny provenance manifest digest; the native h3 resident key
         // separately includes the actual transformer index contents.
-        const auto manifest_sha256 = sha256_file(manifest_path);
+        const auto manifest_sha256 = sha256_file_or_empty(manifest_path);
         require(!manifest_sha256.empty(),
                 "cannot hash H3 checkpoint provenance manifest");
         auto context_identity = active_root.string() + ":" + component +

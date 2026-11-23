@@ -71,6 +71,10 @@ class MlxWeightPager {
     const MlxWeightPagerMetrics &metrics() const noexcept { return metrics_; }
 
   private:
+    MlxWeightPager(const std::filesystem::path *artifact_root,
+                   std::shared_ptr<const SourceLease>, const Descriptor &,
+                   const StageDescriptor &, const StageLayout &);
+
     std::unique_ptr<State> state_;
     MlxWeightPagerMetrics metrics_;
     mutable std::mutex metrics_mutex_;

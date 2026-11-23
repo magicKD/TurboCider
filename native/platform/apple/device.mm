@@ -90,8 +90,40 @@ std::string sha256_file(const std::filesystem::path &path) {
     }
     return result;
 }
+std::string sha256_file_or_empty(const std::filesystem::path &path) {
+    try {
+        return sha256_file(path);
+    } catch (const std::invalid_argument &) {
+        return {};
+    }
+}
 std::string sha256_file(int source_fd, const std::atomic<bool> &cancelled) {
     return detail::sha256_fd(source_fd, cancelled);
+}
+std::string cached_checkpoint_sha256(const std::filesystem::path &path,
+                                     CheckpointHashCache &cache, const char *model) {
+    const std::string label = std::string(model) + " checkpoint";
+    std::error_code error;
+    auto absolute = std::filesystem::absolute(path, error);
+    require(!error, "cannot resolve " + label + " path: " + path.string());
+    auto bytes = std::filesystem::file_size(absolute, error);
+    require(!error, "cannot inspect " + label + " size: " + absolute.string());
+    auto mtime = std::filesystem::last_write_time(absolute, error);
+    require(!error, "cannot inspect " + label + " timestamp: " + absolute.string());
+    if (absolute != cache.path || bytes != cache.bytes || mtime != cache.mtime) {
+        cache.sha256 = sha256_file_or_empty(absolute);
+        require(!cache.sha256.empty(), "cannot hash " + label + ": " + absolute.string());
+        auto final_bytes = std::filesystem::file_size(absolute, error);
+        require(!error && final_bytes == bytes,
+                label + " changed while it was being hashed: " + absolute.string());
+        auto final_mtime = std::filesystem::last_write_time(absolute, error);
+        require(!error && final_mtime == mtime,
+                label + " changed while it was being hashed: " + absolute.string());
+        cache.path = absolute;
+        cache.bytes = bytes;
+        cache.mtime = mtime;
+    }
+    return cache.sha256;
 }
 } // namespace tc
 
