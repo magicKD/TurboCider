@@ -20,7 +20,7 @@ import UniformTypeIdentifiers
         studio.models.filter { $0.supports_lora == true }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
     }
     private var filterIDs: [String] {
-        Set(supportedModels.map(\.id) + library.loras.map(\.modelID)).sorted { modelTitle($0).localizedStandardCompare(modelTitle($1)) == .orderedAscending }
+        Set(supportedModels.map(\.id) + library.loras.flatMap(\.modelIDs)).sorted { modelTitle($0).localizedStandardCompare(modelTitle($1)) == .orderedAscending }
     }
     private func modelTitle(_ id: String) -> String { studio.models.first { $0.id == id }?.displayName ?? id }
     private func normalized(_ path: String) -> String { URL(fileURLWithPath: path).standardizedFileURL.path }
@@ -30,7 +30,11 @@ import UniformTypeIdentifiers
         return a == b
     }
     private var allRows: [LoRALibraryRow] {
-        var result = library.loras.map { LoRALibraryRow(id: "registered-" + $0.id, modelID: $0.modelID, name: $0.name, path: $0.path, registration: $0) }
+        var result = library.loras.flatMap { item in
+            item.modelIDs.map { model in
+                LoRALibraryRow(id: "registered-\(item.id)-\(model)", modelID: model, name: item.name, path: item.path, registration: item)
+            }
+        }
         for lora in studio.draft.loras where !result.contains(where: { $0.modelID == studio.draft.modelID && sameFile($0.path, lora.path) }) {
             result.append(.init(id: "draft-" + lora.id.uuidString, modelID: studio.draft.modelID,
                 name: URL(fileURLWithPath: lora.path).lastPathComponent, path: lora.path, registration: nil))
@@ -57,21 +61,24 @@ import UniformTypeIdentifiers
         return studio.draft.loras.first { sameFile($0.path, row.path) }
     }
     private func fileReady(_ row: LoRALibraryRow) -> Bool { !checkingFiles && fileStates[row.path]?.readable == true }
-    private func qwenInstallationDisablesLoRA(_ row: LoRALibraryRow) -> Bool {
-        guard row.modelID == "qwen-image-2.1" else { return false }
+    private func installationDisablesLoRA(_ row: LoRALibraryRow) -> Bool {
         var target = studio.draft
         target.modelID = row.modelID
-        return target.usesQwen21InstalledRecipe
+        return !target.canUseLoRA(row.path) || (row.registration.map { !target.canUseLoRA($0) } ?? false)
     }
     private func supportsActivation(_ row: LoRALibraryRow) -> Bool {
         guard let model = studio.models.first(where: { $0.id == row.modelID }) else { return false }
         return model.executor && model.supports_lora == true && model.runtime_lora != false &&
-            !qwenInstallationDisablesLoRA(row)
+            !installationDisablesLoRA(row)
     }
     private func replacesQwenLoRA(_ row: LoRALibraryRow) -> Bool {
         guard row.modelID == "qwen-image-2.1" else { return false }
         let choices = studio.draft.modelID == row.modelID ? studio.draft.loras : studio.draft.modelLoRAs[row.modelID] ?? []
-        return choices.contains { $0.enabled && !sameFile($0.path, row.path) }
+        let pinned = StudioDraft.qwen21TurboAdapterNames
+        let isPinned = pinned.contains(URL(fileURLWithPath: row.path).lastPathComponent)
+        return choices.contains {
+            $0.enabled && !sameFile($0.path, row.path) && (isPinned || pinned.contains(URL(fileURLWithPath: $0.path).lastPathComponent))
+        }
     }
     private func activationTitle(_ row: LoRALibraryRow) -> String {
         if studio.draft.modelID != row.modelID {
@@ -100,6 +107,9 @@ import UniformTypeIdentifiers
                     .accessibilityIdentifier("loraLibraryImport")
                     .help("先选择文件所属的基础模型，再多选本地 .safetensors；登记本身不会启用或切换模型。")
             }
+            Button("导入 LoRA 清单…", action: chooseManifest)
+                .disabled(library.busy || configurationLocked)
+                .accessibilityIdentifier("importLoRAManifest")
             HStack(spacing: 10) {
                 Text("当前创作").font(.caption).foregroundStyle(.secondary)
                 Text(modelTitle(studio.draft.modelID)).font(.callout.weight(.medium))
@@ -235,8 +245,8 @@ import UniformTypeIdentifiers
                     Spacer(minLength: 0)
                 }
             }
-            if qwenInstallationDisablesLoRA(item) {
-                Text("所选 Qwen 权重与此 LoRA 加载方式不兼容。可在模型中心切换到支持 LoRA 的基础权重。")
+            if installationDisablesLoRA(item) {
+                Text("所选权重与此 LoRA 的加载方式或目标变体不兼容。")
                     .font(.caption).foregroundStyle(.secondary)
             } else if !supportsActivation(item) {
                 Text("此基础模型没有独立 LoRA 运行入口，或需要离线预融合 checkpoint；登记文件不会自动改写模型。")
@@ -244,7 +254,7 @@ import UniformTypeIdentifiers
             } else if item.modelID == "qwen-image-2.1" {
                 Text(StudioDraft.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: item.path).lastPathComponent)
                      ? "Viggle 六步模式 · 启用后应用 512×512、6 步、强度 1 的快速设置。Qwen 每次启用一个适配器。"
-                     : "普通 Qwen LoRA 使用单个 Transformer 适配器、纯 GPU、20–40 步；与六步 Viggle 使用不同采样。")
+                     : "普通 Qwen LoRA 可叠加至 8 个，使用纯 GPU、512×512 画布与当前模型的采样步数。")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -275,10 +285,8 @@ import UniformTypeIdentifiers
         let switched = studio.draft.modelID != item.modelID
         if switched { studio.changeModel(item.modelID) }
         guard studio.draft.modelID == item.modelID, !configurationLocked else { return }
-        if item.modelID == "qwen-image-2.1" {
-            for other in studio.draft.activeLoRAs where !sameFile(other.path, item.path) { studio.setLoRAEnabled(other.id, enabled: false) }
-        }
         if let existing = selectedLoRA(item) { studio.setLoRAEnabled(existing.id, enabled: true) }
+        else if let registration = item.registration { studio.addLoRA(registration) }
         else { studio.addLoRA(item.path) }
         guard selectedLoRA(item)?.enabled == true else { notice = studio.message ?? "未能启用此 LoRA，请检查当前配置。"; return }
         notice = (switched ? "已切换到 \(modelTitle(item.modelID)) 并启用 " : "已启用 ") + item.name + "。" + (studio.draft.modelPath.isEmpty ? "基础模型文件尚未配置，请先选择完整安装。" : "登记归属不代替实际加载兼容检查。")
@@ -303,6 +311,14 @@ import UniformTypeIdentifiers
         guard !library.busy, !configurationLocked else { return }
         library.removeLoRA(item)
         notice = "已请求移除登记：\(item.name)。原文件与当前创作中的启用设置保留。"
+    }
+    private func chooseManifest() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.title = "导入 LoRA 清单"
+        panel.message = "选择 JSON 清单。清单引用的 .safetensors 应位于同一目录或其子目录。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        library.importLoRAManifest(url)
     }
     private func chooseFiles(modelID: String) {
         guard !configurationLocked else { return }

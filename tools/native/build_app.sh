@@ -43,11 +43,12 @@ STATE+=(apps/macos/SeedVR2ResourceAdvice.swift)
 STATE+=(apps/macos/SeedVR2Workflow.swift)
 STATE+=(apps/macos/HistorySelection.swift apps/macos/ImageUpscaler.swift)
 STATE+=(apps/macos/ModelHubPresentation.swift)
+STATE+=(apps/macos/MiniAppPackage.swift apps/macos/PeopleStudioMaterials.swift apps/macos/MiniAppRuntime.swift)
 STATE+=(apps/macos/EditingCanvasSizing.swift apps/macos/ItemProviderDataLoader.swift apps/macos/PlaygroundState.swift)
 VIDEO_VIEWS=(apps/macos/VideoUpscaleComparison.swift apps/macos/UpscaleComparisonDivider.swift)
 APP_VIEWS=(
  apps/macos/SeedVR2UpscaleControls.swift apps/macos/ImageUpscaleView.swift
- apps/macos/EditingCanvasSizingView.swift apps/macos/PlaygroundView.swift
+ apps/macos/EditingCanvasSizingView.swift apps/macos/PlaygroundView.swift apps/macos/MiniAppWebHost.swift
  apps/macos/ReferenceImagePreparationView.swift apps/macos/ModelLibraryView.swift
  apps/macos/ModelLoRALibraryView.swift apps/macos/ANELibraryView.swift
  apps/macos/ModelDownloadView.swift apps/macos/LocalAPIView.swift
@@ -62,9 +63,14 @@ build_app_integration_test() {
 }
 APP_TARGETS="${TURBOCIDER_APP_TARGETS:-all}"
 case "$APP_TARGETS" in
- all|seedvr2|upscale-presentation|tiny-vae|prunavaed|desktop-media) ;;
- *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae, prunavaed or desktop-media\n' >&2; exit 2 ;;
+ all|seedvr2|upscale-presentation|tiny-vae|prunavaed|desktop-media|mini-apps) ;;
+ *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae, prunavaed, desktop-media or mini-apps\n' >&2; exit 2 ;;
 esac
+if [[ "$APP_TARGETS" == mini-apps ]]; then
+ build_app_integration_test turbocider-mini-app-tests apps/macos/MiniAppWebHost.swift tests/integration/MiniAppTests.swift
+ printf 'Built mini-app package, host and WebKit tests\n'
+ exit 0
+fi
 if [[ "$APP_TARGETS" == prunavaed ]]; then
  build_app_integration_test turbocider-prunavaed-app-tests tests/integration/PrunaVAEAppTests.swift
  "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/PrunaVAEDownloadTests.swift -o "$OUT/turbocider-prunavaed-download-tests"
@@ -89,6 +95,7 @@ if [[ "$APP_ONLY" == 0 && "$APP_TARGETS" == all ]]; then
 build_app_integration_test turbocider-prunavaed-app-tests tests/integration/PrunaVAEAppTests.swift
 "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/TinyVAEDownloadTests.swift -o "$OUT/turbocider-tiny-vae-download-tests"
 build_app_integration_test turbocider-tiny-vae-app-tests tests/integration/TinyVAEAppTests.swift
+build_app_integration_test turbocider-mini-app-tests apps/macos/MiniAppWebHost.swift tests/integration/MiniAppTests.swift
 build_app_integration_test turbocider-playground-tests tests/integration/PlaygroundStateTests.swift
 build_app_integration_test turbocider-editing-canvas-tests tests/integration/EditingCanvasSizingTests.swift
 build_app_integration_test turbocider-reference-preparation-tests tests/integration/ReferenceImagePreparationTests.swift

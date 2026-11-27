@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sdkVersion": 1,
+  "id": "dev.turbocider.image-sample",
+  "name": "Image Sample",
+  "version": "1.0.0",
+  "description": "Generate a local image or edit it with an imported reference.",
+  "entry": "index.html",
+  "permissions": ["media.import", "media.export", "image.generate"]
+}

@@ -304,6 +304,15 @@ enum LibraryTool {
             }
         }
     }
+    func importLoRAManifest(_ url: URL) {
+        perform { [self] in
+            let data = try await metadataRunner(["import-lora", url.path, "--root", root])
+            let item = try LibraryTool.decode(LibraryLoRA.self, from: data)
+            try await readIndex()
+            message = "已导入 \(item.name)，可在兼容模型中启用。"
+        }
+    }
+
     func registerLoRA(_ url: URL, modelID: String) {
         let registration = LoRARegistration(modelID: modelID, path: url.standardizedFileURL.path)
         guard registration != activeLoRARegistration,

@@ -205,6 +205,16 @@ static void parse_ltx_options(NSDictionary *d, Request &r) {
     r.ltx_sparse_keep_blocks = number(
         d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
 }
+static void parse_qwen21_reference_options(NSDictionary *d, Request &r) {
+    if (d[@"qwen21_reference_pixel_budget"]) {
+        require(!d[@"qwen21_reference_size"], "choose qwen21_reference_pixel_budget or qwen21_reference_size");
+        r.qwen21_reference_pixel_budget = number(d, @"qwen21_reference_pixel_budget", 0);
+        require(r.qwen21_reference_pixel_budget > 0, "qwen21_reference_pixel_budget must be positive");
+    } else {
+        r.qwen21_reference_size = number(d, @"qwen21_reference_size", r.qwen21_reference_size);
+    }
+}
+
 static void parse_qwen21_options(NSDictionary *d, Request &r) {
     r.qwen21_denoiser_backend = string_value(d, @"qwen21_denoiser_backend", r.qwen21_denoiser_backend);
     r.qwen21_native_ane_cache = string_value(d, @"qwen21_native_ane_cache", r.qwen21_native_ane_cache);
@@ -225,7 +235,7 @@ static void parse_qwen21_options(NSDictionary *d, Request &r) {
     r.qwen21_dit_w8a8 = boolean(d, @"qwen21_dit_w8a8", r.qwen21_dit_w8a8);
     r.qwen21_dit_smoothquant_convrot = boolean(d, @"qwen21_dit_smoothquant_convrot", r.qwen21_dit_smoothquant_convrot);
     r.qwen21_gpu_w8a16 = boolean(d, @"qwen21_gpu_w8a16", r.qwen21_gpu_w8a16);
-    r.qwen21_reference_size = number(d, @"qwen21_reference_size", r.qwen21_reference_size);
+    parse_qwen21_reference_options(d, r);
     if (d[@"qwen21_gpu_full_ffn_blocks"]) {
         NSArray *blocks = d[@"qwen21_gpu_full_ffn_blocks"];
         require([blocks isKindOfClass:NSArray.class] && blocks.count <= 3,
@@ -293,7 +303,7 @@ Request request_from_json(NSDictionary *d) {
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-            @"qwen21_w8a8", @"qwen21_staged_fast", @"qwen21_dit_w8a8", @"qwen21_dit_smoothquant_convrot", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_dit_cache", @"qwen21_denoiser_backend",
+            @"qwen21_w8a8", @"qwen21_staged_fast", @"qwen21_dit_w8a8", @"qwen21_dit_smoothquant_convrot", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_reference_pixel_budget", @"qwen21_dit_cache", @"qwen21_denoiser_backend",
             @"qwen21_gpu_full_ffn_blocks", @"qwen21_native_ane_cache", @"qwen21_native_w8_staging", @"qwen21_native_scale_cache", @"qwen21_native_lora_kernel",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
@@ -432,7 +442,7 @@ Request request_from_json(NSDictionary *d) {
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
                             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-                            @"qwen21_reference_size", @"tiny_vae",
+                            @"qwen21_reference_size", @"qwen21_reference_pixel_budget", @"tiny_vae",
                             @"streaming_offload", @"vsa", @"vsa_sparsity",
                             @"vsa_tile_size", @"vsa_prefix_mode",
                             @"vsa_dense_first_n_steps", @"vsa_dense_layers",
@@ -444,7 +454,7 @@ Request request_from_json(NSDictionary *d) {
         r.prompt_enhancer_path = string_value(parameters, @"prompt_enhancer_path");
         r.prompt_enhance = boolean(parameters, @"prompt_enhance", false);
         r.prompt_enhance_edit_experimental = boolean(parameters, @"prompt_enhance_edit_experimental", false);
-        r.qwen21_reference_size = number(parameters, @"qwen21_reference_size", r.qwen21_reference_size);
+        parse_qwen21_reference_options(parameters, r);
         r.streaming_offload = boolean(parameters, @"streaming_offload", false);
         r.streaming_offload_specified = parameters[@"streaming_offload"] != nil;
         r.vsa = boolean(parameters, @"vsa", false);

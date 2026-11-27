@@ -7,6 +7,7 @@
 #include "staged_attention_quantization.hpp"
 
 namespace tc::qwen21 {
+class StreamedPrefixCache;
 struct ReferenceLatents {
     Tensor latents; // [1,height*width,channels], normalized VAE latents
     ReferenceGeometry geometry;
@@ -105,7 +106,8 @@ class Transformer {
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
                    const std::vector<ReferenceLatents> &references = {},
                    const PreparedTimestepCondition *prepared_timestep = nullptr);
-    size_t cached_layers() const { return prefix_.size(); }
+    size_t cached_layers() const;
+    void stream_prefix(StreamedPrefixCache &);
     // Read-only ownership diagnostics; never evaluate or retain tensors.
     struct PrefixStorageInfo {
         uint64_t logical_bytes=0,backing_bytes=0;
@@ -278,6 +280,7 @@ class Transformer {
     bool profile_prefill_segments_ = false;
     bool prefill_last_target_only_ = false;
     std::vector<KV> prefix_;
+    StreamedPrefixCache *prefix_stream_ = nullptr;
     FFNCacheMode ffn_cache_mode_ = FFNCacheMode::Off;
     std::vector<Tensor> cached_ffn_;
     int last_ffn_captured_blocks_=0,last_ffn_reused_blocks_=0;

@@ -54,6 +54,15 @@ struct EditingCanvasSuggestion: Equatable, Sendable {
 /// Pure metadata arithmetic: no image decoding, model loading or native calls.
 /// Bounds mirror native/runtime/plan.cpp and the FLUX/Qwen module validators.
 enum EditingCanvasSizing {
+    static func alignedDimensions(_ source: EditingCanvasDimensions, scale: Double, multiple: Int,
+                                  shrinkOnly: Bool) -> EditingCanvasDimensions {
+        func aligned(_ original: Int) -> Int {
+            let nearest = Int((Double(original) * scale / Double(multiple)).rounded()) * multiple
+            return shrinkOnly ? min(nearest, original / multiple * multiple) : nearest
+        }
+        return EditingCanvasDimensions(width: aligned(source.width), height: aligned(source.height))
+    }
+
     static func suggestion(for draft: StudioDraft, preset: EditingCanvasPreset,
                            assetID: UUID? = nil) -> EditingCanvasSuggestion {
         func blocked(_ reason: String) -> EditingCanvasSuggestion {
@@ -102,14 +111,7 @@ enum EditingCanvasSizing {
         guard preset == .original || (idealWidth >= 64 && idealHeight >= 64) else {
             return result(reason: "按原图比例计算后短边小于模型要求的 64 像素；请选更大的范围或手动设置画布。")
         }
-        func aligned(_ value: Double, original: Int) -> Int {
-            // Automatic fit never enlarges an already small reference. Exact
-            // original matching uses the nearest supported model dimensions.
-            let nearest = Int((value / Double(multiple)).rounded()) * multiple
-            return preset == .original ? nearest : min(nearest, original / multiple * multiple)
-        }
-        let dimensions = EditingCanvasDimensions(width: aligned(idealWidth, original: source.width),
-                                                 height: aligned(idealHeight, original: source.height))
+        let dimensions = alignedDimensions(original, scale: scale, multiple: multiple, shrinkOnly: preset != .original)
         let description = "参考原图 \(source.width)×\(source.height) → 输出画布 \(dimensions.width)×\(dimensions.height)（\(multiple) 倍数对齐）。参考图文件与模型内部参考编码尺寸保持当前设置；对齐会轻微改变比例。"
         guard (64...maximum).contains(dimensions.width), (64...maximum).contains(dimensions.height) else {
             return result(dimensions, reason: "对齐后尺寸超出当前模型的 64–\(maximum) 范围；请选择自动适合或手动设置画布。", detail: description)

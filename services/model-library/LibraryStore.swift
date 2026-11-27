@@ -27,13 +27,58 @@ struct LibraryInstallation: Codable, Identifiable, Sendable {
     var createdAt: Date
 }
 
-struct LibraryLoRA: Codable, Identifiable, Sendable {
+struct LoRAManifest: Decodable, Sendable {
+    struct Artifact: Decodable, Sendable {
+        let path: String
+        let sha256: String
+    }
+    struct Target: Codable, Equatable, Sendable {
+        let modelID: String
+        let variants: [String]?
+        let weightFormats: [String]?
+    }
+    let kind: String
+    let schemaVersion: Int
+    let id: String
+    let version: String
+    let name: String
+    let artifact: Artifact
+    let targets: [Target]
+    let component: String
+    let defaultStrength: Double
+}
+
+struct LibraryLoRA: Codable, Identifiable, Sendable, Equatable {
     var id: String
     var modelID: String
     var path: String
     var name: String
-}
+    var manifestID: String? = nil
+    var version: String? = nil
+    var artifactSHA256: String? = nil
+    var targets: [LoRAManifest.Target]? = nil
+    var component: String? = nil
+    var defaultStrength: Double? = nil
 
+    var modelIDs: [String] { targets?.map(\.modelID) ?? [modelID] }
+
+    func isCompatible(modelID: String, variant: String?, weightFormat: String?) -> Bool {
+        guard let targets else { return self.modelID == modelID }
+        return targets.contains { target in
+            target.modelID == modelID &&
+                (target.variants?.contains(variant ?? "") ?? true) &&
+                (target.weightFormats?.contains(weightFormat ?? "") ?? true)
+        }
+    }
+
+    func verifyArtifact() throws {
+        guard let digest = artifactSHA256 else { return }
+        let url = URL(fileURLWithPath: path)
+        guard url.resolvingSymlinksInPath().path == url.path, try LibraryStore.sha256(url) == digest else {
+            throw LibraryFailure(message: "LoRA 文件校验失败，请重新导入清单。")
+        }
+    }
+}
 struct LibraryIndex: Codable, Sendable {
     var schemaVersion = 1
     var installations: [LibraryInstallation] = []
@@ -144,6 +189,135 @@ struct LibraryStore: Sendable {
         index.loras = (index.loras ?? []) + [item]
         try write(index)
         return item
+    }
+
+    @discardableResult func importLoRA(manifest manifestURL: URL) throws -> LibraryLoRA {
+        let file = manifestURL.standardizedFileURL.resolvingSymlinksInPath()
+        let size = try file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard size.isRegularFile == true, let bytes = size.fileSize, (1...64_000).contains(bytes) else {
+            throw LibraryFailure(message: "请选择小于 64 KB 的 LoRA 清单。")
+        }
+        let manifest = try JSONDecoder().decode(LoRAManifest.self, from: Data(contentsOf: file))
+        try Self.validateIdentifier(manifest.id)
+        try Self.validateRelativePath(manifest.artifact.path)
+        let digest = manifest.artifact.sha256.lowercased()
+        guard manifest.kind == "turbocider.lora", manifest.schemaVersion == 1,
+              manifest.version.utf8.count <= 32, manifest.version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil,
+              (1...96).contains(manifest.name.trimmingCharacters(in: .whitespacesAndNewlines).count),
+              ["transformer", "text_encoder"].contains(manifest.component),
+              manifest.defaultStrength.isFinite, (-8...8).contains(manifest.defaultStrength),
+              digest.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+              (1...16).contains(manifest.targets.count),
+              Set(manifest.targets.map(\.modelID)).count == manifest.targets.count else {
+            throw LibraryFailure(message: "LoRA 清单的版本、目标或默认设置无效。")
+        }
+        for target in manifest.targets {
+            try Self.validateIdentifier(target.modelID)
+            for list in [target.variants, target.weightFormats].compactMap({ $0 }) {
+                guard !list.isEmpty, list.count <= 16, Set(list).count == list.count else {
+                    throw LibraryFailure(message: "LoRA 目标的变体或权重格式无效。")
+                }
+                try list.forEach(Self.validateIdentifier)
+            }
+        }
+        let sourceDir = file.deletingLastPathComponent()
+        let source = sourceDir.appendingPathComponent(manifest.artifact.path)
+        let sourceMeta = try source.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard source.resolvingSymlinksInPath().path == source.path, source.pathExtension == "safetensors",
+              sourceMeta.isRegularFile == true, let artifactBytes = sourceMeta.fileSize,
+              (16...(16 << 30)).contains(artifactBytes) else {
+            throw LibraryFailure(message: "LoRA 权重必须是清单目录下的普通 .safetensors 文件。")
+        }
+        let id = "manifest.\(manifest.id)@\(manifest.version)"
+        let lease = try acquireLease(); defer { withExtendedLifetime(lease) {} }
+        var index = try read()
+        let destination = try managedDirectory("loras").appendingPathComponent(digest, isDirectory: true)
+        let artifact = destination.appendingPathComponent(source.lastPathComponent)
+        let item = LibraryLoRA(id: id, modelID: manifest.targets[0].modelID, path: artifact.path, name: manifest.name,
+            manifestID: manifest.id, version: manifest.version, artifactSHA256: digest, targets: manifest.targets,
+            component: manifest.component, defaultStrength: manifest.defaultStrength)
+        if let existing = index.loras?.first(where: { $0.id == id }) {
+            guard existing.artifactSHA256 == digest, existing.targets == item.targets, existing.component == item.component,
+                  existing.defaultStrength == item.defaultStrength, existing.name == item.name,
+                  try Self.sha256(source) == digest else {
+                throw LibraryFailure(message: "这个 LoRA ID 和版本已存在，请为变化后的清单使用新版本。")
+            }
+            try existing.verifyArtifact()
+            return existing
+        }
+        let destinationExisted = FileManager.default.fileExists(atPath: destination.path)
+        var createdDestination = false
+        var published = false
+        defer {
+            if createdDestination && !published { try? FileManager.default.removeItem(at: destination) }
+        }
+        if destinationExisted {
+            guard destination.resolvingSymlinksInPath().path == destination.path,
+                  try destination.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+                throw LibraryFailure(message: "模型库 LoRA 目录无效。")
+            }
+        } else {
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+            createdDestination = true
+        }
+        let alreadyPresent = FileManager.default.fileExists(atPath: artifact.path)
+        if !alreadyPresent {
+            let temp = destination.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: temp) }
+            try FileManager.default.copyItem(at: source, to: temp)
+            guard try Self.sha256(temp) == digest else { throw LibraryFailure(message: "LoRA 权重与清单 SHA-256 不一致。") }
+            try Self.validateLoRASafeTensors(temp)
+            try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temp.path)
+            try FileManager.default.moveItem(at: temp, to: artifact)
+        } else {
+            try item.verifyArtifact()
+            guard try Self.sha256(source) == digest else { throw LibraryFailure(message: "LoRA 权重与清单 SHA-256 不一致。") }
+        }
+        index.loras = (index.loras ?? []) + [item]
+        do { try write(index) }
+        catch {
+            if !alreadyPresent { try? FileManager.default.removeItem(at: artifact) }
+            throw error
+        }
+        published = true
+        return item
+    }
+
+    private static func validateLoRASafeTensors(_ file: URL) throws {
+        let invalid = LibraryFailure(message: "文件不包含有效的 LoRA Safetensors 张量。")
+        let handle = try FileHandle(forReadingFrom: file); defer { try? handle.close() }
+        guard let length = try handle.read(upToCount: 8), length.count == 8 else { throw invalid }
+        let headerBytes = length.enumerated().reduce(UInt64(0)) { $0 | (UInt64($1.element) << ($1.offset * 8)) }
+        guard (2...(32 << 20)).contains(headerBytes), let header = try handle.read(upToCount: Int(headerBytes)),
+              header.count == headerBytes, let map = try JSONSerialization.jsonObject(with: header) as? [String: Any] else { throw invalid }
+        let total = try handle.seekToEnd()
+        guard total > headerBytes + 8 else { throw invalid }
+        let payload = total - headerBytes - 8
+        var regions: [Range<UInt64>] = []
+        var down = false, up = false
+        let supportedBytes: [String: UInt64] = ["F16": 2, "BF16": 2, "F32": 4, "F64": 8,
+            "I8": 1, "U8": 1, "I16": 2, "I32": 4, "I64": 8, "U16": 2, "U32": 4, "U64": 8, "BOOL": 1,
+            "F8_E4M3": 1, "F8_E5M2": 1]
+        for (key, value) in map where key != "__metadata__" {
+            guard let entry = value as? [String: Any], let offsets = entry["data_offsets"] as? [UInt64], offsets.count == 2,
+                  let shape = entry["shape"] as? [UInt64], shape.count <= 8,
+                  let dtype = entry["dtype"] as? String, let width = supportedBytes[dtype],
+                  offsets[0] <= offsets[1], offsets[1] <= payload else { throw invalid }
+            var expected = width
+            for dimension in shape {
+                let product = expected.multipliedReportingOverflow(by: dimension)
+                guard !product.overflow else { throw invalid }
+                expected = product.partialValue
+            }
+            guard expected == offsets[1] - offsets[0] else { throw invalid }
+            regions.append(offsets[0]..<offsets[1])
+            let name = key.lowercased()
+            down = down || name.contains("lora_a") || name.contains("lora_down") || name.hasSuffix(".lora.a")
+            up = up || name.contains("lora_b") || name.contains("lora_up") || name.hasSuffix(".lora.b")
+        }
+        let ordered = regions.sorted { ($0.lowerBound, $0.upperBound) < ($1.lowerBound, $1.upperBound) }
+        guard down, up, ordered.first?.lowerBound == 0, ordered.last?.upperBound == payload,
+              zip(ordered, ordered.dropFirst()).allSatisfy({ $0.upperBound == $1.lowerBound }) else { throw invalid }
     }
 
     func unregisterLoRA(id: String) throws {

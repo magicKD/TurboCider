@@ -55,6 +55,8 @@ inline NSDictionary *tc_service_capabilities() {
         action(@"doctor", @"Read local runtime and device diagnostics.", false, @{}, @[]),
         action(@"plan", @"Validate and resolve a native request without generation; weight compatibility is checked at load time.", false,
                @{@"request": request}, @[@"request"]),
+        action(@"plan_installation", @"Validate a request against an installation and its memory budget without opening weights.", false,
+               @{@"request": request, @"model_path": string}, @[@"request", @"model_path"]),
         action(@"submit", @"Persist and enqueue one request. Do not retry automatically after a transport failure: it may already have been accepted.", true,
                @{@"request": request, @"model_path": string}, @[@"request", @"model_path"]),
         action(@"status", @"Read a job, including progress, terminal result or error.", false,

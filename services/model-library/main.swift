@@ -31,6 +31,7 @@ private struct Failure: Encodable { let ok = false; let error: String }
             turbocider library register-ane MODEL_ID MANIFEST.json [--root DIRECTORY]
             turbocider library remove-ane PARTITION_ID [--root DIRECTORY]
             turbocider library register-lora MODEL_ID FILE [--root DIRECTORY]
+            turbocider library import-lora MANIFEST.json [--root DIRECTORY]
             turbocider library remove-lora LORA_ID [--root DIRECTORY]
             turbocider library plan REQUEST.json [--root DIRECTORY]
             turbocider library download REQUEST.json [--root DIRECTORY]
@@ -147,6 +148,8 @@ private struct Failure: Encodable { let ok = false; let error: String }
             emit(Success(result: try store.registerANE(modelID: args[1], manifest: URL(fileURLWithPath: args[2]))))
         case "remove-ane" where args.count == 2:
             try store.unregisterANE(id: args[1]); emit(Success(result: ["removed": args[1]]))
+        case "import-lora" where args.count == 2:
+            emit(Success(result: try store.importLoRA(manifest: URL(fileURLWithPath: args[1]))))
         case "register-lora" where args.count == 3:
             emit(Success(result: try store.registerLoRA(modelID: args[1], path: URL(fileURLWithPath: args[2]))))
         case "remove-lora" where args.count == 2:

@@ -87,6 +87,7 @@ public struct NativeTinyVAEConfig: Codable, Sendable, Equatable {
 public struct NativeRequest: Codable, Sendable {
     public var schema_version = 1
     public var model = "flux2-klein-4b"
+    public var model_variant: String?
     public var prompt: String
     public var output: String
     public var width = 512
@@ -113,6 +114,7 @@ public struct NativeRequest: Codable, Sendable {
     public var qwen21_dit_cache: String?
     public var qwen21_stream_weight_budget_bytes: UInt64?
     public var qwen21_reference_size: Int?
+    public var qwen21_reference_pixel_budget: Int?
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?
@@ -205,10 +207,12 @@ public struct NativeParametersV2: Codable, Sendable {
     public var compile_gpu: Bool?
     public var noise_path: String?
     public var qwen21_reference_size: Int? = nil
+    public var qwen21_reference_pixel_budget: Int? = nil
 }
 public struct NativeRequestV2: Codable, Sendable {
     public var schema_version = 2
     public var model: String
+    public var model_variant: String?
     public var operation: String
     public var inputs: [NativeInputV2]
     public var outputs: [NativeOutputV2]
@@ -221,6 +225,7 @@ public struct NativeRequestV2: Codable, Sendable {
 
     public init(legacy request: NativeRequest, targetBytes: UInt64? = nil) {
         model = request.model
+        model_variant = request.model_variant
         operation = request.operation ?? (request.frames > 1 ? "video.generate" : "image.generate")
         inputs = [NativeInputV2(kind: "text", role: "prompt", path: nil,
                                 text: request.prompt, strength: nil)]
@@ -239,7 +244,8 @@ public struct NativeRequestV2: Codable, Sendable {
             // A Qwen weight-cache budget belongs to its explicit streamed
             // recipe. Public streaming selectors still omit private knobs.
             residency: targetBytes == nil && (request.model == "seedvr2-3b" || request.model == "relayvsr-2x" ||
-                request.model == "qwen-image-2.1" && request.qwen21_stream_weight_budget_bytes != nil) ? request.residency : nil,
+                request.model == "qwen-image-2.1" && (request.qwen21_stream_weight_budget_bytes != nil ||
+                    request.qwen21_reference_pixel_budget != nil)) ? request.residency : nil,
             profile: request.profile,
             ane_manifest: request.ane_manifest, encoder_ane_manifest: nil,
             allow_approximation: request.allow_approximation,
@@ -266,7 +272,8 @@ public struct NativeRequestV2: Codable, Sendable {
         execution.qwen21_stream_weight_budget_bytes = request.qwen21_stream_weight_budget_bytes
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
-            noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size)
+            noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size,
+            qwen21_reference_pixel_budget: request.qwen21_reference_pixel_budget)
         parameters.tiny_vae = request.tiny_vae
         dump_tensors = request.dump_tensors
         loras = request.loras
@@ -651,6 +658,11 @@ public final class NativeEngine: @unchecked Sendable {
     }
     public static func plan(_ request: NativeRequestV2) throws -> Data {
         try requestQuery(request, using: tc_plan_json)
+    }
+    public static func plan(_ request: NativeRequest, installation: URL) throws -> Data {
+        try requestQuery(request) { input, output, error in
+            installation.path.withCString { tc_plan_for_installation_json(input, $0, output, error) }
+        }
     }
     private static func requestQuery(_ request: some Encodable, using operation: JSONOperation) throws -> Data {
         let data = try JSONEncoder().encode(request)

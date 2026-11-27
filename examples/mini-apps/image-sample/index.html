@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Sample</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Image Sample</h1>
+    <form>
+      <label>Prompt<textarea rows="3" required>A ceramic mug beside a rainy window, watercolor illustration.</textarea></label>
+      <label>Optional reference image<input type="file" accept="image/*"></label>
+      <p><button id="start">Generate</button> <button id="cancel" type="button" disabled>Cancel</button></p>
+    </form>
+    <output aria-live="polite"></output>
+    <img alt="Generated image" hidden>
+    <p><button id="save" hidden>Save image</button></p>
+  </main>
+</body>
+</html>

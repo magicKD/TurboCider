@@ -12,6 +12,7 @@
 #include "../backends/ane_backend.hpp"
 #include <cmath>
 #include <cstdlib>
+#include <set>
 #include <string_view>
 
 namespace tc {
@@ -19,6 +20,19 @@ ModelModule qwen21_module() {
     return {"qwen-image-2.1",
         [] { return model_detail::image_recipe("qwen-image-2.1", 40); },
         [](const Request &r) {
+            if (r.qwen21_reference_pixel_budget) {
+                const bool staged_gpu = r.residency == "component_staged" && qwen21::plain_gpu_reference_route(r);
+                const bool streamed_gpu = r.residency == "streamed" && (r.execution == "gpu" || r.execution == "auto");
+                require(r.model_variant == "qwen-image-2.1-turbo" && r.operation == "image.edit" &&
+                        (staged_gpu || streamed_gpu) &&
+                        r.allow_approximation && r.qwen21_reference_size == 1024 && r.steps == 8 &&
+                        r.qwen21_dit_cache == "off" && !r.prompt_enhance && !r.streaming.active() &&
+                        !r.memory_constrained.enabled && !r.memory_budget_bytes &&
+                        !r.inputs.empty() && r.inputs.size() <= qwen21::max_edit_references &&
+                        int64_t(r.width) * r.height <= 768 * 512,
+                        "shared reference pixels require eight-step Turbo GPU editing and a canvas of at most 393216 pixels");
+                (void)qwen21::reference_grid_quota(r.qwen21_reference_pixel_budget, int(r.inputs.size()), 0);
+            }
             const bool runtime_cache=qwen21::configured_runtime_conservative_cache_request(r);
             (void)qwen21::configured_runtime_function_request(r);
             qwen21::validate_native_denoiser_request(r);
@@ -153,8 +167,11 @@ ModelModule qwen21_module() {
             require(r.qwen21_reference_size == 1024 ||
                         ((r.qwen21_reference_size == 256 || r.qwen21_reference_size == 512) &&
                          r.allow_approximation &&
-                         r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3),
-                    "Qwen21 256/512px reference resize requires explicit approximation and 1...3 edit images");
+                         r.operation == "image.edit" && !r.inputs.empty() &&
+                         (r.inputs.size() <= 3 ||
+                          (r.model_variant == "qwen-image-2.1-turbo" && r.loras.empty() &&
+                           qwen21::plain_gpu_reference_route(r)))),
+                    "Qwen21 256/512px reference resize requires explicit approximation and a supported edit route");
             require(!r.qwen21_gpu_w8a16 || r.qwen21_w8a8,
                     "Qwen21 W8A16 GPU suffix requires explicit W8A8 Core ML opt-in");
             require(!r.qwen21_w8a8 || r.steps >= 2,
@@ -396,14 +413,19 @@ ModelModule qwen21_module() {
                         "Qwen21 tiled prefix target-only needs explicit resident W8A8 tiled prefix reuse");
             if (!r.loras.empty()) {
                 const bool experimental_adapter = fused_lora_ane || (runtime_ane && !ordinary_runtime_lora);
-                const auto *viggle = qwen21::viggle_v021_adapter(
-                    std::filesystem::path(r.loras[0].path).filename().string());
-                require(r.loras.size() == 1 && r.loras[0].role == "transformer" &&
-                            std::isfinite(r.loras[0].strength) &&
-                            r.loras[0].strength >= -8.f && r.loras[0].strength <= 8.f &&
-                            r.lora_strategy == "inference_time" &&
-                            ((r.width == 512 && r.height == 512) || lora_1024) && r.inputs.size() <= 3,
-                        "Qwen21 LoRA needs one runtime transformer adapter with finite strength -8...8, a 512px canvas and 0...3 references");
+                const bool viggle = !qwen21::ordinary_adapter_list(r);
+                const bool standard = !viggle && !experimental_adapter && qwen21::standard_gpu_lora_route(r);
+                const bool turbo = r.model_variant == "qwen-image-2.1-turbo";
+                std::set<std::filesystem::path> paths;
+                for (const auto &adapter : r.loras)
+                    require(!adapter.path.empty() && paths.insert(std::filesystem::path(adapter.path).lexically_normal()).second &&
+                                adapter.role == "transformer" && std::isfinite(adapter.strength) &&
+                                adapter.strength >= -8.f && adapter.strength <= 8.f,
+                            "Qwen21 LoRA requires distinct transformer adapters with finite strength -8...8");
+                require(r.loras.size() <= (standard ? 8 : 1) && r.lora_strategy == "inference_time" &&
+                            ((r.width == 512 && r.height == 512) || lora_1024) &&
+                            r.inputs.size() <= (standard && r.qwen21_reference_size == 1024 ? qwen21::max_edit_references : 3),
+                        "Qwen21 LoRA exceeds the selected route's reference, adapter or canvas limits");
                 if (viggle || experimental_adapter) {
                     require((!viggle || experimental_adapter || r.loras[0].strength == 1.f) &&
                                 (r.steps == 6 || student_five_step) &&
@@ -416,11 +438,11 @@ ModelModule qwen21_module() {
                             "Viggle requires six steps and strength 1, or the explicit five-step r128 GPU sampler; resized-512 references need the qualified r128 GPU edit request or the legacy diagnostic; explicit lora_fused/runtime alternate adapters retain the experimental six-step schedule");
                 } else {
                     require(((r.execution == "gpu" && r.hybrid_mlp_mode == "auto") || ordinary_runtime_lora) &&
-                                r.steps >= 20 && r.steps <= 40 &&
+                                (turbo ? (standard && r.steps == 8) : (r.steps >= 20 && r.steps <= 40)) &&
                                 (r.qwen21_reference_size == 1024 ||
                                  (r.qwen21_reference_size == 512 && r.allow_approximation &&
                                   r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3)),
-                            "ordinary Qwen21 LoRA requires GPU or explicit base-schedule runtime execution,20...40 steps and full-size or qualified GPU resized references");
+                            "ordinary Qwen21 LoRA requires the selected checkpoint's GPU sampling and compatible reference encoding");
                 }
             }
             const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
@@ -620,7 +642,7 @@ ModelModule qwen21_module() {
             require(!r.streaming_offload && r.quantized_cache.empty(), "Qwen21 streaming/quantized cache are not implemented");
             if (r.operation == "image.generate") require(r.inputs.empty(), "Qwen21 image.generate takes no images");
             else {
-                require(!r.inputs.empty() && r.inputs.size() <= 10, "Qwen21 image.edit requires 1...10 references");
+                require(!r.inputs.empty() && r.inputs.size() <= qwen21::max_edit_references, "Qwen21 image.edit requires 1...10 references");
                 for (const auto &input : r.inputs)
                     require(input.kind == "image" && input.role == "reference", "Qwen21 editing requires image/reference inputs");
             }
@@ -630,10 +652,10 @@ ModelModule qwen21_module() {
             ModelDescriptor d;
             d.id = "qwen-image-2.1"; d.name = "Qwen Image 2.1 (experimental)"; d.executable = true;
             d.operations = d.executor_operations = {"image.generate", "image.edit"};
-            d.inputs = {"text", "image"}; d.roles = {"reference"}; d.max_images = 10; d.output = "image";
+            d.inputs = {"text", "image"}; d.roles = {"reference"}; d.max_images = qwen21::max_edit_references; d.output = "image";
             d.steps = 40; d.frames = 1; d.width = d.height = 1024; d.default_audio = false;
             d.supports_lora = true; d.runtime_lora = true;
-            d.lora_mode = "inference-time GPU LoRA with 20...40-step base schedule; Viggle v0.2.1 r128/r256 uses six steps; alternate six-step adapters experimental in explicit lora_fused/runtime";
+            d.lora_mode = "up to eight ordinary inference-time GPU LoRAs with 20...40-step Base or authored eight-step Turbo; pinned Viggle v0.2.1 uses a separate six-step recipe";
             d.lora_strategies = {"inference_time"}; d.default_lora_strategy = "inference_time";
             d.default_residency = "component_staged"; d.backend = "mlx_cpp_metal";
             d.supports_gpu_ane = true;

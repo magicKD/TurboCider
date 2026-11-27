@@ -8,6 +8,7 @@
 #include "metal/base_dual_swiglu.hpp"
 #include "compiled_complement.hpp"
 #include <limits>
+#include <set>
 #include "viggle_adapter.hpp"
 #include "conditioning.hpp"
 #include "encoder_attention.hpp"
@@ -105,6 +106,34 @@ std::string read_utf8_file(const std::filesystem::path &path) {
     std::string value((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
     require(!value.empty() && value.size() <= 1024 * 1024, "invalid Qwen35 PE system prompt");
     return value;
+}
+struct AdapterBindings {
+    std::shared_ptr<const streaming::SourceLease> source;
+    std::vector<std::string> ids;
+    std::string identity;
+};
+
+AdapterBindings ordinary_adapter_bindings(const Request &request, std::atomic<bool> &cancelled) {
+    AdapterBindings result;
+    std::vector<streaming::SourceFileIdentity> files;
+    std::set<std::filesystem::path> canonical_paths;
+    for (std::size_t i = 0; i < request.loras.size(); ++i) {
+        const auto path = std::filesystem::canonical(request.loras[i].path);
+        require(canonical_paths.insert(path).second, "Qwen21 LoRA resolves to a duplicate source");
+        result.ids.push_back("qwen21-adapter-" + std::to_string(i));
+        files.push_back({.logical_id=result.ids.back(), .path=path});
+    }
+    result.source = streaming::SourceLease::capture_verified(std::move(files), &cancelled);
+    result.identity = "ordinary-gpu-adapters-v1";
+    for (std::size_t i = 0; i < result.ids.size(); ++i) {
+        const auto &source = result.source->file(result.ids[i]);
+        require(source.canonical_target_path == std::filesystem::canonical(request.loras[i].path),
+                "Qwen21 LoRA path changed during source binding");
+        const auto path = source.canonical_target_path.string();
+        result.identity += "|" + std::to_string(path.size()) + ":" + path + ":" + source.content_digest +
+            ":" + request.loras[i].role + ":" + std::to_string(std::bit_cast<uint32_t>(request.loras[i].strength));
+    }
+    return result;
 }
 }
 Session::Session(const std::filesystem::path &root) : root_(root) {
@@ -208,7 +237,13 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
     const bool pinned_student = adapter && !experimental_adapter;
     std::string identity;
     std::shared_ptr<const streaming::SourceLease> adapter_lease;
-    if(!r.loras.empty()) {
+    std::vector<std::string> adapter_ids{"qwen21-adapter"};
+    if (!r.loras.empty() && !adapter && !experimental_adapter && standard_gpu_lora_route(r)) {
+        auto bindings = ordinary_adapter_bindings(r, cancelled);
+        identity = std::move(bindings.identity);
+        adapter_ids = std::move(bindings.ids);
+        adapter_lease = std::move(bindings.source);
+    } else if(!r.loras.empty()) {
         auto path=std::filesystem::canonical(r.loras[0].path);
         require(std::filesystem::is_regular_file(path),"Qwen21 LoRA is not a regular file");
         identity=path.string()+":"+std::to_string(std::filesystem::file_size(path))+":"+
@@ -227,7 +262,6 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
             identity+=":"+adapter_lease->file("qwen21-adapter").content_digest;
         }
     }
-    const bool bind=!r.loras.empty() && (active_lora_identity_!=identity || !transformer_.bytes());
     if(active_lora_identity_!=identity) {
         if(runtime_ffn_)runtime_ffn_->drain();
         hybrid_mlp_.reset();clear_prefix_cache();clear_prefix_snapshot();fused_qkv_weights_.clear();corrected_qkv_weights_.clear();transformer_.clear();
@@ -236,12 +270,13 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
     if(!fused_qkv && transformer_.has("transformer_blocks.0.attn.qkv_packed.weight")) {
         hybrid_mlp_.reset();clear_prefix_cache();clear_prefix_snapshot();fused_qkv_weights_.clear();corrected_qkv_weights_.clear();transformer_.clear();
     }
+    const bool bind=!r.loras.empty() && (active_lora_identity_!=identity || !transformer_.bytes());
     if(bind && pinned_student)require(sha256_file(r.loras[0].path)==adapter->sha256,
         "Viggle v0.2.1 r128/r256 LoRA hash does not match the pinned adapter");
     load(event,cancelled);transformer_.set_runtime_lora_fp16(lora_fp16);
     if(bind) {
         lora_applied_projections_=adapter_lease ? transformer_.apply_loras_leased(r.loras,"transformer",event,cancelled,true,
-            adapter_lease,{"qwen21-adapter"},true) : transformer_.apply_loras(r.loras,"transformer",event,cancelled,true,true);
+            adapter_lease,adapter_ids,true) : transformer_.apply_loras(r.loras,"transformer",event,cancelled,true,true);
         require(pinned_student ? lora_applied_projections_==227 : lora_applied_projections_>0,
             "Qwen21 LoRA did not bind transformer projections");
         active_lora_identity_=std::move(identity);
@@ -559,7 +594,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         };
         if(!transformer_.bytes())charge(std::filesystem::file_size(transformer_source_));
         if(!vae_.bytes())charge(std::filesystem::file_size(root_/"vae/qwen_image_2.1_vae_bf16.safetensors"));
-        if(!r.loras.empty() && active_lora_identity_.empty())charge(std::filesystem::file_size(r.loras.front().path));
+        if(!r.loras.empty() && active_lora_identity_.empty())charge(adapter_payload_bytes(r));
         if(r.execution=="gpu_ane" && !(runtime_requested && runtime_ffn_ && runtime_ffn_->available()))charge(uint64_t(2)<<30);
         return bytes;
     };
@@ -669,7 +704,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         option_enabled(std::getenv("TURBOCIDER_QWEN21_CORRECTED_QKV_PREFIX"));
     // Prefix arithmetic stays ordinary GPU. The narrowly selected frozen
     // decode composition installs its ANE callback only after step zero.
-    const bool snapshot_route = snapshot_enabled && !resident_prefix && !native_dit && !native_prefill_requested &&
+    const bool snapshot_route = snapshot_enabled && !r.qwen21_reference_pixel_budget &&
+        !resident_prefix && !native_dit && !native_prefill_requested &&
         (!hybrid_requested || snapshot_with_db_cache) && (!runtime_requested || snapshot_with_runtime) && !qkv_requested &&
         !fused_qkv && (!corrected_qkv || snapshot_with_corrected_qkv) && !option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE")) &&
         !option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE")) &&
@@ -732,18 +768,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(!r.prompt.empty(), "Qwen21 requires a prompt");
     require(warmup || prepare_only || (!r.output.empty() && std::filesystem::path(r.output).extension() == ".png"),
             "Qwen21 requires a .png output");
-    if((convrot_transformer || convrot_encoder) &&
-        (r.residency=="resident" || r.residency=="component_staged") &&
-        !hybrid_requested && !runtime_requested && !qkv_requested && !native_dit) {
+    if(!hybrid_requested && !runtime_requested && !qkv_requested && !native_dit) {
         // Request-only planning cannot know which source format was selected.
         // Once bound to this installation, count its actual compact files,
         // preserving activation/packing allowances and the system margin.
-        plan.memory_estimate_bytes=convrot_memory_estimate(r,{
-            std::filesystem::file_size(transformer_source_),
-            std::filesystem::file_size(encoder_source_),
-            std::filesystem::file_size(root_/"vae/qwen_image_2.1_vae_bf16.safetensors")});
+        apply_installed_gpu_budget(plan, convrot_transformer || convrot_encoder,
+            transformer_source_, encoder_source_, root_/"vae/qwen_image_2.1_vae_bf16.safetensors");
     }
-    ResidencyPolicy::validate_budget(plan, device.physical_memory);
+    if (plain_gpu_reference_route(r) && !r.streaming.active()) validate_installed_budget(plan, device.physical_memory);
+    else ResidencyPolicy::validate_budget(plan, device.physical_memory);
     if (!hybrid_requested) {
         hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
         if (!native_dit && !runtime_requested && !qkv_requested) r.execution = "gpu"; // automatic selection remains conservative
@@ -916,7 +949,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool same_encoder=conditioning_cache_.select_encoder(encoder_identity);
     if(!same_encoder)cached_references_.clear();
     const bool edit_hit=encoder_capture_path.empty() && !r.inputs.empty() && conditioning_cache_.edit_hit(
-        r.prompt,r.qwen21_reference_size,image_sha256);
+        r.prompt,r.qwen21_reference_size,image_sha256,r.qwen21_reference_pixel_budget);
+    std::vector<int> grid_quotas(r.inputs.size());
+    if (r.qwen21_reference_pixel_budget) {
+        for (size_t i = 0; i < grid_quotas.size(); ++i)
+            grid_quotas[i] = reference_grid_quota(r.qwen21_reference_pixel_budget, int(grid_quotas.size()), int(i));
+    }
     const bool cache_references=cache_edit_conditions && r.inputs.size()<=3;
     if(!cache_references)cached_references_.clear();
     std::vector<std::optional<CachedReference>> reference_values(r.inputs.size());
@@ -925,11 +963,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if(!edit_hit)for(size_t i=0;i<r.inputs.size();++i) {
         checkpoint(cancelled);
         if(cache_references)for(const auto& entry:cached_references_) {
-            if(entry.sha256==image_sha256[i] && entry.resolution==r.qwen21_reference_size) {
+            if(entry.sha256==image_sha256[i] && entry.resolution==r.qwen21_reference_size && entry.grid_quota==grid_quotas[i]) {
                 reference_values[i]=entry;++reference_hits;break;
             }
         }
-        if(!reference_values[i])images[i]=resize_reference(load_rgba_image_tensor(r.inputs[i].path),r.qwen21_reference_size);
+        if (!reference_values[i]) {
+            const auto pixels = load_rgba_image_tensor(r.inputs[i].path);
+            images[i] = grid_quotas[i] ? resize_budgeted_reference(pixels, grid_quotas[i])
+                                       : resize_reference(pixels, r.qwen21_reference_size);
+        }
     }
     const bool hit = encoder_capture_path.empty() && (edit_hit || (r.inputs.empty() && conditioning_cache_.text_hit(r.prompt)));
     if(hit && encoder_runtime_) {
@@ -1029,7 +1071,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             if (reference_values[i]) { refs.push_back(reference_values[i]->visual); continue; }
             const auto &pixels = *images[i];
             auto alpha = slice_axis(pixels, 3, 3, 4);
-            auto input = vision_input(slice_axis(pixels, 3, 0, 3) * alpha + (1.f - alpha));
+            auto rgb = slice_axis(pixels, 3, 0, 3) * alpha + (1.f - alpha);
+            auto input = grid_quotas[i] ? vision_input(rgb, reference_grid_pixels, pixels.shape(1) * pixels.shape(2))
+                                         : vision_input(rgb);
             refs.push_back({metal_encoder_requested
                 ? native_encoder_->vision(weights,input.patches,input.grid_height,input.grid_width,event,cancelled,vision_config)
                 : vision.encode(input.patches, input.grid_height, input.grid_width, event, cancelled),
@@ -1038,7 +1082,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 auto &features = refs.back().features;
                 mx::eval(features.merged); mx::eval(features.deepstack);
                 reference_values[i] = CachedReference{image_sha256[i], r.qwen21_reference_size,
-                    refs.back(), Tensor(0.f), pixels.shape(1) / 16, pixels.shape(2) / 16};
+                    refs.back(), Tensor(0.f), pixels.shape(1) / 16, pixels.shape(2) / 16, grid_quotas[i]};
             }
         }
         auto assembled = assemble_prompt(tokens, weights, refs);
@@ -1232,7 +1276,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     "Qwen21 reference changed while encoding conditioning");
         }
         conditioning_cache_.edit = ConditioningCache::Edit{r.prompt, r.qwen21_reference_size,
-                                          std::move(image_sha256), text, slots, references};
+                                          std::move(image_sha256), text, slots, references, r.qwen21_reference_pixel_budget};
         if (cache_references) {
             size_t bytes = 0;
             for (const auto &entry : reference_values) {
@@ -1277,7 +1321,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         // reload and bind it on every request after the text encoder is released.
         std::string lora_identity;
         std::string lora_sha256;
-        if (!r.loras.empty()) {
+        std::optional<AdapterBindings> ordinary_bindings;
+        if (!r.loras.empty() && !student_adapter && !fused_lora_ane &&
+            !runtime_requested && standard_gpu_lora_route(r)) {
+            ordinary_bindings = ordinary_adapter_bindings(r, cancelled);
+            lora_identity = ordinary_bindings->identity;
+        } else if (!r.loras.empty()) {
             if (early_lora) {
                 lora_verification = early_lora->take(cancelled);
                 // Binding uses the verified physical name, so a source symlink
@@ -1299,8 +1348,6 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             }
             if (lora_verification.value) lora_verification.value->revalidate();
         }
-        const bool bind_lora = !r.loras.empty() &&
-            (active_lora_identity_ != lora_identity || !transformer_.bytes());
         if (active_lora_identity_ != lora_identity) {
             if (runtime_ffn_) runtime_ffn_->drain();
             hybrid_mlp_.reset();
@@ -1320,6 +1367,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
             transformer_.clear();
         }
+        const bool bind_lora = !r.loras.empty() &&
+            (active_lora_identity_ != lora_identity || !transformer_.bytes());
         const bool pinned_student = student_adapter && !fused_lora_ane && (!runtime_requested || staged);
         if (bind_lora && pinned_student) {
             const auto digest = lora_sha256.empty() ? sha256_file(r.loras[0].path) : lora_sha256;
@@ -1344,10 +1393,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         transformer_.set_runtime_lora_fp16(lora_fp16);
         if (bind_lora) {
             if (lora_verification.value) lora_verification.value->revalidate();
-            lora_applied_projections_ = transformer_.apply_loras(r.loras, "transformer", event, cancelled, true, true);
+            lora_applied_projections_ = ordinary_bindings
+                ? transformer_.apply_loras_leased(r.loras, "transformer", event, cancelled, true,
+                                                 ordinary_bindings->source, ordinary_bindings->ids, true)
+                : transformer_.apply_loras(r.loras, "transformer", event, cancelled, true, true);
             require(pinned_student ? lora_applied_projections_ == 227 : lora_applied_projections_ > 0,
                     "Qwen21 LoRA did not bind transformer projections");
-            if (!pinned_student || runtime_requested) {
+            if (!ordinary_bindings && (!pinned_student || runtime_requested)) {
                 // Keep the second complete digest after binding. The async path
                 // additionally validates the held fd and named source generation.
                 if (lora_verification.value) lora_verification.value->revalidate();
@@ -1360,6 +1412,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             }
             active_lora_identity_ = lora_identity;
         }
+        if (ordinary_bindings && !bind_lora) ordinary_bindings->source->revalidate_after_drain();
     } else if(!retain_encoder_weights) {
         prepare_transformer(r,event,cancelled,fused_lora_ane || runtime_requested,fused_qkv,lora_fp16);
     }
@@ -1951,6 +2004,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     result.text_tokens = result.valid_text_tokens = text.shape(1);
     for (const auto &ref : references) result.reference_tokens += ref.latents.shape(1);
+    if (r.qwen21_reference_pixel_budget)
+        require(result.reference_tokens <= r.qwen21_reference_pixel_budget / reference_latent_pixels,
+                "Qwen21 encoded reference tokens exceed the shared pixel budget");
     result.total_tokens = result.text_tokens + result.reference_tokens + r.height / 16 * (r.width / 16);
     // Capture counters/fallback reason before destroying a phase-scoped graph.
     // Its historical slot-byte counters do not mean those slots remain live.
@@ -2032,7 +2088,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         // A 32-layer BF16 K/V bank costs roughly 512 KiB per prefix token.
         // Keep at most one bank, within 8 GiB and 1/8 of physical memory.
         const uint64_t prefix_tokens = uint64_t(text.shape(1)) + result.reference_tokens;
-        const uint64_t prefix_bytes = prefix_tokens * 2ULL * 32 * 32 * 128 * 2;
+        const uint64_t prefix_bytes = prefix_tokens * bf16_prefix_bytes_per_token;
         const uint64_t physical_bytes = device_info().physical_memory;
         const bool retain_prefix = resident_prefix &&
             prefix_bytes <= std::min(uint64_t(8) << 30, physical_bytes / 8) &&

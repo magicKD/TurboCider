@@ -861,15 +861,15 @@ class ContractTests(unittest.TestCase):
                                           'steps': 6, 'loras': [viggle]})[0], 0)
 
     def test_qwen21_ordinary_gpu_lora_uses_base_sampling(self):
-        adapter = dict(path='Qwen-Image-2.1_NSFW_Image_Edit.safetensors',
+        adapter = dict(path='ordinary.safetensors',
                        strength=.75, role='transformer')
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
                     width=512, height=512, steps=25, audio=False, frames=1,
                     execution='gpu', loras=[adapter], lora_strategy='auto',
                     qwen21_dit_cache='off')
-        refs = [dict(kind='image', role='reference', path=f'ref-{i}.png') for i in range(4)]
+        refs = [dict(kind='image', role='reference', path=f'ref-{i}.png') for i in range(11)]
         for steps in (20, 25, 40):
-            for count in range(4):
+            for count in (0, 1, 3, 4, 10):
                 for strength in (-8., 0., .75, 8.):
                     with self.subTest(steps=steps, refs=count, strength=strength):
                         request = {**base, 'steps': steps, 'loras': [{**adapter, 'strength': strength}],
@@ -890,6 +890,25 @@ class ContractTests(unittest.TestCase):
                         dict(operation='image.edit', inputs=refs[:1], qwen21_reference_size=512)):
             with self.subTest(invalid=invalid):
                 self.assertNotEqual(plan({**base, **invalid})[0], 0)
+
+    def test_qwen21_turbo_ordered_reference_and_adapter_contract(self):
+        refs = [dict(kind='image', role='reference', path=f'ref-{i}.png') for i in range(11)]
+        adapters = [dict(path=f'adapter-{i}.safetensors', strength=(-1) ** i * .5, role='transformer') for i in range(9)]
+        baseline = dict(model='qwen-image-2.1', model_variant='qwen-image-2.1-turbo',
+                        operation='image.edit', prompt='Use <image1> for identity.',
+                        width=512, height=512, steps=8, frames=1, execution='gpu',
+                        residency='component_staged', qwen21_reference_size=1024)
+        for count in (1, 2, 3, 4, 6, 8, 10):
+            for adapter_count in (0, 1, 2, 8):
+                with self.subTest(count=count, adapters=adapter_count):
+                    status, result, error = plan({**baseline, 'inputs': refs[:count], 'loras': adapters[:adapter_count]})
+                    self.assertEqual(status, 0, error)
+                    self.assertEqual(result['lora_count'], adapter_count)
+        for invalid in (dict(inputs=refs), dict(loras=adapters), dict(loras=[adapters[0], adapters[0]]),
+                        dict(steps=6), dict(prompt_enhance=True), dict(qwen21_dit_cache='fast'),
+                        dict(loras=adapters[:1], qwen21_reference_size=512, allow_approximation=True)):
+            status, _, _ = plan({**baseline, 'inputs': refs[:4], **invalid})
+            self.assertNotEqual(status, 0, invalid)
 
     def test_qwen21_1024_lora_is_explicit_generation_only_with_fp32_rank(self):
         flag='TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC'
@@ -1536,6 +1555,27 @@ class ContractTests(unittest.TestCase):
                         # Actual 512-square ten-reference MLX peak; not total
                         # process memory and not a general upper-bound proof.
                         self.assertGreater(result['memory_estimate_bytes'], 44596678034)
+
+    def test_qwen21_turbo_shared_reference_budget(self):
+        references = [dict(kind='image', role='reference', path=f'/tmp/ref-{i}.png') for i in range(4)]
+        request = dict(model='qwen-image-2.1', model_variant='qwen-image-2.1-turbo', operation='image.edit',
+                       prompt='Keep all four references', width=384, height=768, steps=8, audio=False, frames=1,
+                       execution='gpu', residency='component_staged', allow_approximation=True, inputs=references)
+        code, standard, error = plan({**request, 'qwen21_reference_size': 1024})
+        self.assertEqual(code, 0, error)
+        compact_request = {**request, 'qwen21_reference_pixel_budget': 512 * 512}
+        code, compact, error = plan(compact_request)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(compact['qwen21_reference_pixel_budget'], 512 * 512)
+        self.assertEqual(standard['memory_estimate_bytes'] - compact['memory_estimate_bytes'], 15 << 29)
+        self.assertNotIn('qwen21_reference_size', compact)
+        code, streamed, error = plan({**compact_request, 'residency': 'streamed'})
+        self.assertEqual(code, 0, error)
+        self.assertEqual(streamed['residency'], 'streamed')
+        for invalid in (dict(qwen21_reference_pixel_budget=True), dict(qwen21_reference_pixel_budget=512 * 512 + 1024),
+                        dict(qwen21_reference_pixel_budget=1024), dict(qwen21_reference_pixel_budget=512 * 512 - 1),
+                        dict(qwen21_reference_size=512), dict(width=544), dict(residency='resident')):
+            self.assertNotEqual(plan({**compact_request, **invalid})[0], 0, invalid)
 
     def test_qwen21_experimental_pe_edit_contract(self):
         refs = [dict(kind='image', role='reference', path=f'/tmp/pe-ref-{i}.png') for i in range(10)]

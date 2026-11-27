@@ -74,9 +74,27 @@ the approximate DiT computation cache described below.
 
 ### Reference editing with Turbo INT8 installations
 
-Turbo INT8 ConvRot installations support one or two reference images with the
-authored eight-step GPU schedule. The App selects `component_staged` for editing,
-including when restoring an older resident editing draft or reusing history.
+People Studio uses a shared 262,144-pixel reference budget for the authored
+eight-step Turbo schedule. The resized references fit the 32-pixel grid and
+preserve each source's aspect as closely as the grid allows. The reference
+budget is independent of the output canvas, which targets 512×512 pixels
+and permits rectangular canvases up to 393,216 pixels.
+
+Set `qwen21_reference_pixel_budget` in schema v1 or under `parameters` in
+schema v2. Use an explicit Turbo variant with `allow_approximation: true`.
+`residency: "streamed"` uses the ConvRot GPU layer stream. Its exact BF16
+prefix KV stays compact and request-local. At a layer boundary, memory
+pressure can move the bank to an unnamed temporary file. Steady denoise then
+reads one layer at a time. For profiling, set
+`TURBOCIDER_QWEN21_STREAM_PREFIX_KV` to `auto`, `memory` or `disk`. Results
+report actual reference pixels, KV mode, bytes and layer reads. Legacy sizing
+remains available through `qwen21_reference_size`.
+
+The ordinary non-streamed GPU route uses the authored eight-step schedule
+and accepts up to ten ordered reference images at the request layer. An
+installation-specific preflight checks the actual weights and available
+physical-memory budget. The native editor's standard reference route selects
+`component_staged`, including for restored drafts and reused history.
 Encoder weights are released before DiT preparation; DiT weights are released
 before final VAE decoding. The encoder and checkpoint guards admit this route.
 The text-only streamed weight-cache setting is retained in the draft for later
@@ -86,7 +104,11 @@ Memory admission uses the actual selected checkpoint file sizes and overlapping
 phases, retaining the canvas/reference allowances and 4 GiB system reserve.
 It does not charge staged INT8 editing for all three components being resident
 together or use the generic BF16 component estimate. Large output canvases and
-larger BF16 companion weights can still exceed the available memory.
+larger BF16 companion weights can still exceed the available memory. The
+24 GiB dual-INT8 installation completed a 512×512 output with three ordered
+references at standard 1024 reference encoding. Its preflight rejects four
+references at the same settings. Use
+`turbocider plan-installation MODEL_DIRECTORY REQUEST.json` before generation.
 
 On November 11, 2026, the M5 Pro / 24 GB desktop route completed full 512×512,
 eight-step edits from the original failing JPEG and an RGBA PNG, using standard
@@ -105,7 +127,9 @@ encoder/VAE/processor read-only. Use model `qwen-image-2.1`, variant
 `qwen-image-2.1-turbo`, and exactly **8 steps**. The runtime uses the checkpoint
 author's fixed CFG1 sigma schedule, not a shortened base or Viggle schedule.
 An explicit variant/source mismatch is rejected. Ordinary base selection and
-App defaults are unchanged; no Turbo LoRA/temporal-cache qualification follows.
+App defaults are unchanged. Ordinary inference-time Transformer adapters can
+use the Turbo GPU route. Temporal cache and specialized ANE routes retain
+their own admission rules.
 
 `tools/models/download_qwen21_modelscope.py` downloads the pinned ModelScope
 asset directly, verifies its complete SHA-256, and can create a fresh variant
@@ -228,9 +252,12 @@ DiT-cache control remain GPU-only. Default cache stays Off. This combines two
 approximations: review against full GPU, not only against an already-quantized
 ANE output. See the [composition experiment](../status/qwen512-cache-hybrid-2026-10-17.md).
 
-Compatible ordinary transformer LoRAs use the **base schedule**, with 20–40
-steps on the qualified 512×512 GPU route. They remain separate runtime low-rank
-matrices, with adjustable strength, and may opt into DiT cache. A known Viggle
+Ordinary transformer LoRAs follow the selected checkpoint schedule on the
+512×512 GPU route. Base uses 20–40 steps and Turbo uses eight. The standard
+1024 reference-encoding route accepts up to eight distinct adapters and up to
+ten ordered inputs, subject to the installed memory check. Runtime matrices
+remain separate and have adjustable strength. Base DiT cache keeps its
+single-adapter and three-reference constraints. A known Viggle
 v0.2.1 filename still requires its pinned contents and normally six-step settings; it
 cannot silently become an ordinary adapter. Unknown adapter quality and training
 settings cannot be established from tensor compatibility alone.

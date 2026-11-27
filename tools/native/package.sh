@@ -50,6 +50,8 @@ cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
 mkdir -p "$RES/ModelBrands"
 cp assets/branding/model-brands/* "$RES/ModelBrands/"
 cp assets/config/local-streaming-profile.json "$RES/"
+mkdir -p "$RES/MiniApps"
+cp -R assets/mini-apps/people-studio "$RES/MiniApps/"
 # Optional native-only image autoencoders. Never package conversion scripts,
 # .pth/pickle checkpoints, or a Python runtime. Users may also select their own
 # converted safetensors through the App without rebuilding it.

@@ -76,7 +76,7 @@ int main() {
     }
     // A reference must not force compact editing to pay for simultaneously
     // resident encoder + DiT + VAE. Keep prefix/canvas and system allowances.
-    for (size_t count : {size_t(1), size_t(2)}) {
+    for (size_t count : {size_t(1), size_t(2), size_t(3)}) {
         auto edit = request;
         edit.residency = "component_staged";
         edit.operation = "image.edit";
@@ -90,6 +90,42 @@ int main() {
         auto larger = edit;
         larger.width = larger.height = 1024;
         assert(rejects([&] { ResidencyPolicy::validate_budget(plan_for(larger, int8_sources), 24*gib); }));
+    }
+    auto multi = request;
+    multi.operation = "image.edit";
+    multi.residency = "component_staged";
+    multi.inputs.resize(3);
+    auto three = plan_for(multi, int8_sources);
+    three.memory_estimate_bytes = qwen21::convrot_memory_estimate(multi, int8_sources, 64 << 20);
+    qwen21::validate_installed_budget(three, 24 * gib);
+    assert(*three.memory_estimate_bytes > *plan_for(multi, int8_sources).memory_estimate_bytes);
+    multi.inputs.resize(4);
+    try {
+        qwen21::validate_installed_budget(plan_for(multi, int8_sources), 24 * gib);
+        assert(false && "four standard references must fail the 24 GiB budget");
+    } catch (const std::invalid_argument &error) {
+        assert(std::string_view(error.what()).starts_with("qwen21_memory_budget_exceeded: 4 references"));
+    }
+    multi.width = 384;
+    multi.height = 768;
+    multi.allow_approximation = true;
+    assert(rejects([&] { qwen21::validate_installed_budget(plan_for(multi, int8_sources), 24 * gib); }));
+    multi.qwen21_reference_pixel_budget = 512 * 512;
+    const auto compact = plan_for(multi, int8_sources);
+    assert(*compact.memory_estimate_bytes == 9350798360 + gib + uint64_t(384) * 768 * 10240 + 5 * gib / 2);
+    qwen21::validate_installed_budget(compact, 24 * gib);
+    multi.residency = "resident";
+    assert(qwen21::reference_working_bytes(multi) == 5 * gib / 2);
+    for (int count : {1, 2, 3, 4, 10}) {
+        int pixels = 0;
+        for (int i = 0; i < count; ++i) {
+            const int share = qwen21::reference_grid_quota(512 * 512, count, i);
+            const auto [width, height] = qwen21::fit_reference_pixels(900, 1800, share);
+            assert(width * height <= share * 1024 && width % 32 == 0 && height % 32 == 0);
+            assert(width * 2 == height);
+            pixels += width * height;
+        }
+        assert(pixels <= 512 * 512);
     }
     for (int dimension : {-1, 0, 32, 65, 4097, std::numeric_limits<int>::max()}) {
         auto invalid = request;

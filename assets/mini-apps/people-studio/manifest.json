@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sdkVersion": 1,
+  "id": "org.turbocider.people-studio",
+  "name": "人物工作室",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "description": "组合人物、服装、姿势、表情、场景与光影参考，在本机生成。",
+  "permissions": ["media.import", "media.export", "image.generate", "adapters.use"]
+}

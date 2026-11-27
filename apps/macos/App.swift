@@ -9,6 +9,7 @@ struct TurboCiderNativeApp: App {
     @StateObject private var studio: StudioState
     @StateObject private var playground: PlaygroundState
     @StateObject private var api: LocalAPIController
+    @StateObject private var miniApps: MiniAppRuntime
     @State private var submitting = false
     @NSApplicationDelegateAdaptor(StudioAppDelegate.self) private var delegate
     init() {
@@ -17,17 +18,20 @@ struct TurboCiderNativeApp: App {
         if ProcessInfo.processInfo.environment["TURBOCIDER_LTX_CONDITIONING_CACHE_DIR"] == nil {
             setenv("TURBOCIDER_LTX_CONDITIONING_CACHE_DIR", TensorCache.sharedRoot.path, 0)
         }
-        _store = StateObject(wrappedValue: NativeJobStore(directory: directory))
+        let jobStore = NativeJobStore(directory: directory)
+        _store = StateObject(wrappedValue: jobStore)
         let studioState = StudioState(directory: directory)
         _studio = StateObject(wrappedValue: studioState)
+        let builtInApp = Bundle.main.resourceURL?.appendingPathComponent("MiniApps/people-studio", isDirectory: true)
+        _miniApps = StateObject(wrappedValue: MiniAppRuntime(store: jobStore, studio: studioState, builtIn: builtInApp))
         _playground = StateObject(wrappedValue: PlaygroundState(directory: directory,
             initialSettings: studioState.draft, models: studioState.models))
         _api = StateObject(wrappedValue: LocalAPIController(directory: directory))
     }
     var body: some Scene {
         WindowGroup("TurboCider") {
-            StudioView(store: store, studio: studio, playground: playground, api: api, submitting: $submitting).frame(minWidth: 980, minHeight: 700)
-                .onAppear { delegate.store = store; delegate.studio = studio; delegate.playground = playground; delegate.api = api; delegate.submitting = submitting }
+            StudioView(store: store, studio: studio, playground: playground, api: api, miniApps: miniApps, submitting: $submitting).frame(minWidth: 980, minHeight: 700)
+                .onAppear { delegate.store = store; delegate.studio = studio; delegate.playground = playground; delegate.api = api; delegate.miniApps = miniApps; delegate.submitting = submitting }
                 .onChange(of: submitting) { _, value in delegate.submitting = value }
         }
         .commands {
@@ -61,12 +65,13 @@ struct TurboCiderNativeApp: App {
     weak var studio: StudioState?
     weak var playground: PlaygroundState?
     weak var api: LocalAPIController?
+    weak var miniApps: MiniAppRuntime?
     var submitting = false
     func applicationWillTerminate(_ notification: Notification) { api?.terminateNow() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         studio?.save()
         playground?.save()
-        guard submitting || store?.busy == true || api?.running == true ||
+        guard submitting || store?.busy == true || api?.running == true || miniApps?.hasPendingJobs == true ||
                 studio?.imageInputsBusy == true || playground?.importing == true ||
                 playground?.importTask != nil else { return .terminateNow }
         let alert = NSAlert(); alert.messageText = "任务仍在进行中"; alert.informativeText = "退出会中断本机任务。草稿与历史记录会保留。"
@@ -75,7 +80,7 @@ struct TurboCiderNativeApp: App {
     }
 }
 private enum StudioPage: String, CaseIterable, Identifiable {
-    case studio = "创作", upscale = "超分", playground = "Playground", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
+    case studio = "创作", upscale = "超分", playground = "应用", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
     var id: String { rawValue }
     var symbol: String { switch self { case .studio: return "sparkles"; case .upscale: return "arrow.up.left.and.arrow.down.right"; case .playground: return "square.grid.2x2"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
 }
@@ -132,6 +137,7 @@ struct StudioView: View {
     @ObservedObject var studio: StudioState
     @ObservedObject var playground: PlaygroundState
     @ObservedObject var api: LocalAPIController
+    @ObservedObject var miniApps: MiniAppRuntime
     @StateObject private var library = ModelLibraryController()
     @StateObject private var tensorCache = TensorCacheController()
     @State private var page: StudioPage? = .studio
@@ -305,7 +311,8 @@ struct StudioView: View {
                 case .studio: workspace
                 case .upscale: workspace
                 case .playground:
-                    PlaygroundView(state: playground, creator: studio, store: store, api: api,
+                    ApplicationsView(runtime: miniApps, showModels: { page = .models }, showTasks: { page = .tasks }) {
+                        PlaygroundView(state: playground, creator: studio, store: store, api: api,
                         submitting: $submitting, showCreation: { page = .studio },
                         continueInCreation: { job in
                             Task {
@@ -313,6 +320,7 @@ struct StudioView: View {
                                 else { playground.message = studio.message ?? "未能将结果带入创作。" }
                             }
                         })
+                    }
                 case .models: modelsPage
                 case .tasks: tasksPage
                 case .library: libraryPage
@@ -1332,7 +1340,7 @@ struct StudioView: View {
                 if ["z-image-turbo", "qwen-image-2.1"].contains(studio.draft.modelID) { Button("高级加速与缓存配置") { librarySelection = studio.draft.modelID; page = .models } }
                 if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
             }
-            if studio.draft.usesQwen21InstalledRecipe {
+            if studio.draft.blocksOrdinaryQwenLoRA {
                 Text("LoRA 暂不可用于此 Qwen 安装。已保存的适配器可在兼容模型中使用。")
                     .font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("qwenInstalledLoRAUnavailable")
             } else if model?.supports_lora == true {
@@ -1340,11 +1348,11 @@ struct StudioView: View {
                 HStack {
                     Text("LoRA 独立文件").font(.caption); Spacer()
                     Menu("模型库") {
-                        ForEach(library.loras.filter { $0.modelID == studio.draft.modelID }) { item in
-                            Button(item.name) { studio.addLoRA(item.path) }
+                        ForEach(library.loras.filter { studio.acceptsLoRA($0) }) { item in
+                            Button(item.name) { studio.addLoRA(item) }
                                 .disabled(studio.draft.loras.count >= 8 || studio.draft.loras.contains { $0.path == item.path } || !FileManager.default.isReadableFile(atPath: item.path))
                         }
-                    }.disabled(!library.loras.contains { $0.modelID == studio.draft.modelID })
+                    }.disabled(!library.loras.contains { studio.acceptsLoRA($0) })
                     Button("添加…", action: chooseLoRA)
                 }
                 ForEach($studio.draft.loras) { $lora in

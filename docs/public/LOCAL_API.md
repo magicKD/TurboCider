@@ -86,6 +86,14 @@ Reduced reference encoding requires
 the [Qwen request guide](QWEN_IMAGE_21.md). `plan` does not load or verify the
 adapter; its pinned contents are checked when the model binds it.
 
+`plan_installation` takes `model_path` and the native `request` on the local
+service. Its CLI equivalent is `turbocider plan-installation MODEL_DIRECTORY
+REQUEST.json`. For Qwen it selects the checkpoint, encoder and VAE sources,
+validates the requested variant, and checks the installation-level memory
+estimate. Successful results include the resolved variant, requested count,
+structural reference limit and ordinary GPU memory reserve. The request-only
+`plan` action remains available for structural validation.
+
 `installations` returns the service's local model-library registry, including
 registered model components, LoRAs and ANE partitions. The response contains
 `schema_version: 1`, `root`, `index`, `scope: "registered_metadata"` and

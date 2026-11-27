@@ -157,6 +157,8 @@ static ExecutionPlan make_plan_impl(
                 "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require(!r.qwen21_reference_pixel_budget || r.model == "qwen-image-2.1",
+            "qwen21_reference_pixel_budget requires Qwen Image 2.1 Turbo");
     require(!r.qwen21_stream_weight_budget_bytes ||
                 (r.model == "qwen-image-2.1" && r.residency == "streamed" &&
                  r.qwen21_stream_weight_budget_bytes >= (uint64_t(1) << 30) &&
@@ -270,14 +272,6 @@ static ExecutionPlan make_plan_impl(
         plan.memory_estimate_bytes = ((hybrid ? 12ull : 10ull) << 30) + uint64_t(r.width) * r.height * 24576 +
             uint64_t(r.width) * r.height * r.frames * 192;
     else if (r.model == "qwen-image-2.1") {
-        // Each approximately 1024-square reference contributes 4096 latent
-        // tokens. Its BF16 prefix K/V alone occupies 2 GiB across 32 layers
-        // (2 * 32 * 4096 tokens * 4096 hidden * 2 bytes). Add 512 MiB per
-        // reference for working tensors, beyond the canvas/base allowance.
-        // The previous 512-MiB-only term underestimated the measured ten-ref
-        // peak (44,596,678,034 MLX bytes at 512-square) by over 13 GiB.
-        // Still a heuristic: input aspect ratios and allocator lifetimes vary.
-        constexpr uint64_t reference_prefix_bytes = 2ull * 32 * 4096 * 4096 * 2;
         // A 2048-square one-step probe peaked at 62,259,019,410 MLX bytes;
         // include the observed VAE/DiT working-set growth so high-resolution
         // plans do not under-report unified-memory pressure. This is not a cap.
@@ -295,7 +289,8 @@ static ExecutionPlan make_plan_impl(
             staged_hybrid ? 17ull :
             qwen21::layer_staged_t2i(r, device) ? 16ull : 22ull;
         const uint64_t component_bytes = r.residency == "streamed"
-            ? qwen21::convrot_stream_weight_budget_bytes + (uint64_t(2) << 30) : base_gib << 30;
+            ? (r.qwen21_stream_weight_budget_bytes ? r.qwen21_stream_weight_budget_bytes : qwen21::convrot_stream_weight_budget_bytes)
+                + (uint64_t(2) << 30) : base_gib << 30;
         // Native W1 retains one runtime MIL slot, not the frozen Core ML
         // model bank. This extra allowance is only a planning heuristic;
         // the native phase separately admits its measured baseline/backings.
@@ -303,7 +298,7 @@ static ExecutionPlan make_plan_impl(
             r.hybrid_mlp_mode == "runtime" || r.hybrid_mlp_mode == "runtime_qkv" ? 2ull : 10ull;
         plan.memory_estimate_bytes = component_bytes +
                                      (hybrid && !staged_hybrid ? hybrid_gib << 30 : 0) + uint64_t(r.width) * r.height * 10240 +
-                                     uint64_t(r.inputs.size()) * (reference_prefix_bytes + (512ull << 20));
+                                     qwen21::reference_working_bytes(r);
         // Pinned r128 factors occupy about 648 MiB; native shared rank/gate/up
         // scratch adds roughly 50 MiB at short prompts. Explicit heuristic
         // headroom does not grant full-request memory certification.

@@ -84,6 +84,9 @@ struct Request {
     std::string qwen21_native_lora_kernel = "scalar";
     bool qwen21_native_lora_kernel_specified = false;
     int qwen21_reference_size = 1024;
+    // Optional cap on the sum of the aligned reference rasters. Zero keeps
+    // legacy per-image encoding selected by qwen21_reference_size.
+    int qwen21_reference_pixel_budget = 0;
     std::string qwen21_dit_cache = "off";
     // Managed streamed weights, not a process RAM cap. Zero preserves the
     // minimum-residency recipe; positive budgets may retain exact DiT layers.

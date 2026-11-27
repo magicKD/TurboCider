@@ -525,6 +525,14 @@ public:
         if(action=="installations")return tc_service::library_inventory(executable_,shouldStop);
         if(action=="doctor")return decode(take(tc_system_json()));
         if(action=="plan") {char *result=nullptr,*error=nullptr;auto text=encode(request[@"request"]);auto status=tc_plan_json(text.c_str(),&result,&error);auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);}
+        if (action == "plan_installation") {
+            char *result = nullptr, *error = nullptr;
+            const auto text = encode(request[@"request"]), path = field(request, @"model_path");
+            const int status = tc_plan_for_installation_json(text.c_str(), path.c_str(), &result, &error);
+            const auto value = take(result), message = take(error);
+            check(status == 0, message.c_str());
+            return decode(value);
+        }
         std::lock_guard<std::mutex> lock(mutex_);
         if(action=="service_status") {
             auto model=engine_?loaded_.substr(0,loaded_.find('\n')):std::string();

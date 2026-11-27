@@ -1,5 +1,8 @@
 #pragma once
 #include "../../core/contracts.hpp"
+#include "sequence.hpp"
+#include "viggle_adapter.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <filesystem>
@@ -57,16 +60,39 @@ inline std::filesystem::path transformer_checkpoint_source(const std::filesystem
     }
     throw std::invalid_argument("missing supported Qwen Image 2.1 base/Turbo/ConvRot/GGUF checkpoint");
 }
+inline bool plain_gpu_reference_route(const Request& r) {
+    return (r.execution == "gpu" || r.execution == "auto") &&
+        r.hybrid_mlp_mode == "auto" && r.qwen21_denoiser_backend == "mlx" &&
+        r.ane_manifest.empty() && r.encoder_ane_manifest.empty() && r.residency != "streamed";
+}
+inline bool standard_gpu_lora_route(const Request& r) {
+    return r.execution == "gpu" && plain_gpu_reference_route(r) &&
+        r.qwen21_dit_cache == "off" && !r.prompt_enhance && !r.streaming.active() &&
+        !r.memory_constrained.enabled &&
+        (r.lora_strategy == "auto" || r.lora_strategy == "inference_time");
+}
+inline bool is_viggle_adapter(const LoRAAsset& adapter) {
+    return viggle_v021_adapter(std::filesystem::path(adapter.path).filename().string()) != nullptr;
+}
+inline bool ordinary_adapter_list(const Request& r) {
+    return std::none_of(r.loras.begin(), r.loras.end(), is_viggle_adapter);
+}
 inline void validate_turbo_request(const Request& r) {
     const auto check=[](bool ok,const char* error){if(!ok)throw std::invalid_argument(error);};
-    check(r.steps==8 && r.loras.empty(),"Qwen21 Turbo requires its authored eight-step schedule and no base/student LoRA");
+    check(r.steps==8,"Qwen21 Turbo requires its authored eight-step schedule");
+    check(r.loras.empty() || (standard_gpu_lora_route(r) && ordinary_adapter_list(r)),
+          "Qwen21 Turbo adapters require ordinary GPU inference-time LoRA");
     check(r.qwen21_denoiser_backend=="mlx" && (r.execution=="gpu" || r.execution=="auto" ||
         (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime")),"Qwen21 Turbo supports ordinary MLX GPU or explicit runtime FFN ANE only");
     check(!r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
         r.qwen21_dit_cache=="off" && !r.prompt_enhance && !r.streaming.active() && !r.memory_constrained.enabled && !r.memory_budget_bytes,
         "Turbo excludes frozen base manifests, temporal cache, PE and constrained/streaming recipes until separately validated");
-    check((r.operation=="image.generate" && r.inputs.empty()) || (r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=2),
-        "Turbo initial route supports generation or one/two-reference editing");
+    const bool shared_stream = r.residency == "streamed" && r.qwen21_reference_pixel_budget > 0 &&
+        (r.execution == "gpu" || r.execution == "auto");
+    const auto max_references = (plain_gpu_reference_route(r) || shared_stream) ? max_edit_references : 2;
+    check((r.operation=="image.generate" && r.inputs.empty()) ||
+          (r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=max_references),
+          "Qwen21 Turbo reference count is outside the selected route's limit");
 }
 inline constexpr uint64_t convrot_stream_weight_budget_bytes = uint64_t(4) << 30;
 
@@ -83,11 +109,15 @@ inline bool convrot_stream_ane_requested(const Request &r) {
 }
 
 inline void validate_convrot_stream_request(const Request &r) {
-    const bool canvas = r.width >= 64 && r.height >= 64 && r.width <= 512 && r.height <= 512 &&
-                        r.width % 32 == 0 && r.height % 32 == 0;
-    if (!canvas || r.steps < 2 || r.steps > 40 || r.operation != "image.generate" || !r.inputs.empty())
-        throw std::invalid_argument("Qwen21 ConvRot streaming supports text-to-image up to 512x512 with 2...40 steps (Turbo uses exactly 8)");
     const bool runtime_ane = convrot_stream_ane_requested(r);
+    const bool turbo_gpu = r.model_variant == "qwen-image-2.1-turbo" && !runtime_ane && r.steps == 8;
+    const bool canvas = r.width >= 64 && r.height >= 64 && r.width % 32 == 0 && r.height % 32 == 0 &&
+        ((r.width <= 512 && r.height <= 512) ||
+         (turbo_gpu && r.width <= 2048 && r.height <= 2048 && int64_t(r.width) * r.height <= 768 * 512));
+    const bool generation = r.operation == "image.generate" && r.inputs.empty();
+    const bool edit = turbo_gpu && r.operation == "image.edit" && !r.inputs.empty() && r.qwen21_reference_pixel_budget > 0;
+    if (!canvas || r.steps < 2 || r.steps > 40 || (!generation && !edit))
+        throw std::invalid_argument("Qwen21 ConvRot streaming supports small text-to-image and eight-step Turbo GPU editing with a shared reference pixel budget");
     if (runtime_ane && r.qwen21_stream_weight_budget_bytes)
         throw std::invalid_argument("Qwen21 cached streamed weights currently require the ordinary GPU route");
     const bool ordinary_gpu = (r.execution == "gpu" || r.execution == "auto") &&
@@ -98,7 +128,7 @@ inline void validate_convrot_stream_request(const Request &r) {
         r.prompt_enhance || r.qwen21_dit_cache != "off" || r.qwen21_w8a8 || r.qwen21_gpu_w8a16 ||
         r.qwen21_dit_w8a8 || r.qwen21_dit_smoothquant_convrot || !r.qwen21_gpu_full_ffn_blocks.empty() ||
         r.streaming.active() || r.streaming_offload || r.memory_constrained.enabled || r.memory_budget_bytes)
-        throw std::invalid_argument("Qwen21 ConvRot streaming requires approximate MLX GPU generation without LoRA, ANE, prompt enhancement or another memory/cache recipe");
+        throw std::invalid_argument("Qwen21 ConvRot streaming requires approximate MLX execution without LoRA, prompt enhancement or another memory/cache recipe");
 }
 
 inline void validate_checkpoint_recipe(const Request& r,const std::filesystem::path& source,bool w8a8_available=false) {
@@ -111,7 +141,8 @@ inline void validate_checkpoint_recipe(const Request& r,const std::filesystem::p
         const auto check=[](bool ok,const char* error){if(!ok)throw std::invalid_argument(error);};
         const bool packed=configured_convrot_packed();
         const bool w8a8=configured_convrot_w8a8(false,w8a8_available);
-        check(r.allow_approximation && (r.residency=="resident" || r.residency=="streamed" || r.residency=="component_staged") && r.loras.empty() && r.qwen21_denoiser_backend=="mlx" &&
+        check(r.allow_approximation && (r.residency=="resident" || r.residency=="streamed" || r.residency=="component_staged") &&
+            (r.loras.empty() || (turbo && standard_gpu_lora_route(r) && ordinary_adapter_list(r))) && r.qwen21_denoiser_backend=="mlx" &&
             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 && r.qwen21_dit_cache=="off" &&
             !r.streaming.active() && !r.memory_constrained.enabled && !r.prompt_enhance,
             "Qwen21 ConvRot initial route requires explicit approximation, MLX and no base/student LoRA, frozen or temporal recipe");

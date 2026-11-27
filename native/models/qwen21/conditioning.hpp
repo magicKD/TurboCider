@@ -17,6 +17,7 @@ VisionInput pe_vision_input(const Tensor &, int min_pixels = 65536, int max_pixe
 // Official area/aspect sizing (32-aligned). Lanczos3 filtering in premultiplied
 // alpha prevents hidden transparent colors bleeding into visible boundaries.
 Tensor resize_reference(const Tensor &, int resolution = 1024);
+Tensor resize_budgeted_reference(const Tensor &, int grid_quota);
 struct VisualReference {
     VisionFeatures features;
     int grid_height, grid_width;

@@ -229,6 +229,7 @@ Discovery (no model loading):
   turbocider library list                 Registered model and LoRA paths
   turbocider doctor                       Runtime and device diagnostics
   turbocider plan REQUEST.json            Validate schema 1 or 2 before generation
+  turbocider plan-installation MODEL_DIRECTORY REQUEST.json
 
 CPU image preparation:
   turbocider prepare-image INPUT.json      Resize a local image without a model
@@ -276,7 +277,7 @@ int main(int argc,char**argv){@autoreleasepool{
   if(!data){std::cerr<<"cannot encode capabilities\n";return 1;}
   std::cout.write(static_cast<const char*>(data.bytes),data.length);std::cout<<"\n";return 0;
  }
- const bool allows_ane=cmd=="plan"||cmd=="generate"||cmd=="batch";
+ const bool allows_ane=cmd=="plan"||cmd=="plan-installation"||cmd=="generate"||cmd=="batch";
  const char *ane_manifest=nullptr,*hybrid_mode=nullptr;
  int request_argc=argc;
  if(allows_ane){
@@ -346,12 +347,13 @@ int main(int argc,char**argv){@autoreleasepool{
     if(code)break;
   }std::signal(SIGINT,SIG_DFL);}tc_engine_free(active);
  }
- else if((cmd=="plan"&&request_argc==3)||(cmd=="generate"&&request_argc==4)||
+ else if((cmd=="plan"&&request_argc==3)||((cmd=="generate"||cmd=="plan-installation")&&request_argc==4)||
          (cmd=="ltx-worker"&&argc==4)){
   std::string failure;
   NSString*request=cli_request(argv[request_argc-1],ane_manifest,hybrid_mode,failure);
   if(!request){std::cerr<<failure<<"\n";return 1;}
   if(cmd=="plan")code=tc_plan_json(request.UTF8String,&out,&err);
+  else if(cmd=="plan-installation")code=tc_plan_for_installation_json(request.UTF8String,argv[2],&out,&err);
   else {
    if(cmd=="generate"||cmd=="ltx-worker")
     configure_ltx_cli_environment(request);

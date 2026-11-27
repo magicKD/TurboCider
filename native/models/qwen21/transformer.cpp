@@ -2,6 +2,7 @@
 #include "cider_w8a8.hpp"
 #include "diagnostic_options.hpp"
 #include "checkpoint_recipe.hpp"
+#include "streamed_prefix_cache.hpp"
 #include "metal/qk_norm_rope.hpp"
 #include "metal/qkv_projection.hpp"
 #include "metal/lora_qkv_prepare.hpp"
@@ -147,6 +148,7 @@ void Transformer::reset() {
     for (auto &entry : staged_attention_) entry.reset();
     staged_attention_pack_seconds_ = 0;
     prefix_.clear();
+    if (prefix_stream_) prefix_stream_->clear();
     cached_ffn_.clear();
     clear_db_residuals(); db_cached_steps_ = 0;
     cached_text_.reset();
@@ -154,9 +156,25 @@ void Transformer::reset() {
     prefill_tile_tails_.clear();
 }
 
+size_t Transformer::cached_layers() const {
+    return prefix_stream_ ? prefix_stream_->layers() : prefix_.size();
+}
+
+void Transformer::stream_prefix(StreamedPrefixCache &storage) {
+    require(!prefix_stream_ && retire_weights_ && (prefix_.empty() || prefix_.size() == size_t(config_.layers)),
+            "Qwen prefix streaming requires a weight-streamed layer boundary");
+    for (const auto &kv : prefix_) {
+        auto key = owned_prefix_copy(kv.key), value = owned_prefix_copy(kv.value);
+        mx::eval(key, value);
+        storage.append(key, value);
+    }
+    prefix_.clear();
+    prefix_stream_ = &storage;
+}
+
 bool Transformer::prefix_matches(const Tensor &text, int height, int width,
                                  const std::vector<ReferenceLatents> &references) const {
-    if (prefix_.size() != size_t(config_.layers) || !cached_text_ ||
+    if (cached_layers() != size_t(config_.layers) || !cached_text_ ||
         cached_text_->id() != text.id() || text_length_ != text.shape(1) ||
         height_ != height || width_ != width ||
         references.size() != cached_references_.size() ||
@@ -279,7 +297,7 @@ bool Transformer::import_prefix_snapshot(const PrefixSnapshot &snapshot, const T
         text.dtype() != snapshot.dtype || snapshot.text_length != text.shape(1) ||
         !text.is_available() || text.has_primitive() || !text.inputs().empty() || !text.siblings().empty() ||
         height <= 0 || width <= 0 || height != snapshot.height || width != snapshot.width ||
-        references.size() != snapshot.references.size() || references.size() > 10) return false;
+        references.size() != snapshot.references.size() || references.size() > max_edit_references) return false;
     std::vector<ReferenceGeometry> reference_geometry;
     int previous_slot = 0;
     int64_t prefix_length = text.shape(1);
@@ -538,7 +556,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     // MLX arrays are immutable values: identity binds the cache without a GPU
     // synchronization/hash of a many-megabyte conditioning tensor each step.
     if (!cache_prefix || !cached_text_ || cached_text_->id() != text.id() || !same_references) reset();
-    bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
+    bool reuse = cache_prefix && cached_layers() == size_t(config_.layers);
     last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
     require(!staged_attention_bits_ ||
@@ -994,8 +1012,14 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         }
         std::vector<Tensor> args{hidden, mods[0], mods[1], mods[2], mods[3], cosine, sine};
         if (reuse) {
-            args.push_back(prefix_[i].key);
-            args.push_back(prefix_[i].value);
+            if (prefix_stream_) {
+                auto [key, value] = prefix_stream_->load(i);
+                args.push_back(std::move(key));
+                args.push_back(std::move(value));
+            } else {
+                args.push_back(prefix_[i].key);
+                args.push_back(prefix_[i].value);
+            }
         }
         if (reuse_ffn_block) {
             args.push_back(half_reuse_ffn ? previous_ffn[i] : cached_ffn_[i]);
@@ -1119,8 +1143,14 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             const char *names[] = {"attention_input", "q", "k", "v", "attention", "projected", "after_attention", "mlp_input", "ff"};
             for (int j = 0; j < 9; ++j) trace->emplace(names[j], outputs[3 + j]);
         }
-        if (!reuse && cache_prefix) new_prefix.push_back(split_this ? KV{outputs[2], outputs[3]} :
-                                                        KV{outputs[1], outputs[2]});
+        if (!reuse && cache_prefix) {
+            auto kv = split_this ? KV{outputs[2], outputs[3]} : KV{outputs[1], outputs[2]};
+            if (prefix_stream_) {
+                auto key = owned_prefix_copy(kv.key), value = owned_prefix_copy(kv.value);
+                mx::eval(key, value);
+                prefix_stream_->append(key, value);
+            } else new_prefix.push_back(std::move(kv));
+        }
         if (release_layer_) {
             // Own only prefix rows, not a view retaining all target K/V.
             // Synchronize every result before releasing compiled constants.
@@ -1135,7 +1165,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         }
         if(retire_weights_) {
             mx::eval(outputs);mx::eval(hidden);
-            if(!reuse && cache_prefix && compact_stream_prefix()) {
+            if(!reuse && cache_prefix && !prefix_stream_ && compact_stream_prefix()) {
                 // Prefix slices otherwise retain every target token in the
                 // full prefill K/V backing for all remaining denoise steps.
                 // Complete exact owned copies before the slot is retired.

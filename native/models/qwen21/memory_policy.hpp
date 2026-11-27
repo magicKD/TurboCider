@@ -2,14 +2,38 @@
 #include "../../core/contracts.hpp"
 #include "../../backends/ane_memory.hpp"
 #include "diagnostic_options.hpp"
+#include "reference_budget.hpp"
 #include "../../platform/apple/platform.hpp"
+#include "../../runtime/residency.hpp"
 #include <array>
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
 #include <limits>
 #include <stdexcept>
 
 namespace tc::qwen21 {
+inline constexpr uint64_t bf16_prefix_bytes_per_token = 2ull * 32 * 4096 * 2;
+
+inline uint64_t reference_working_bytes(const Request &r) {
+    const uint64_t count = r.inputs.size();
+    const uint64_t tokens = r.qwen21_reference_pixel_budget > 0
+        ? uint64_t(r.qwen21_reference_pixel_budget) / reference_latent_pixels : count * 4096;
+    // The shared option varies actual prefix rows. Retain the fixed working
+    // allowance per image and the historical estimate for legacy sizing.
+    return tokens * bf16_prefix_bytes_per_token + count * (512ull << 20);
+}
+
+inline uint64_t adapter_payload_bytes(const Request &request) {
+    uint64_t total = 0;
+    for (const auto &adapter : request.loras) {
+        const auto size = std::filesystem::file_size(adapter.path);
+        require(size && size <= std::numeric_limits<uint64_t>::max() - total,
+                "invalid Qwen21 adapter source size");
+        total += size;
+    }
+    return total;
+}
 // Optional retained weights must not consume all credited file-cache
 // headroom. A busy desktop can compress anonymous pages before file-backed
 // pages become reclaimable. Keep half the remaining observed headroom after
@@ -30,7 +54,7 @@ inline uint64_t convrot_stream_cache_headroom(const ane::StreamingMemoryObservat
 // complete source. This is an estimate, not a cap or a physical-memory bypass.
 // ResidencyPolicy adds its existing 4 GiB system reserve separately.
 inline uint64_t convrot_memory_estimate(
-    const Request &r, const std::array<uint64_t, 3> &source_bytes) {
+    const Request &r, const std::array<uint64_t, 3> &source_bytes, uint64_t adapter_bytes = 0) {
     constexpr uint64_t maximum = std::numeric_limits<uint64_t>::max();
     const auto add = [](uint64_t left, uint64_t right) {
         if (right > maximum - left)
@@ -58,17 +82,56 @@ inline uint64_t convrot_memory_estimate(
         // The encoder's evaluated conditioning outlives its request-local
         // weights. prepare_transformer owns DiT and VAE together; staged
         // teardown releases the DiT before decoding and both at completion.
-        estimate = std::max(source_bytes[1], add(source_bytes[0], source_bytes[2]));
+        estimate = std::max(source_bytes[1], add(add(source_bytes[0], source_bytes[2]), adapter_bytes));
+    } else {
+        estimate = add(estimate, adapter_bytes);
     }
-    // Temporary code packing / one-layer dequantization allowance, followed
-    // by the existing canvas growth and 2 GiB prefix K/V + 512 MiB per reference.
+    if (adapter_bytes) estimate = add(estimate, uint64_t(256) << 20);
+    // Temporary code packing / one-layer dequantization, output canvas,
+    // and per-reference prefix K/V and workspace.
     estimate = add(estimate, uint64_t(1) << 30);
     estimate = add(estimate, multiply(pixels, 10240));
-    estimate = add(estimate, multiply(uint64_t(r.inputs.size()), uint64_t(5) << 29));
+    estimate = add(estimate, reference_working_bytes(r));
     // validate_budget currently adds the reserve without checked arithmetic.
     // Reject unrepresentable totals here; do not include the reserve twice.
     (void)add(estimate, uint64_t(4) << 30);
     return estimate;
+}
+
+inline void apply_installed_gpu_budget(ExecutionPlan &plan, bool has_convrot,
+    const std::filesystem::path &dit, const std::filesystem::path &encoder,
+    const std::filesystem::path &vae) {
+    const auto &r = plan.request;
+    if ((r.execution != "gpu" && r.execution != "auto") ||
+        r.qwen21_denoiser_backend != "mlx" || r.hybrid_mlp_mode != "auto" ||
+        (r.residency != "component_staged" && r.residency != "resident") || r.streaming.active())
+        return;
+    const uint64_t adapter_bytes = adapter_payload_bytes(r);
+    if (has_convrot) {
+        plan.memory_estimate_bytes = convrot_memory_estimate(r, {
+            std::filesystem::file_size(dit), std::filesystem::file_size(encoder),
+            std::filesystem::file_size(vae)}, adapter_bytes);
+    } else if (adapter_bytes && plan.memory_estimate_bytes) {
+        constexpr uint64_t extra = (uint64_t(4) << 30) + (uint64_t(256) << 20);
+        require(*plan.memory_estimate_bytes <= std::numeric_limits<uint64_t>::max() - extra &&
+                adapter_bytes <= std::numeric_limits<uint64_t>::max() - extra - *plan.memory_estimate_bytes,
+                "Qwen21 adapter memory estimate overflow");
+        *plan.memory_estimate_bytes += adapter_bytes + (uint64_t(256) << 20);
+    }
+}
+
+inline constexpr uint64_t installed_system_reserve = uint64_t(4) << 30;
+
+inline void validate_installed_budget(const ExecutionPlan &plan, uint64_t physical) {
+    if (plan.memory_estimate_bytes &&
+        (physical < installed_system_reserve || *plan.memory_estimate_bytes > physical - installed_system_reserve)) {
+        const auto required_mib = ((*plan.memory_estimate_bytes + ((1ull << 20) - 1)) >> 20) +
+            (installed_system_reserve >> 20);
+        throw std::invalid_argument("qwen21_memory_budget_exceeded: " +
+            std::to_string(plan.request.inputs.size()) + " references need " + std::to_string(required_mib) +
+            " MiB including system reserve; " + std::to_string(physical >> 20) + " MiB installed");
+    }
+    ResidencyPolicy::validate_budget(plan, physical);
 }
 
 // Qualified small-canvas BF16 route: consume the language encoder one layer

@@ -452,6 +452,10 @@ struct QwenConvrotW8A8Metrics {
     uint64_t encoder_projections = 0, encoder_activation_rows = 0;
     uint64_t dit_projections = 0, dit_activation_rows = 0;
 };
+struct QwenStreamedPrefixMetrics {
+    bool file_backed = false;
+    uint64_t total_bytes = 0, active_bytes = 0, read_bytes = 0, layer_reads = 0;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::optional<qwen21::CiderCacheReceipt> qwen_dit_w8a8;
@@ -496,6 +500,7 @@ struct RunResult {
     std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
     std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
     std::optional<QwenConvrotStreamingMetrics> qwen_convrot_streaming;
+    std::optional<QwenStreamedPrefixMetrics> qwen_streamed_reference_kv;
     std::optional<QwenStreamVaeDecodeResidencyMetrics> qwen_stream_vae_decode_residency;
     std::optional<QwenEncoderPrefillMetrics> qwen_encoder_prefill;
     std::optional<QwenTokenizerReuseMetrics> qwen_tokenizer_reuse;

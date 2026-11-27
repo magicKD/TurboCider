@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>人物工作室 · TurboCider</title>
+  <meta name="theme-color" content="#ffffff">
+  <meta http-equiv="x-dns-prefetch-control" content="off">
+  <script src="turbocider.js"></script>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#grid">跳到内容</a>
+
+  <header class="top" id="top">
+    <a class="brand" href="#pose" aria-label="人物工作室首页">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <circle cx="16" cy="6.6" r="4" fill="currentColor"/>
+          <path d="M16 13.4 3.4 25.6h25.2z" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="wm"><b>人物工作室</b></span>
+    </a>
+
+    <nav class="tabs" aria-label="栏目">
+      <details class="shell-menu" name="header-popover" id="libraryMenu">
+        <summary class="nav-trigger">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.6"/>
+            <rect x="14" y="3.5" width="6.5" height="6.5" rx="1.6"/>
+            <rect x="3.5" y="14" width="6.5" height="6.5" rx="1.6"/>
+            <rect x="14" y="14" width="6.5" height="6.5" rx="1.6"/>
+          </svg>
+          <span id="libraryLabel">姿势库</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m8 10 4 4 4-4"/>
+          </svg>
+        </summary>
+        <div class="shell-pop library-menu stats">
+          <section>
+            <h2>姿态</h2>
+            <button type="button" data-tab="pose"><span>姿势</span><i class="nav-count" id="nPose"><b data-stat="pose" data-n="288">0</b></i></button>
+            <button type="button" data-tab="depth"><span>深度姿势</span><i class="nav-count" id="nDepth"><b data-stat="depth" data-n="288">0</b></i></button>
+          </section>
+          <section>
+            <h2>人物造型</h2>
+            <button type="button" data-tab="portrait"><span>人像</span><i class="nav-count" id="nPor"><b data-stat="por" data-n="1499">0</b></i></button>
+            <button type="button" data-tab="expr"><span>表情</span><i class="nav-count" id="nExp"><b data-stat="exp" data-n="95">0</b></i></button>
+            <button type="button" data-tab="hair"><span>发型</span><i class="nav-count" id="nHair"><b data-stat="hair" data-n="122">0</b></i></button>
+          </section>
+          <section>
+            <h2>服饰</h2>
+            <button type="button" data-tab="costume"><span>服装</span><i class="nav-count" id="nCos"><b data-stat="cos" data-n="1407">0</b></i></button>
+            <button type="button" data-tab="anime"><span>动画服装</span><i class="nav-count" id="nAni"><b data-stat="ani" data-n="1760">0</b></i></button>
+            <button type="button" data-tab="dyn"><span>历代服饰</span><i class="nav-count" id="nDyn"><b data-stat="dyn" data-n="57">0</b></i></button>
+          </section>
+          <section>
+            <h2>环境与物件</h2>
+            <button type="button" data-tab="scene"><span>场景</span><i class="nav-count" id="nSce"><b data-stat="scene" data-n="64">0</b></i></button>
+            <button type="button" data-tab="light"><span>光影</span><i class="nav-count" id="nLig"><b data-stat="light" data-n="50">0</b></i></button>
+            <button type="button" data-tab="prop"><span>道具</span><i class="nav-count" id="nPro"><b data-stat="prop" data-n="32">0</b></i></button>
+            <button type="button" data-tab="furn"><span>家具</span><i class="nav-count" id="nFur"><b data-stat="furn" data-n="41">0</b></i></button>
+          </section>
+        </div>
+      </details>
+
+      <button type="button" class="nav-trigger" data-tab="studio">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7zM19 15v5m-2.5-2.5h5"/>
+        </svg>
+        <span>工作台</span>
+      </button>
+
+      <details class="shell-menu" name="header-popover" id="personalMenu">
+        <summary class="nav-trigger">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6.5 4.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16L12 17l-5.5 3.5z"/>
+          </svg>
+          <span id="personalLabel">我的</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m8 10 4 4 4-4"/>
+          </svg>
+        </summary>
+        <div class="shell-pop personal-menu">
+          <button type="button" data-tab="fav">收藏<i id="nFav"></i></button>
+          <button type="button" data-tab="recent">最近<i id="nRec"></i></button>
+          <button type="button" data-tab="history">生成记录<i id="nHist"></i></button>
+        </div>
+      </details>
+    </nav>
+
+    <div class="search">
+      <svg class="sic" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/>
+        <path d="m20 20-3.5-3.5"/>
+      </svg>
+      <input id="q" type="search" placeholder="搜姿势、颜色、单品" autocomplete="off" aria-label="搜索">
+      <button type="button" id="qKbd" class="q-kbd" title="命令面板（⌘K / Ctrl+K）" aria-label="打开命令面板">⌘K</button>
+      <button id="qx" class="qx" aria-label="清除搜索" hidden>✕</button>
+      <button id="qDone" type="button">完成</button>
+    </div>
+
+    <div class="tools">
+      <button id="tcMaterials" class="nav-trigger" type="button">在线素材</button>
+      <button id="adultSw" class="asw" role="switch" aria-checked="false" aria-label="显示成人向内容（18+）" title="成人向内容，默认关闭">
+        <span class="trk" aria-hidden="true"><span class="kn"></span></span>
+        <b>18+</b>
+      </button>
+
+      <details name="header-popover" id="languageMenu" class="lang-menu">
+        <summary class="icon" aria-label="语言设置" title="语言设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <ellipse cx="12" cy="12" rx="4" ry="9"/>
+            <path d="M3 12h18"/>
+          </svg>
+        </summary>
+        <div class="lang-panel">
+          <label for="uiLocale">界面语言</label>
+          <select id="uiLocale" translate="no">
+            <option value="zh">简体中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="vi">Tiếng Việt</option>
+          </select>
+          <span>素材描述语言</span>
+          <div class="seg" role="group" aria-label="描述语言">
+            <button data-lang="zh" lang="zh" translate="no">中文</button>
+            <button data-lang="en" lang="en" translate="no">English</button>
+          </div>
+          <label class="copy-pref">
+            <input type="checkbox" id="copyRefs" checked>
+            <span>复制时附参考图</span>
+          </label>
+        </div>
+      </details>
+
+      <details id="themeMenu" class="shell-menu" name="header-popover">
+        <summary id="theme" class="icon" title="外观（T）" aria-label="外观">
+          <svg aria-hidden="true" class="sun" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+          </svg>
+          <svg aria-hidden="true" class="moon" viewBox="0 0 24 24">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+          </svg>
+        </summary>
+        <div class="shell-pop theme-pop" role="group" aria-label="外观">
+          <button type="button" data-theme-choice="system" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M8 21h8m-4-4v4"/></svg>
+            <span>跟随系统</span>
+          </button>
+          <button type="button" data-theme-choice="light" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            <span>浅色</span>
+          </button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+            <span>深色</span>
+          </button>
+        </div>
+      </details>
+
+      <details id="noticeMenu" class="shell-menu" name="header-popover">
+        <summary class="icon" aria-label="通知" title="通知">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 16c1.4-1.4 1.8-3.4 1.8-6a5.2 5.2 0 0 1 10.4 0c0 2.6.4 4.6 1.8 6l.6 1H4.4zM10 20a2.5 2.5 0 0 0 4 0"/>
+          </svg>
+        </summary>
+        <section class="shell-pop notice-pop" aria-label="通知">
+          <h2>通知</h2>
+          <button id="noticeReload" class="sm" hidden>更新已就绪，刷新页面</button>
+          <p id="noticeAction" hidden></p>
+          <article id="officialNotice">
+            <strong>安全提醒</strong>
+            <p>唯一官网是 posewear.pages.dev，免费、无需注册账号、没有收费套餐。本项目没有 Windows / Android 客户端；冒充官网提供 exe / apk 下载、或要求登录付费的站点（如 posewear.cn、posewear.art）与本项目无关，请勿下载、登录、付款或在其中填写 API Key。</p>
+          </article>
+          <article id="releaseNotice">
+            <strong>图库更新</strong>
+            <p>新增速写定时练习、大图灰度与实拍取色板、画板导出拼图 PNG 及 ⌘K 命令面板。</p>
+          </article>
+          <button id="help" class="notice-help" type="button">快捷键</button>
+        </section>
+      </details>
+    </div>
+  </header>
+
+  <h1 class="vh" id="collectionTitle">姿势库</h1>
+
+  <section class="bar" id="bar">
+    <div class="tbar">
+      <span id="count" aria-live="polite"></span>
+      <button id="fBtn" class="fbtn" aria-label="更多筛选" title="更多筛选" aria-controls="filters" aria-expanded="false">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        <span>更多筛选</span>
+        <b id="fN"></b>
+      </button>
+      <div id="active"></div>
+      <button id="clearAll" class="ghost sm" hidden>清空全部</button>
+      <span class="sp"></span>
+      <span id="favTools" hidden>
+        <button id="exp" class="sm">导出收藏</button>
+        <button id="imp" class="sm">导入</button>
+        <button id="clrFav" class="sm">清空</button>
+        <input id="impF" type="file" accept=".json" hidden>
+      </span>
+      <button id="clrRec" class="sm" hidden>清空记录</button>
+      <select id="sort" aria-label="排序">
+        <option value="def">默认排序</option>
+        <option value="id">编号倒序</option>
+        <option value="shuf">随机打乱</option>
+        <option value="fav">收藏优先</option>
+        <option value="rank" hidden>人气榜</option>
+      </select>
+      <button id="sketchBtn" class="sm ghost" type="button" hidden title="速写练习（定时切换参考图）" aria-label="速写练习">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5M12 3v2.5"/></svg>
+        <span>速写</span>
+      </button>
+      <button id="rand" class="pri" aria-label="随机一个" title="随机一个">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h3c4 0 7 12 11 12h4m-4-4 4 4-4 4M3 18h3c1.6 0 3.1-1.8 4.6-4.2M13.3 9.9C14.7 7.6 16 6 17.5 6H21m-4-4 4 4-4 4"/></svg>
+        <span>随机一个</span>
+      </button>
+    </div>
+  </section>
+
+  <div id="filters" class="filters"></div>
+
+  <p id="tcCatalogError" class="tc-catalog-error" role="status" hidden></p>
+  <main id="grid" class="grid" aria-live="polite">
+    <div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>
+    <div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>
+    <div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>
+  </main>
+  <div id="sentinel"></div>
+
+  <div id="empty" hidden>
+    <div class="emo">🔍</div>
+    <h3 id="emptyT">没有找到匹配的内容</h3>
+    <p id="emptyP">换个关键词，或清空筛选条件试试</p>
+    <div id="sugg"></div>
+    <div id="emptyGo" class="ego"></div>
+    <button id="reset" class="pri">清空筛选</button>
+  </div>
+
+  <!-- Full Creative Studio -->
+  <section id="studio" hidden aria-labelledby="stT">
+    <header class="studio-head">
+      <h1 id="stT" tabindex="-1">创作工作台</h1>
+      <div class="studio-head-act">
+        <button id="wbClearAll" class="sm ghost" type="button" hidden>清空素材</button>
+        <div class="seg modes" role="group" aria-label="工作模式">
+          <button data-mode="tryon">试穿</button>
+          <button data-mode="gen">生图</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="st-app">
+      <aside class="st-l" aria-label="参考素材">
+        <div class="primary-materials">
+          <section class="step person-step" data-s="1" aria-labelledby="s1T">
+            <div class="sh">
+              <svg class="material-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg>
+              <b id="s1T">人物</b>
+              <span class="sp"></span>
+              <button class="lnk pick-more" data-pick="portrait" hidden>从人像库选</button>
+              <label class="lnk upload-link" id="wbDrop" tabindex="0" role="button" title="上传人物照" aria-label="上传人物照">上传<input type="file" id="wbFile" accept="image/*" multiple hidden></label>
+            </div>
+            <div class="persons" id="wbPersons"></div>
+            <button class="empty0" id="wbPortraitPick" data-pick="portrait"><span><b>选择人物</b></span></button>
+            <details id="wbChar">
+              <summary>模特类型</summary>
+              <div class="chips" id="wbChars"></div>
+              <textarea id="wbCharTxt" rows="2" placeholder="自定义模特描述，例如：25 岁成年女性，黑色长直发，清淡妆容，身材纤细"></textarea>
+            </details>
+          </section>
+
+          <section class="step garment-step" data-s="2" aria-labelledby="s2T">
+            <div class="sh">
+              <svg class="material-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6a2.5 2.5 0 1 1 4.6 1.4C13.4 8.5 12 8.9 12 10v1l8.5 5.4a1.3 1.3 0 0 1-.7 2.4H4.2a1.3 1.3 0 0 1-.7-2.4L12 11"/></svg>
+              <b id="s2T">服装</b>
+              <span class="sp"></span>
+              <button class="lnk pick-more" data-pick="costume" hidden>从库中选</button>
+              <label class="lnk upload-link" tabindex="0" role="button" title="上传服装图" aria-label="上传服装图">上传<input type="file" id="wbGFile" accept="image/*" multiple hidden></label>
+            </div>
+            <div class="slot" id="wbG"></div>
+          </section>
+
+          <section class="step" data-s="3" aria-labelledby="s3T">
+            <div class="sh">
+              <svg class="material-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="m5 11 5-3 4 1 5-2M12 9l-1 6-5 5m5-5 4 1 2 5"/></svg>
+              <b id="s3T">姿势</b>
+              <span class="sp"></span>
+              <button class="lnk pick-more" data-pick="pose" hidden>从库中选</button>
+            </div>
+            <div class="slot" id="wbPo"></div>
+            <div class="row r3">
+              <button class="sm ghost" id="wbAllAng" hidden>全部角度</button>
+              <span class="sp"></span>
+              <div class="seg sm" id="wbBatch" role="group" aria-label="多姿势出图方式" hidden>
+                <button data-bm="each">分开出</button>
+                <button data-bm="sheet">拼一张</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <details class="material-extras" id="wbOther">
+          <summary>
+            <svg class="material-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><path d="M14 17.5h7M17.5 14v7"/></svg>
+            <b>其他素材</b>
+            <span class="sp"></span>
+            <span class="other-preview" id="wbOtherPreview"></span>
+            <b id="wbOtherCount" hidden></b>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+          </summary>
+          <div class="other-types" id="wbOtherTypes" role="group" aria-label="素材分类"></div>
+          <div class="slot" id="wbEx"></div>
+          <div class="slot" id="wbOtherRefs"></div>
+        </details>
+      </aside>
+
+      <main class="st-c" aria-labelledby="wbCanvasTitle">
+        <header class="canvas-head">
+          <h2 id="wbCanvasTitle">参考画板</h2>
+          <div id="wbCanvasSwitch" class="seg sm" role="group" aria-label="画板视图" hidden>
+            <button type="button" data-cv="board" aria-pressed="false">参考画板</button>
+            <button type="button" data-cv="result" class="on" aria-pressed="true">生成结果</button>
+          </div>
+          <button id="wbExportBoard" class="sm ghost" type="button" hidden title="导出参考拼图 PNG">导出拼图</button>
+          <span id="wbCanvasRatio"></span>
+        </header>
+
+        <div class="stage" id="wbStage">
+          <div class="reference-board" id="wbPh0">
+            <div class="board-cards" id="wbBoardCards"></div>
+            <div class="board-actions" id="wbBoardActions" hidden>
+              <button id="wbShuffle" type="button" class="board-use board-shuffle">换一组</button>
+              <button id="wbExample" type="button" class="board-use">使用 Demo</button>
+            </div>
+          </div>
+
+          <div class="cmp" id="wbCmp" hidden>
+            <img id="wbAfter" alt="生成结果">
+            <div class="bef" id="wbBefW"><img id="wbBefore" alt="原始照片"></div>
+            <div class="hdl" id="wbHdl"><span></span></div>
+            <input type="range" id="wbRange" min="0" max="100" value="50" aria-label="前后对比">
+            <em class="l">原图</em>
+            <em class="r">结果</em>
+          </div>
+
+          <div class="busy" id="wbBusy" hidden>
+            <div class="skel0"></div>
+            <progress id="wbProg" aria-label="生成进度"></progress>
+            <b id="wbStage1">正在上传素材…</b>
+            <small id="wbTime">0 秒</small>
+            <button class="sm ghost" id="wbStop">取消</button>
+          </div>
+
+          <div class="err" id="wbErr" hidden></div>
+        </div>
+
+        <div class="warn" id="wbWarn" hidden></div>
+        <div class="res" id="wbRes" hidden></div>
+        <div class="row out-act" id="wbOutAct" hidden>
+          <button class="sm" id="wbDl">下载</button>
+          <button class="sm" id="wbZip" hidden>全部打包</button>
+          <button class="sm" id="wbAgain">重来</button>
+          <button class="sm" id="wbUse">当原图</button>
+          <button class="sm ghost" id="wbCmpT">对比</button>
+          <span class="sp"></span>
+          <small id="wbMeta"></small>
+        </div>
+      </main>
+
+      <aside class="st-r">
+        <button id="wbCfg" class="cfg">
+          <span class="dot" id="wbDot"></span>
+          <span id="wbProv">未配置 API</span>
+          <b>设置</b>
+        </button>
+
+        <div class="quick">
+          <div class="lab0">风格</div>
+          <div class="chips" id="wbStyles"></div>
+          <div class="row q2">
+            <div class="row">
+              <label class="lab">画幅
+                <select id="wbAR">
+                  <option value="auto">自动</option>
+                  <option value="1:2">竖 1:2 · 384×768</option>
+                  <option value="2:3">竖 2:3</option>
+                  <option value="3:4">竖 3:4</option>
+                  <option value="9:16">竖 9:16</option>
+                  <option value="1:1">方 1:1</option>
+                  <option value="4:3">横 4:3</option>
+                  <option value="16:9">横 16:9</option>
+                  <option value="2:1">横 2:1 · 768×384</option>
+                </select>
+              </label>
+              <label class="lab">数量
+                <select id="wbN">
+                  <option>1</option>
+                  <option>2</option>
+                  <option>3</option>
+                  <option>4</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <label class="tc-stages" hidden>
+          <input id="wbTwoStage" type="checkbox">
+          分两步编辑
+          <small>先换姿势与场景，再用上一步结果换装。</small>
+        </label>
+        <div class="tc-local-material">
+          <label for="wbLocalRole">本机素材类型</label>
+          <div>
+            <select id="wbLocalRole">
+              <option value="portrait">人像</option>
+              <option value="costume">服装</option>
+              <option value="anime">动画服装</option>
+              <option value="dyn">历代服饰</option>
+              <option value="pose" selected>姿势</option>
+              <option value="depth">深度姿势</option>
+              <option value="expr">表情</option>
+              <option value="hair">发型</option>
+              <option value="scene">场景</option>
+              <option value="light">光影</option>
+              <option value="prop">道具</option>
+              <option value="furn">家具</option>
+            </select>
+            <label class="tc-local-upload">添加图片…<input id="wbLocalFile" type="file" accept="image/*" multiple></label>
+          </div>
+        </div>
+        <section class="prompt-panel" aria-labelledby="wbPromptTitle">
+          <div class="sh"><b id="wbPromptTitle">生图提示词</b></div>
+          <textarea id="wbPrompt" rows="4" aria-labelledby="wbPromptTitle" placeholder="描述你想生成的画面"></textarea>
+          <div class="prompt-tools">
+            <div class="seg sm" role="group" aria-label="提示词语言">
+              <button data-pl="en">英文</button>
+              <button data-pl="zh">中文</button>
+            </div>
+            <span class="sp"></span>
+            <button class="sm ghost" id="wbCopyP" type="button">复制</button>
+            <button class="sm ghost" id="wbReP" type="button">重置</button>
+          </div>
+        </section>
+
+        <details class="adv">
+          <summary>高级设置</summary>
+          <div class="adv-b">
+            <label class="tg mt">
+              <input type="checkbox" id="wbKeepBg">
+              <span><b>保留原照片背景与光线</b></span>
+            </label>
+            <label class="tg mt">
+              <input type="checkbox" id="wbNeutral">
+              <span><b>减少误拦截</b><small>用更中性的描述发送，减少正常穿搭被误判，不改变服装和姿势</small></span>
+            </label>
+            <textarea id="wbExtra" rows="2" placeholder="补充要求（可选），例如：海边日落、半身构图、手拿咖啡…"></textarea>
+          </div>
+        </details>
+
+        <div class="hist">
+          <div class="sh">
+            <b>生成记录</b>
+            <span class="sp"></span>
+            <button class="sm ghost" data-go="history">全部</button>
+            <button class="sm ghost" id="wbHClr">清空</button>
+          </div>
+          <div class="hl" id="wbHist"></div>
+        </div>
+
+        <div class="gobar">
+          <div class="gb-i">
+            <span><b id="wbEst">将生成 1 张</b></span>
+            <button class="cfgchip" id="wbCfg2" type="button">
+              <span class="dot" id="wbDot2"></span>
+              <span id="wbProv2">未配置</span>
+            </button>
+          </div>
+          <button id="wbGo" class="pri big">生成</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Material Picker Dialog -->
+  <div id="pk" hidden role="dialog" aria-modal="true" aria-label="选择素材">
+    <div class="pk-box">
+      <div class="pk-h">
+        <b id="pkT">选择服装</b>
+        <input id="pkQ" type="search" placeholder="搜索…" autocomplete="off">
+        <button class="sm pri" id="pkDone" hidden>完成</button>
+        <button class="icon" id="pkX" aria-label="关闭">✕</button>
+      </div>
+      <div id="pkPoseTypes" class="seg sm" role="group" aria-label="姿势图类型" hidden>
+        <button type="button" data-pk-type="pose" aria-pressed="true" class="on">线稿</button>
+        <button type="button" data-pk-type="depth" aria-pressed="false">深度图</button>
+      </div>
+      <div class="pk-types" id="pkMaterialTypes" role="group" aria-label="素材分类" hidden></div>
+      <div class="pk-bar" id="pkBar" hidden>
+        <button type="button" id="pkFavOnly" class="chip" aria-pressed="false" hidden>仅看收藏</button>
+        <div class="pk-cats" id="pkCats" role="group" aria-label="分类筛选"></div>
+      </div>
+      <div class="pk-g" id="pkG"></div>
+    </div>
+  </div>
+
+  <!-- Provider & Local Engine Settings Dialog -->
+  <div id="cfg" hidden role="dialog" aria-modal="true" aria-labelledby="cfgT">
+    <div class="cfg-box">
+      <div class="pk-h">
+        <b id="cfgT">API 设置</b>
+        <button class="icon" id="cfgX" aria-label="关闭">✕</button>
+      </div>
+      <div class="cfg-b">
+        <div class="grp">服务商</div>
+        <div class="prov" role="radiogroup" aria-label="服务商">
+          <label><input type="radio" name="prov" value="openai"><span><i class="lg" style="background:#111">O</i><b>OpenAI</b><small>gpt-image-1 · edits</small></span></label>
+          <label><input type="radio" name="prov" value="gemini"><span><i class="lg" style="background:#4f7cff">G</i><b>Gemini</b><small>Nano Banana</small></span></label>
+          <label><input type="radio" name="prov" value="seedream"><span><i class="lg" style="background:#ff6a00">豆</i><b>豆包 Seedream</b><small>火山方舟 · 国内直连</small></span></label>
+          <label><input type="radio" name="prov" value="custom"><span><i class="lg" style="background:#7a7a7a">中</i><b>自定义中转</b><small>OpenAI 兼容</small></span></label>
+        </div>
+
+        <details class="fine" id="cfLocalSetup">
+          <summary>在本机使用 ComfyUI</summary>
+          <p>在项目目录运行 <code>npm start</code>，然后 <a href="http://127.0.0.1:8787/#studio" target="_blank" rel="noopener">打开本机工作台</a></p>
+        </details>
+        <p class="fine" id="cfHelp"></p>
+        <label class="fld" id="cfCheckpointW" hidden>本机模型<select id="cfCheckpoint"></select></label>
+
+        <div class="grp">连接</div>
+        <label class="fld">Base URL<input id="cfBase" placeholder="https://api.openai.com" spellcheck="false"></label>
+        <label class="fld">API Key
+          <span class="kw">
+            <input id="cfKey" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false">
+            <button class="sm ghost" id="cfEye" type="button">显示</button>
+          </span>
+        </label>
+        <label class="fld">模型<input id="cfModel" list="cfModels" spellcheck="false"><datalist id="cfModels"></datalist></label>
+
+        <div class="grp">高级</div>
+        <label class="fld" id="cfProtoW">接口协议
+          <select id="cfProto">
+            <option value="edits">images/edits · multipart（OpenAI 官方格式）</option>
+            <option value="json">images/generations · JSON 多图（多数中转 / gpt-image-2）</option>
+            <option value="xai">xAI · images/edits JSON（Grok Imagine）</option>
+            <option value="gemini">Gemini · models/:generateContent（Nano Banana 等）</option>
+          </select>
+        </label>
+        <label class="fld" id="cfFieldW">图片字段名
+          <select id="cfField">
+            <option value="image[]">image[]（官方，多图）</option>
+            <option value="image">image（部分中转）</option>
+          </select>
+        </label>
+        <label class="tg">
+          <input type="checkbox" id="cfProxy">
+          <span><b>通过本站代理转发</b><small>直连时，浏览器将密钥和图片发给填写的地址；启用本站代理后经本站转发。http/https 与任意端口均可。</small></span>
+        </label>
+        <div class="note">API Key 保存在此浏览器。使用公共设备后，请清除密钥。</div>
+        <p class="fine" id="cfMsg" aria-live="polite"></p>
+      </div>
+      <div class="cfg-f">
+        <button class="ghost sm" id="cfClr">清除密钥</button>
+        <button class="ghost sm" id="cfExp">导出</button>
+        <button class="ghost sm" id="cfImp">导入</button>
+        <input type="file" id="cfImpF" accept=".json" hidden>
+        <span class="sp"></span>
+        <button class="sm" id="cfTest">测试连接</button>
+        <button class="pri sm" id="cfSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Workspace Dock -->
+  <div id="workspaceDock">
+    <button id="trayFab" class="dock-launch" type="button" hidden aria-controls="tray" aria-expanded="false" title="打开生图工作台" aria-label="打开生图工作台">
+      <span class="dock-mark">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3.5" y="6" width="15" height="14" rx="3"/>
+          <path d="m6.5 16 3.4-3.6 2.5 2.5 1.8-1.8 1.8 2"/>
+          <path class="dock-spark" d="m18 2 .9 2.8 2.8.9-2.8.9L18 9.4l-.9-2.8-2.8-.9 2.8-.9z"/>
+        </svg>
+      </span>
+      <span class="dock-launch-name">创作台</span>
+      <span id="trayFilm" aria-hidden="true"></span>
+      <em id="trayFabN" hidden>0</em>
+      <svg class="dock-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>
+    </button>
+
+    <aside id="tray" hidden tabindex="-1" aria-labelledby="trayTitle">
+      <div class="tray-b">
+        <div class="dock-materials">
+          <section class="dock-block">
+            <div class="dock-heading">
+              <h3>参考素材</h3>
+              <small class="tg-empty" id="tgEmpty" hidden>尚未选材</small>
+              <button id="trayClear" class="sm ghost">清空</button>
+            </div>
+            <div class="tray-items" id="trayItems"></div>
+            <div class="tg-add" id="tgAddRow">
+              <button data-add="portrait">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5 20v-2a7 7 0 0 1 14 0v2"/></svg>人像
+              </button>
+              <button data-add="costume">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4-5 3 2.5 4 2-1v10h9V10l2 1L21 7l-5-3c-.8 1.3-2.1 2-4 2s-3.2-.7-4-2z"/></svg>服装
+              </button>
+              <button data-add="pose" title="姿势线稿与深度图" aria-label="姿势线稿与深度图">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="14" cy="4.5" r="1.5"/><path d="m5 10 6-2 4 4 4-1m-7-3-2 6 5 2 2 5m-7-7-1 4-4 3"/></svg>姿势
+              </button>
+              <details id="tgMore">
+                <summary title="其他素材" aria-label="其他素材">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+                </summary>
+                <div>
+                  <button data-add="expr">表情</button>
+                  <button data-add="hair">发型</button>
+                  <button data-add="scene">场景</button>
+                  <button data-add="light">光影</button>
+                  <button data-add="prop">道具</button>
+                  <button data-add="furn">家具</button>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <details id="trayComboBox" class="dock-combo">
+            <summary>组合描述</summary>
+            <div class="seg sm">
+              <button data-tl="zh">中文</button>
+              <button data-tl="en">英文</button>
+            </div>
+            <pre id="trayText"></pre>
+            <div class="tray-act">
+              <button id="trayCopyZh" class="sm">复制中文描述</button>
+              <button id="trayCopyEn" class="sm">复制英文提示词</button>
+            </div>
+          </details>
+        </div>
+
+        <div class="tgen">
+          <div class="dock-heading">
+            <label for="tgPrompt">生图提示词</label>
+            <div class="dock-heading-tools">
+              <button id="tgResetPrompt" class="sm ghost" type="button" hidden title="恢复自动提示词">重置</button>
+              <button id="tgCopyDraft" class="dock-icon" title="复制提示词" aria-label="复制提示词">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 5V4H5v11h1"/></svg>
+              </button>
+            </div>
+          </div>
+          <textarea id="tgPrompt" rows="3" aria-label="生图提示词" placeholder="输入或编辑提示词"></textarea>
+          <div class="tgen-row">
+            <label>张数<select id="tgN"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+            <label>比例
+              <select id="tgAR">
+                <option value="auto">自动</option>
+                <option value="1:2">竖 1:2 · 384×768</option>
+                <option value="2:3">竖 2:3</option>
+                <option value="3:4">竖 3:4</option>
+                <option value="9:16">竖 9:16</option>
+                <option value="1:1">方 1:1</option>
+                <option value="4:3">横 4:3</option>
+                <option value="16:9">横 16:9</option>
+                <option value="2:1">横 2:1 · 768×384</option>
+              </select>
+            </label>
+          </div>
+          <p class="tgen-stat" id="tgStat" role="status" hidden></p>
+          <div class="tgen-res" id="tgRes"></div>
+        </div>
+      </div>
+
+      <footer class="dock-foot">
+        <h2 class="dock-title">
+          <button id="trayMin" type="button" aria-controls="tray" aria-expanded="true" title="收起工作台" aria-label="收起工作台">
+            <span class="dock-mark">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3.5" y="6" width="15" height="14" rx="3"/>
+                <path d="m6.5 16 3.4-3.6 2.5 2.5 1.8-1.8 1.8 2"/>
+                <path class="dock-spark" d="m18 2 .9 2.8 2.8.9-2.8.9L18 9.4l-.9-2.8-2.8-.9 2.8-.9z"/>
+              </svg>
+            </span>
+            <span id="trayTitle">创作台</span>
+            <small id="trayN" role="status" aria-atomic="true"></small>
+            <svg class="dock-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>
+          </button>
+        </h2>
+        <div class="dock-actions">
+          <button id="tgStudio" class="dock-icon" title="完整工作台" aria-label="完整工作台">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4h7v7M20 4l-9 9"/><path d="M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg>
+          </button>
+          <button id="tgCfg" class="sm ghost" aria-label="API 设置" title="API 设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h5m4 0h5M5 17h8m4 0h2"/><circle cx="12" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg>
+            <i class="dot" aria-hidden="true"></i>
+            <span id="tgProv">未配置 API</span>
+          </button>
+          <button id="tgGo" class="pri">生成图片</button>
+          <button id="tgStop" class="ghost" hidden>停止</button>
+        </div>
+      </footer>
+    </aside>
+  </div>
+
+  <!-- Quick Result Viewer -->
+  <div id="tgView" hidden role="dialog" aria-modal="true" aria-label="生成结果">
+    <div class="tgv-bg"></div>
+    <figure>
+      <img id="tgViewImg" alt="生成结果">
+      <figcaption>
+        <button id="tgDl" class="pri sm">下载</button>
+        <button id="tgHist" class="sm">在生成记录中查看</button>
+        <button id="tgViewX" class="sm ghost">关闭</button>
+      </figcaption>
+    </figure>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lb" hidden role="dialog" aria-modal="true" aria-label="大图预览">
+    <div class="lb-bg"></div>
+    <div class="lb-box">
+      <button class="lb-x icon" title="关闭（Esc）" aria-label="关闭">✕</button>
+      <button class="lb-nav prev icon" aria-label="上一张">‹</button>
+      <button class="lb-nav next icon" aria-label="下一张">›</button>
+      <div class="lb-img">
+        <div class="lb-stage" id="lbStage">
+          <img id="lbImg" alt="" referrerpolicy="no-referrer">
+          <div class="lb-pair-cmp" id="lbPairCmp" hidden><img id="lbPairImg" alt="" referrerpolicy="no-referrer"></div>
+          <div class="lb-pair-hdl" id="lbPairHdl" hidden><span></span></div>
+          <input type="range" id="lbPairRange" min="0" max="100" value="50" aria-label="线稿与深度图对比" hidden>
+          <div class="lb-grid" id="lbGrid" aria-hidden="true"></div>
+        </div>
+        <div class="lb-tools" id="lbTools" role="toolbar" aria-label="参考查看工具" hidden>
+          <button type="button" data-lt="zoom" aria-pressed="false" title="缩放（Z）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2M11 8v6M8 11h6"/></svg><span>2×</span>
+          </button>
+          <button type="button" data-lt="flip" aria-pressed="false" title="镜像翻转（H）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M8 7 4 12l4 5V7zm8 0 4 5-4 5V7z"/></svg><span>镜像</span>
+          </button>
+          <button type="button" data-lt="grid" aria-pressed="false" title="构图参考线（G）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.5 4v16M14.5 4v16M4 9.5h16M4 14.5h16"/></svg><span>参考线</span>
+          </button>
+          <button type="button" data-lt="gray" aria-pressed="false" title="灰度明度检查（B）">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none"/></svg><span>灰度</span>
+          </button>
+          <button type="button" data-lt="cmp" aria-pressed="false" title="线稿与深度图对比（V）" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M12 3v18M8 10l-2 2 2 2m8-4 2 2-2 2"/></svg><span>透视对比</span>
+          </button>
+        </div>
+        <a id="lbMiss" class="lb-miss" href="https://ai-pose-depth-gallery.pages.dev/" target="_blank" rel="noopener">请前往原站查看</a>
+        <div class="spin"></div>
+      </div>
+      <div class="lb-side" id="lbSide"></div>
+    </div>
+  </div>
+
+  <div id="drawerBg" hidden></div>
+
+  <!-- Keyboard Shortcuts Dialog -->
+  <div id="helpBox" hidden role="dialog" aria-modal="true" aria-label="快捷键">
+    <div class="hb">
+      <h3>快捷键</h3>
+      <dl>
+        <dt><kbd>⌘K</kbd></dt><dd>命令面板</dd>
+        <dt><kbd>/</kbd></dt><dd>聚焦搜索</dd>
+        <dt><kbd>R</kbd></dt><dd>随机一个</dd>
+        <dt><kbd>T</kbd></dt><dd>切换深浅色</dd>
+        <dt><kbd>L</kbd></dt><dd>切换描述语言（中 / 英）</dd>
+        <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>切换栏目</dd>
+        <dt><kbd>←</kbd><kbd>→</kbd></dt><dd>大图：上一张 / 下一张</dd>
+        <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>大图：切换拍摄角度</dd>
+        <dt><kbd>Z</kbd></dt><dd>大图：缩放细节</dd>
+        <dt><kbd>H</kbd></dt><dd>大图：镜像翻转</dd>
+        <dt><kbd>G</kbd></dt><dd>大图：构图参考线</dd>
+        <dt><kbd>B</kbd></dt><dd>大图：灰度明度检查</dd>
+        <dt><kbd>V</kbd></dt><dd>大图：线稿与深度图对比</dd>
+        <dt><kbd>F</kbd></dt><dd>大图：收藏</dd>
+        <dt><kbd>A</kbd></dt><dd>大图：加入 / 移出组合</dd>
+        <dt><kbd>C</kbd></dt><dd>大图：复制中文描述</dd>
+        <dt><kbd>S</kbd></dt><dd>大图：复制分享链接</dd>
+        <dt><kbd>Esc</kbd></dt><dd>关闭</dd>
+      </dl>
+      <button class="pri" data-close>知道了</button>
+    </div>
+  </div>
+
+  <button id="toTop" class="icon" title="回到顶部" aria-label="回到顶部">↑</button>
+  <div id="toast" role="status"></div>
+
+  <!-- Generation History Section -->
+  <section id="histSec" hidden aria-labelledby="histSecT">
+    <h2 id="histSecT" class="vh">生成记录</h2>
+    <div class="hist-bar" id="histBar">
+      <div class="tbar">
+        <span id="histCount" aria-live="polite"></span>
+        <div class="seg sm" id="histFilter" role="group" aria-label="筛选模式">
+          <button type="button" data-hf="all" class="on" aria-pressed="true">全部</button>
+          <button type="button" data-hf="tryon" aria-pressed="false">试穿</button>
+          <button type="button" data-hf="gen" aria-pressed="false">生图</button>
+        </div>
+        <input id="histQ" type="search" placeholder="搜索提示词或模型…" aria-label="搜索生成记录" autocomplete="off">
+        <label class="hist-sel-all"><input type="checkbox" id="histSelAll"><span>全选</span></label>
+        <span id="histSelN" hidden>已选 <b>0</b> 张</span>
+        <span class="sp"></span>
+        <button id="histZip" class="sm" disabled>打包下载</button>
+        <button id="histExp" class="sm" disabled>导出 ZIP</button>
+        <button id="histClr" class="sm ghost">清空</button>
+      </div>
+    </div>
+    <div id="histStats" class="hist-stats"></div>
+    <main id="histGrid" class="grid hist-grid" aria-live="polite"></main>
+    <div id="histEmpty" hidden>
+      <div class="emo" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="m7 15.5 3.3-3.5 2.4 2.4 2-2 2.3 2.6"/><circle cx="9" cy="9" r="1.4"/></svg>
+      </div>
+      <h3>还没有生成记录</h3>
+      <p>在工作台或悬浮创作台生成的图片会保存在这里</p>
+      <button class="pri sm" data-go="studio">打开工作台</button>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="foot-line">
+      <small>TurboCider · 基于 PoseWear（MIT）</small>
+      <a href="#" id="privO">隐私说明</a>
+
+    </div>
+    <details id="credits">
+      <summary>素材来源与许可</summary>
+      <div class="credit-list">
+        <p>人物、服装和姿势 Demo 使用 Shisei / wquguru 的 CC0 1.0 素材，详见应用包 SHISEI-CC0.txt。其他内置卡片是原创示例。</p>
+        <p>在线目录与素材来源沿用 PoseWear。各图库标注原作者，CharaDB 图片供原站预览。</p>
+        <p>上游源码 github.com/atuizz/posewear。完整版权与 MIT 许可见应用包 LICENSE.txt。</p>
+      </div>
+    </details>
+    <!-- category-index -->
+  </footer>
+
+  <!-- Age Confirmation Modal -->
+  <div id="ageBox" class="mdl" hidden role="dialog" aria-modal="true" aria-labelledby="ageT">
+    <div class="hb">
+      <h3 id="ageT">显示成人向内容？</h3>
+      <p id="ageP">包括双人互动、性感类姿势、深度姿势里的双人图，以及内衣、性感类服装。仅适合已满 18 岁的用户。只需确认一次，之后用顶部的「18+」开关随时打开或关闭。</p>
+      <div class="row">
+        <button class="sm ghost" id="ageN">暂不</button>
+        <button class="sm pri" id="ageY">我已满 18 岁，打开</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy Modal -->
+  <div id="privBox" class="mdl" hidden role="dialog" aria-modal="true" aria-labelledby="privT">
+    <div class="hb">
+      <h3 id="privT">隐私说明</h3>
+      <p>照片、生成结果和偏好保存在这台 Mac。开启在线素材后，应用从来源站点获取目录和选中的图片。你的照片和提示词由本机模型处理。</p>
+      <div class="row"><button class="sm pri" data-close>知道了</button></div>
+    </div>
+  </div>
+
+  <!-- Gesture Drawing Studio -->
+  <div id="sketch" hidden role="dialog" aria-modal="true" aria-label="速写练习">
+    <div class="sk-prog" aria-hidden="true"><i id="skProg"></i></div>
+    <header class="sk-top">
+      <div class="sk-meta"><b id="skStep">1 / 10</b><span id="skName"></span></div>
+      <div class="sk-timer-box">
+        <span id="skTime">01:00</span>
+        <div class="seg sm" id="skDur" role="group" aria-label="每张时长">
+          <button type="button" data-sd="30">30s</button>
+          <button type="button" data-sd="60" class="on" aria-pressed="true">60s</button>
+          <button type="button" data-sd="120">2m</button>
+          <button type="button" data-sd="300">5m</button>
+        </div>
+        <div class="seg sm" id="skTotal" role="group" aria-label="练习张数">
+          <button type="button" data-sc="5">5张</button>
+          <button type="button" data-sc="10" class="on" aria-pressed="true">10张</button>
+          <button type="button" data-sc="20">20张</button>
+          <button type="button" data-sc="0">无限</button>
+        </div>
+      </div>
+      <div class="sk-right">
+        <button type="button" id="skSound" class="icon" aria-pressed="false" title="提示音" aria-label="提示音">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M11 5 6 9H3v6h3l5 4V5z"/>
+            <path class="sk-snd-on" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/>
+            <path class="sk-snd-off" d="m16 9 5 6m0-6-5 6"/>
+          </svg>
+        </button>
+        <button type="button" id="skClose" class="icon" title="结束速写（Esc）" aria-label="结束速写">✕</button>
+      </div>
+    </header>
+    <div class="sk-stage" id="skStage">
+      <div class="sk-frame" id="skFrame">
+        <img id="skImg" alt="" referrerpolicy="no-referrer">
+        <div class="lb-grid" id="skGrid" aria-hidden="true"></div>
+      </div>
+      <div class="sk-done" id="skDone" hidden>
+        <h3>本轮速写完成</h3>
+        <p id="skSummary"></p>
+        <div class="sk-recap" id="skRecap"></div>
+        <div class="sk-done-act">
+          <button type="button" id="skAgain" class="pri">再来一轮</button>
+          <button type="button" id="skExit">返回图库</button>
+        </div>
+      </div>
+    </div>
+    <footer class="sk-foot">
+      <div class="sk-ctrl">
+        <button type="button" id="skPrev" title="上一张（←）" aria-label="上一张">‹</button>
+        <button type="button" id="skPause" class="pri" title="暂停或继续（空格）">暂停</button>
+        <button type="button" id="skNext" title="下一张（→）" aria-label="下一张">›</button>
+      </div>
+      <div class="sk-tools" role="toolbar" aria-label="速写辅助工具">
+        <button type="button" data-skt="flip" aria-pressed="false" title="镜像翻转（H）">镜像</button>
+        <button type="button" data-skt="grid" aria-pressed="false" title="构图参考线（G）">参考线</button>
+        <button type="button" data-skt="gray" aria-pressed="false" title="灰度明度检查（B）">灰度</button>
+        <button type="button" data-skt="pair" aria-pressed="false" title="切换线稿与深度图（V）" hidden>深度图</button>
+        <button type="button" data-skt="fav" aria-pressed="false" title="收藏当前（F）">♡ 收藏</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Global Command Palette -->
+  <div id="cmdPal" hidden role="dialog" aria-modal="true" aria-label="命令面板">
+    <div class="cmd-box">
+      <div class="cmd-in">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="cmdQ" type="search" placeholder="跳转素材库、搜索或执行命令…" autocomplete="off" aria-label="搜索命令或素材库">
+        <kbd>Esc</kbd>
+      </div>
+      <div class="cmd-list" id="cmdList" role="listbox"></div>
+      <div class="cmd-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+        <span><kbd>↵</kbd> 执行</span>
+        <span><kbd>Esc</kbd> 关闭</span>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="tcMaterialsDialog" aria-labelledby="tcMaterialsTitle">
+    <header>
+      <h2 id="tcMaterialsTitle">参考素材</h2>
+      <button id="tcMaterialsClose" type="button">关闭</button>
+    </header>
+    <section>
+      <label><input id="tcMaterialsOnline" type="checkbox"> 开启在线素材</label>
+      <p>访问 PoseWear 官网目录，按需加载图片。提交生成时保存本次选用的可用参考。</p>
+      <button id="tcMaterialsRefresh" type="button">刷新当前图库</button>
+    </section>
+    <section>
+      <h3>下载可离线使用的素材</h3>
+      <p>历代服饰、场景、光影、道具和家具来自 Shisei。其他库通过在线来源按需访问。</p>
+      <label for="tcMaterialCollection">素材库</label>
+      <div class="tc-material-actions">
+        <select id="tcMaterialCollection"></select>
+        <button id="tcMaterialDownload" type="button">下载到本机</button>
+        <button id="tcMaterialCancel" type="button" hidden>停止</button>
+      </div>
+      <progress id="tcMaterialProgress" hidden></progress>
+      <p id="tcMaterialStatus" role="status"></p>
+    </section>
+    <section>
+      <h3>在浏览器查看原站</h3>
+      <div class="tc-material-actions">
+        <button type="button" data-material-source="shisei">Shisei</button>
+        <button type="button" data-material-source="portrait">原站人像</button>
+        <button type="button" data-material-source="original-pose">原站姿势</button>
+        <button type="button" data-material-source="original-depth">原站深度姿势</button>
+        <button type="button" data-material-source="original-costume">原站服装</button>
+        <button type="button" data-material-source="posewear">PoseWear</button>
+        <button type="button" data-material-source="lanpose">澜姿</button>
+      </div>
+    </section>
+  </dialog>
+  <dialog id="tcSettings" aria-labelledby="tcSettingsTitle">
+    <h2 id="tcSettingsTitle">本机生成设置</h2>
+    <p id="tcModelStatus" role="status"></p>
+    <button id="tcChooseModel" type="button">选择模型目录…</button>
+    <p><small>参考图按原比例缩放，每次生成共享 512×512 像素预算。</small></p>
+    <h3>LoRA</h3>
+    <div id="tcAdapters"></div>
+    <div class="tc-settings-actions">
+      <button id="tcCloseSettings" type="button">取消</button>
+      <button id="tcSaveAdapters" class="pri" type="button">完成</button>
+    </div>
+  </dialog>
+  <script src="i18n.js" defer></script>
+  <script src="catalog.js" defer></script>
+  <script src="references.js" defer></script>
+  <script src="palette.js" defer></script>
+  <script src="app.js" defer></script>
+  <script src="sketch.js" defer></script>
+  <script src="command-palette.js" defer></script>
+  <script src="zip.js" defer></script>
+  <script src="extras.js" defer></script>
+  <script src="image-providers.js" defer></script>
+  <script src="board-export.js" defer></script>
+  <script src="studio.js" defer></script>
+  <script src="history.js" defer></script>
+  <script src="materials.js" defer></script>
+</body>
+</html>

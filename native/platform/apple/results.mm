@@ -433,6 +433,12 @@ NSDictionary *to_dictionary(const ModelDescriptor &d) {
             @"schema_v1_field": @"qwen21_reference_size",
             @"schema_v2_field": @"parameters.qwen21_reference_size",
             @"default": @1024,
+            @"shared_pixel_budget": @{
+                @"schema_v1_field": @"qwen21_reference_pixel_budget",
+                @"schema_v2_field": @"parameters.qwen21_reference_pixel_budget",
+                @"maximum": @(qwen21::maximum_reference_pixel_budget), @"alignment": @(qwen21::reference_grid_pixels),
+                @"constraints": @"Eight-step Turbo GPU editing. ConvRot supports streamed weights and demand-paged prefix KV. 32-aligned reference rasters share one total pixel budget."
+            },
             @"sizing": @"approximate squared-pixel area, preserving aspect ratio with 32-aligned dimensions",
             @"base_approximation_sizes": @[@256, @512],
             @"viggle_r128_gpu_edit_opt_in_size": @512,
@@ -444,7 +450,8 @@ NSDictionary *to_dictionary(const ModelDescriptor &d) {
             @"viggle_r128_gpu_edit_constraints": @"512x512 GPU edit, hybrid_mlp_mode=auto, 1...3 references, Viggle v0.2.1 r128, six steps, strength 1, inference_time LoRA, prompt enhancement and DiT cache off; ANE requires its existing full-size or diagnostic routes",
             @"ordinary_lora_reference_size": @1024,
             @"ordinary_lora_supported_reference_sizes": @[@512, @1024],
-            @"ordinary_lora_constraints": @"Default reference size 1024; size 512 requires image.edit with 1...3 references and allow_approximation=true. GPU 512x512, hybrid_mlp_mode=auto, 20...40-step base schedule, one transformer adapter, finite strength -8...8 and inference_time LoRA. Ordinary adapter content identity is checked each request; all paired targets must bind. DiT cache presets are supported subject to their constraints.",
+            @"ordinary_lora_constraints": @"Standard 1024 reference encoding: up to 10 ordered references and eight distinct transformer adapters on ordinary 512x512 GPU, subject to installed memory. Use the 20...40-step base schedule or fixed eight-step Turbo schedule, strength -8...8 and inference_time LoRA. Resized references, DiT cache and experimental routes have separate limits.",
+            @"turbo_gpu_constraints": @"The authored eight-step Turbo schedule accepts up to 10 ordered references on the ordinary non-streamed GPU route; check plan-installation against the selected weights and device before execution. Runtime ANE has separate limits.",
             @"dit_cache_supported_reference_sizes": @[@512, @1024],
             @"dit_cache_constraints": @"conservative/balanced/fast require allow_approximation=true, GPU 512x512, hybrid_mlp_mode=auto, 20...40-step base schedule, prompt enhancement off, base or one ordinary runtime LoRA. Generation uses size 1024 and no references; editing allows 1...3 references at size 1024 or 512. Viggle six-step, ANE and other experimental cache routes are excluded."
         };
@@ -859,7 +866,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         report[@"qwen21_dit_w8a8"] = @(r.qwen21_dit_w8a8);
         report[@"qwen21_dit_smoothquant_convrot"] = @(r.qwen21_dit_smoothquant_convrot);
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
-        report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
+        if (r.qwen21_reference_pixel_budget)
+            report[@"qwen21_reference_pixel_budget"] = @(r.qwen21_reference_pixel_budget);
+        else report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
         report[@"qwen21_dit_cache"] = @(r.qwen21_dit_cache.c_str());
         if(r.qwen21_stream_weight_budget_bytes)
             report[@"qwen21_stream_weight_budget_bytes"] = @(r.qwen21_stream_weight_budget_bytes);
@@ -2076,6 +2085,16 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"qwen_bf16_streaming"] = qwen_bf16_stream_dictionary(*result.qwen_bf16_streaming);
     if (result.qwen_convrot_streaming)
         value[@"qwen_convrot_streaming"] = qwen_convrot_stream_dictionary(*result.qwen_convrot_streaming);
+    if (r.qwen21_reference_pixel_budget) {
+        value[@"qwen21_reference_pixel_budget"] = @(r.qwen21_reference_pixel_budget);
+        value[@"qwen21_reference_pixels"] = @(result.reference_tokens * qwen21::reference_latent_pixels);
+    }
+    if (result.qwen_streamed_reference_kv) {
+        const auto &kv = *result.qwen_streamed_reference_kv;
+        value[@"qwen21_reference_kv"] = @{@"mode": kv.file_backed ? @"disk" : @"memory",
+            @"total_bytes": @(kv.total_bytes), @"active_bytes": @(kv.active_bytes),
+            @"read_bytes": @(kv.read_bytes), @"layer_reads": @(kv.layer_reads)};
+    }
     if (result.qwen_stream_vae_decode_residency) {
         const auto &m = *result.qwen_stream_vae_decode_residency;
         value[@"qwen_stream_vae_decode_residency"] = @{

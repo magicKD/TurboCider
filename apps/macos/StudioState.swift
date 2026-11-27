@@ -116,10 +116,13 @@ struct StudioLoRA: Codable, Sendable, Identifiable, Equatable {
     var strength: Double = 1.0
     var role: String = "transformer"
     var enabled: Bool = true
-    init(id: UUID = UUID(), path: String, strength: Double = 1.0, role: String = "transformer", enabled: Bool = true) {
+    var registration: LibraryLoRA?
+    init(id: UUID = UUID(), path: String, strength: Double = 1.0, role: String = "transformer",
+         enabled: Bool = true, registration: LibraryLoRA? = nil) {
         self.id = id; self.path = path; self.strength = strength; self.role = role; self.enabled = enabled
+        self.registration = registration
     }
-    private enum CodingKeys: String, CodingKey { case id, path, strength, role, enabled }
+    private enum CodingKeys: String, CodingKey { case id, path, strength, role, enabled, registration }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -127,6 +130,7 @@ struct StudioLoRA: Codable, Sendable, Identifiable, Equatable {
         strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? 1.0
         role = try c.decodeIfPresent(String.self, forKey: .role) ?? "transformer"
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        registration = try c.decodeIfPresent(LibraryLoRA.self, forKey: .registration)
     }
 }
 
@@ -431,11 +435,34 @@ struct StudioDraft: Codable, Sendable {
         qwen21CheckpointName?.contains("int8_convrot") == true || qwen21EncoderCheckpointName?.contains("int8_convrot") == true
     }
     var usesQwen21InstalledRecipe: Bool { hasQwen21TurboCheckpoint || hasQwen21ConvrotCheckpoint }
+    var blocksOrdinaryQwenLoRA: Bool { hasQwen21ConvrotCheckpoint && !hasQwen21TurboCheckpoint }
+    func canUseLoRA(_ path: String) -> Bool {
+        !blocksOrdinaryQwenLoRA && !(hasQwen21TurboCheckpoint &&
+            Self.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: path).lastPathComponent))
+    }
+    func canUseLoRA(_ item: LibraryLoRA) -> Bool {
+        let variant: String?
+        let format: String?
+        if modelID == Qwen21Installation.modelID {
+            guard item.component == nil || item.component == "transformer" else { return false }
+            variant = hasQwen21TurboCheckpoint ? Qwen21Installation.turboID : Qwen21Installation.modelID
+            format = qwen21CheckpointName.map { $0.contains("int8_convrot") ? "int8-convrot" : ($0.hasSuffix(".gguf") ? "gguf" : "bf16") }
+        } else {
+            variant = zImageVariant?.id
+            format = zImageVariant?.id
+        }
+        return canUseLoRA(item.path) && item.isCompatible(modelID: modelID, variant: variant, weightFormat: format)
+    }
+    func canUseLoRA(_ lora: StudioLoRA) -> Bool {
+        guard canUseLoRA(lora.path) else { return false }
+        return lora.registration.map { canUseLoRA($0) } ?? true
+    }
     var supportsQwen21ConvrotStreaming: Bool {
         operation == "image.generate" && hasQwen21ConvrotCheckpoint &&
             qwen21CheckpointName?.hasSuffix(".safetensors") == true && qwen21EncoderCheckpointName?.hasSuffix(".safetensors") == true
     }
     mutating func normalizeQwen21CheckpointRecipe(preferStreaming: Bool = true) {
+        for index in loras.indices where !canUseLoRA(loras[index]) { loras[index].enabled = false }
         guard usesQwen21InstalledRecipe else { return }
         if hasQwen21TurboCheckpoint { steps = 8 }
         let streamingCanvas = supportsQwen21ConvrotStreaming && width <= 512 && height <= 512
@@ -452,7 +479,7 @@ struct StudioDraft: Codable, Sendable {
         config.runtimeAneProfileID = nil; config.runtimeDescriptor = nil
         config.qwen21W8A8 = nil; config.compileGPU = nil
         acceleration = config
-        for index in loras.indices { loras[index].enabled = false }
+        if hasQwen21TurboCheckpoint && !activeLoRAs.isEmpty && residency == "streamed" { residency = "component_staged" }
     }
     static let qwen21TurboAdapterNames: Set<String> = [
         "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
@@ -479,17 +506,18 @@ struct StudioDraft: Codable, Sendable {
             return "快速 512 仅支持明确的纯 GPU 设置，不与 ANE 或设备配置联动。"
         }
         if width != 512 || height != 512 { return "快速 512 当前需要 512×512 输出画布。" }
-        if !(1...3).contains(activeAssets.count) { return "快速 512 当前支持 1–3 张参考图；请核对编辑输入。" }
+        let maxReferences = hasQwen21TurboCheckpoint && activeLoRAs.isEmpty ? 10 : 3
+        if !(1...maxReferences).contains(activeAssets.count) { return "快速 512 当前支持 1–\(maxReferences) 张参考图。" }
         if promptEnhance { return "快速 512 暂不与提示词增强组合使用。" }
         if usesPublicStreaming { return "快速 512 暂不支持流式内存档位。" }
+        let validSteps = hasQwen21TurboCheckpoint ? steps == 8 : (20...40).contains(steps)
         if activeLoRAs.isEmpty {
-            return (20...40).contains(steps) ? nil : "基础模型的快速 512 需要 20–40 步，请自行调整步数。"
+            return validSteps ? nil : "请使用当前 Qwen 模型的采样步数。"
         }
         if !hasQwen21TurboAdapter {
-            guard activeLoRAs.count == 1, let adapter = activeLoRAs.first,
-                  adapter.role == "transformer", adapter.strength.isFinite, (-8...8).contains(adapter.strength),
-                  ["auto", "inference_time"].contains(loraStrategy), (20...40).contains(steps) else {
-                return "普通 LoRA 的快速 512 需要单个 Transformer 适配器、强度 −8 到 8、运行时加载与 20–40 步。"
+            guard activeLoRAs.allSatisfy({ $0.role == "transformer" && $0.strength.isFinite && (-8...8).contains($0.strength) }),
+                  ["auto", "inference_time"].contains(loraStrategy), validSteps else {
+                return "快速 512 需要 Transformer 适配器、强度 −8 到 8、运行时加载与当前模型的采样步数。"
             }
             return nil
         }
@@ -516,7 +544,7 @@ struct StudioDraft: Codable, Sendable {
               (try? AccelerationDiscovery.qwen21ManifestUsesW8A8(acceleration?.manifest ?? "")) == true,
               acceleration?.compileGPU != true, profilePath.isEmpty,
               width == 512, height == 512, frames == 1, !audio, (20...40).contains(steps),
-              residency == "component_staged", !usesPublicStreaming,
+              residency == "component_staged", streaming.selection == .off,
               activeAssets.isEmpty, activeLoRAs.isEmpty, !promptEnhance,
               !promptEnhanceEditExperimental, promptEnhancerPath.isEmpty else { return false }
         return Qwen21LowMemoryANEHardware.isEligible(systemJSON: systemJSON ?? NativeEngine.system())
@@ -957,12 +985,10 @@ struct StudioDraft: Codable, Sendable {
         }
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !activeLoRAs.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
+        if !activeLoRAs.allSatisfy(canUseLoRA) { throw NativeFailure(message: "存在与当前模型安装不兼容的 LoRA。") }
         if hasQwen21TurboCheckpoint {
-            guard steps == 8, activeLoRAs.isEmpty, !promptEnhance, qwen21DiTCache == "off" else {
-                throw NativeFailure(message: "Qwen Image 2.1 Turbo 权重使用固定 8 步，请关闭 LoRA、提示词增强和 DiT 缓存。")
-            }
-            guard operation != "image.edit" || activeAssets.count <= 2 else {
-                throw NativeFailure(message: "Qwen Image 2.1 Turbo 当前最多支持 2 张参考图。")
+            guard steps == 8, !hasQwen21TurboAdapter, !promptEnhance, qwen21DiTCache == "off" else {
+                throw NativeFailure(message: "Qwen Image 2.1 Turbo 使用固定 8 步，需关闭六步 Viggle、提示词增强和 DiT 缓存。")
             }
         }
         if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty {
@@ -972,10 +998,19 @@ struct StudioDraft: Codable, Sendable {
                 guard issues.isEmpty else { throw NativeFailure(message: issues.joined(separator: "；") + "。请应用 Turbo 快速设置。") }
                 guard operation != "image.edit" || activeAssets.count <= 3 else { throw NativeFailure(message: "Qwen 2.1 六步 LoRA 编辑最多支持 3 张参考图；更多参考图请关闭 LoRA。") }
             } else {
-                guard activeLoRAs.count == 1 else { throw NativeFailure(message: "普通 Qwen LoRA 当前支持单个适配器。") }
-                guard (20...40).contains(steps) else { throw NativeFailure(message: "普通 Qwen LoRA 使用基础采样，需要 20–40 步；六步采样仅适用于已支持的 Viggle。") }
-                guard width == 512, height == 512, activeAssets.count <= 3 else {
-                    throw NativeFailure(message: "普通 Qwen LoRA 当前支持 512×512、最多 3 张参考图。")
+                guard !blocksOrdinaryQwenLoRA, activeLoRAs.count <= 8 else {
+                    throw NativeFailure(message: "当前 Qwen 安装或适配器数量不支持普通 LoRA。")
+                }
+                guard hasQwen21TurboCheckpoint ? steps == 8 : (20...40).contains(steps) else {
+                    throw NativeFailure(message: "普通 Qwen LoRA 需沿用当前模型的采样步数。")
+                }
+                guard width == 512, height == 512 else {
+                    throw NativeFailure(message: "普通 Qwen LoRA 需要 512×512 画布。")
+                }
+                if qwen21DiTCache != "off" || promptEnhance || residency == "streamed" {
+                    guard activeLoRAs.count == 1, activeAssets.count <= 3 else {
+                        throw NativeFailure(message: "多 LoRA 或四张以上参考图需要纯 GPU、关闭额外缓存和提示词增强，并使用标准参考编码。")
+                    }
                 }
                 guard ["auto", "inference_time"].contains(loraStrategy) else { throw NativeFailure(message: "普通 Qwen LoRA 使用运行时加载，请选择自动或运行时加载。") }
                 guard (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) == "gpu", profilePath.isEmpty else {
@@ -1046,6 +1081,7 @@ struct StudioDraft: Codable, Sendable {
         }
         var request = NativeRequest(prompt: modelID == "seedvr2-3b" ? "" : prompt, output: output.path)
         request.model = modelID; request.operation = operation
+        if hasQwen21TurboCheckpoint { request.model_variant = "qwen-image-2.1-turbo" }
         request.width = width; request.height = height; request.steps = steps
         request.seed = randomSeed ? random() : try fixedSeed()
         request.frames = frames; request.fps = fps; request.audio = audio
@@ -2097,10 +2133,19 @@ final class StudioState: ObservableObject {
             } else { message = "已撤销素材修改，恢复之前的图片顺序与原图选择。" }
         }
     }
-    func addLoRA(_ path: String) {
+    func acceptsLoRA(_ item: LibraryLoRA, modelID: String? = nil) -> Bool {
+        var target = draft
+        if let modelID { target.modelID = modelID }
+        return target.canUseLoRA(item)
+    }
+    func addLoRA(_ item: LibraryLoRA) {
+        addLoRA(item.path, strength: item.defaultStrength ?? 1, role: item.component ?? "transformer",
+                registration: item.manifestID == nil ? nil : item)
+    }
+    func addLoRA(_ path: String, strength: Double = 1, role: String = "transformer", registration: LibraryLoRA? = nil) {
         guard !imageInputsBusy, !path.isEmpty else { return }
-        guard !draft.usesQwen21InstalledRecipe else {
-            message = "此 Qwen 安装的采样方案尚未支持 LoRA。"
+        guard draft.canUseLoRA(path), registration.map({ draft.canUseLoRA($0) }) ?? true else {
+            message = "此 LoRA 与所选模型安装不兼容。"
             return
         }
         let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
@@ -2109,17 +2154,25 @@ final class StudioState: ObservableObject {
         }
         guard draft.loras.count < 8 else { message = "最多可配置 8 个 LoRA 文件。"; return }
         let wasTurbo = draft.qwen21TurboLoRA != nil
-        draft.loras.append(StudioLoRA(path: normalized))
+        if draft.modelID == Qwen21Installation.modelID,
+           StudioDraft.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: normalized).lastPathComponent) || draft.hasQwen21TurboAdapter {
+            for index in draft.loras.indices { draft.loras[index].enabled = false }
+        }
+        draft.loras.append(StudioLoRA(path: normalized, strength: strength, role: role, registration: registration))
         synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
         save()
     }
     func setLoRAEnabled(_ id: UUID, enabled: Bool) {
         guard !imageInputsBusy, let index = draft.loras.firstIndex(where: { $0.id == id }), draft.loras[index].enabled != enabled else { return }
-        guard !enabled || !draft.usesQwen21InstalledRecipe else {
+        guard !enabled || draft.canUseLoRA(draft.loras[index]) else {
             message = "此 Qwen 安装的采样方案尚未支持 LoRA。"
             return
         }
         let wasTurbo = draft.qwen21TurboLoRA != nil
+        if enabled, draft.modelID == Qwen21Installation.modelID,
+           StudioDraft.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: draft.loras[index].path).lastPathComponent) || draft.hasQwen21TurboAdapter {
+            for other in draft.loras.indices where other != index { draft.loras[other].enabled = false }
+        }
         draft.loras[index].enabled = enabled
         synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
         save()
@@ -2134,6 +2187,7 @@ final class StudioState: ObservableObject {
     private func synchronizeQwen21TurboSettings(wasTurbo: Bool) {
         guard draft.modelID == "qwen-image-2.1" else { return }
         if draft.qwen21TurboLoRA != nil { configureQwen21TurboPreset() }
+        else if draft.hasQwen21TurboCheckpoint { draft.normalizeQwen21CheckpointRecipe(preferStreaming: false) }
         else {
             if wasTurbo, draft.steps == 6 { draft.steps = 40 }
             message = wasTurbo && draft.activeLoRAs.isEmpty
@@ -2340,7 +2394,9 @@ final class StudioState: ObservableObject {
     // while allowing the complete ten-reference Qwen21 input contract.
     var imageImportLimit: Int {
         if draft.operation == "video.keyframes" { return draft.assets.count + 2 - draft.activeAssets.count }
-        if draft.modelID == "qwen-image-2.1", !draft.activeLoRAs.isEmpty || draft.qwen21DiTCache != "off" || draft.usesQwen21FastReferenceEncoding { return 3 }
+        if draft.modelID == "qwen-image-2.1",
+           draft.hasQwen21TurboAdapter || draft.qwen21DiTCache != "off" ||
+           (draft.usesQwen21FastReferenceEncoding && (!draft.hasQwen21TurboCheckpoint || !draft.activeLoRAs.isEmpty)) { return 3 }
         return max(8, models.first(where: { $0.id == draft.modelID })?.max_images ?? 8)
     }
     func applyQwen21Example(_ example: Qwen21PromptExample) {

@@ -392,3 +392,11 @@ h3-quant-cache: build
 test-comfyui:
 	@"$(PYTHON)" tests/comfyui/test_gateway.py
 	@"$(COMFYUI_PYTHON)" tests/comfyui/test_nodes.py
+
+.PHONY: test-mini-apps
+test-mini-apps:
+	@TURBOCIDER_APP_TARGETS=mini-apps bash tools/native/build_app.sh
+	@set -eu; work="$$(mktemp -d)"; trap 'rm -rf "$$work"' EXIT; \
+		"$(PYTHON)" tools/mini-apps/pack.py examples/mini-apps/image-sample "$$work/image-sample.tcapp"; \
+		"$${TURBOCIDER_BUILD_OUTPUT_DIR:-$${TURBOCIDER_NATIVE_OUT:-build/native}}/turbocider-mini-app-tests" \
+			assets/mini-apps/people-studio "$$work/image-sample.tcapp"

@@ -1,0 +1,10 @@
+Web interface adapted from PoseWear (https://github.com/atuizz/posewear), revision f9f55db356464af87f97b39f5bb57930ed0cd6df. See LICENSE.txt.
+
+Offline demo images by Shisei / wquguru, CC0 1.0 (SHISEI-CC0.txt).
+Pinned source revision: 6e22358bab73c51eeae0615030635ace199169f8
+samples/demo-person.webp <= https://raw.githubusercontent.com/wquguru/shisei/6e22358bab73c51eeae0615030635ace199169f8/images/photo/w900/std_P015_front.webp
+samples/demo-outfit.webp <= https://raw.githubusercontent.com/wquguru/shisei/6e22358bab73c51eeae0615030635ace199169f8/images/costume/grey/w900/costume_C115_front.webp
+samples/demo-pose-front.webp <= https://raw.githubusercontent.com/wquguru/shisei/6e22358bab73c51eeae0615030635ace199169f8/images/line/w900/std_P020_front.webp
+samples/demo-pose-side.webp <= https://raw.githubusercontent.com/wquguru/shisei/6e22358bab73c51eeae0615030635ace199169f8/images/line/w900/std_P020_diag.webp
+samples/demo-depth-front.webp <= https://raw.githubusercontent.com/wquguru/shisei/6e22358bab73c51eeae0615030635ace199169f8/images/depth/w900/std_P020_front.webp
+samples/demo-depth-side.webp <= https://raw.githubusercontent.com/wquguru/shisei/6e22358bab73c51eeae0615030635ace199169f8/images/depth/w900/std_P020_diag.webp

@@ -73,6 +73,43 @@ import Darwin
         try check(FileManager.default.fileExists(atPath: adapter.path), "Removing LoRA registration deleted weights")
         try FileManager.default.removeItem(at: adapter)
         try rejects { _ = try store.registerLoRA(modelID: "z-image-turbo", path: alias) }
+        let importedFile = external.appendingPathComponent("versioned.safetensors")
+        let tensorHeader = #"{"layer.lora_A.weight":{"dtype":"F16","shape":[1,1],"data_offsets":[0,2]},"layer.lora_B.weight":{"dtype":"F16","shape":[1,1],"data_offsets":[2,4]}}"#
+        let header = Data(tensorHeader.utf8)
+        var headerLength = UInt64(header.count).littleEndian
+        var adapterBytes = withUnsafeBytes(of: &headerLength) { Data($0) }
+        adapterBytes.append(header)
+        adapterBytes.append(Data(repeating: 0, count: 4))
+        try adapterBytes.write(to: importedFile)
+        let digest = try LibraryStore.sha256(importedFile)
+        let manifestFile = external.appendingPathComponent("versioned.tclora.json")
+        func writeManifest(path: String, sha: String, strength: Double = 0.75, version: String = "1.0.0") throws {
+            let body: [String: Any] = [
+                "kind": "turbocider.lora", "schemaVersion": 1, "id": "com.example.style",
+                "version": version, "name": "Style", "artifact": ["path": path, "sha256": sha],
+                "targets": [["modelID": "qwen-image-2.1", "variants": ["qwen-image-2.1-turbo"], "weightFormats": ["int8-convrot"]]],
+                "component": "transformer", "defaultStrength": strength
+            ]
+            try JSONSerialization.data(withJSONObject: body).write(to: manifestFile)
+        }
+        try writeManifest(path: importedFile.lastPathComponent, sha: digest)
+        let imported = try store.importLoRA(manifest: manifestFile)
+        let managed = URL(fileURLWithPath: imported.path)
+        try check(imported.defaultStrength == 0.75 && imported.path != importedFile.path, "LoRA defaults and managed copy")
+        try check(imported.isCompatible(modelID: "qwen-image-2.1", variant: "qwen-image-2.1-turbo", weightFormat: "int8-convrot") &&
+                  !imported.isCompatible(modelID: "qwen-image-2.1", variant: "qwen-image-2.1", weightFormat: "int8-convrot"),
+                  "LoRA target variant was not enforced")
+        try check(try store.importLoRA(manifest: manifestFile).id == imported.id, "Same manifest did not deduplicate")
+        try check(try fileInfo(managed).st_mode & 0o222 == 0, "Managed LoRA should be read-only")
+        try writeManifest(path: importedFile.lastPathComponent, sha: digest, strength: 0.5)
+        try rejects { _ = try store.importLoRA(manifest: manifestFile) }
+        try writeManifest(path: "../versioned.safetensors", sha: digest, version: "2.0.0")
+        try rejects { _ = try store.importLoRA(manifest: manifestFile) }
+        try writeManifest(path: importedFile.lastPathComponent, sha: String(repeating: "0", count: 64), version: "2.0.0")
+        try rejects { _ = try store.importLoRA(manifest: manifestFile) }
+        try check(try store.read().loras?.count == 2, "Invalid LoRA manifest changed the index")
+        try FileManager.default.removeItem(at: importedFile)
+        try imported.verifyArtifact()
         let reopened = try LibraryStore(root: store.root)
         try check(try reopened.read().installations.count == 1, "Index did not persist")
         do {
@@ -133,6 +170,6 @@ import Darwin
         try rejects { _ = try store.managedDirectory("../external") }
         try FileManager.default.createSymbolicLink(at: store.root.appendingPathComponent("unsafe"), withDestinationURL: external)
         try rejects { _ = try store.managedDirectory("unsafe") }
-        print("PASS: persistence, external registration, multiprocess lock, path validation, SHA/size integrity, regular-file hard-link deduplication, shared directory symlinks, atomic publication")
+        print("PASS: persistence, external registration, multiprocess lock, path validation, SHA/size integrity, regular-file hard-link deduplication, shared directory symlinks, atomic publication, LoRA manifest checksum and versioned compatibility")
     }
 }

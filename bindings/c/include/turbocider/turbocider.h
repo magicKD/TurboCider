@@ -42,6 +42,9 @@ int tc_reference_image_render(const char *source_path, const char *preset,
 void tc_buffer_free(uint8_t *);
 int tc_image_prepare_json(const char *input_json, char **result_json, char **error);
 int tc_plan_json(const char *request_json, char **plan_json, char **error);
+/* Resolve the selected installation and apply its memory requirements before opening weights. */
+int tc_plan_for_installation_json(const char *request_json, const char *model_root,
+                                  char **plan_json, char **error);
 /* Read-only public streaming preset query for the embedded App container.
  * This validates request intent and inspects the native catalog/device only;
  * it never loads model weights, creates GPU pools or starts I/O workers. */

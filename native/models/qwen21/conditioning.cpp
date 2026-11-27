@@ -1,5 +1,7 @@
 #include "conditioning.hpp"
 #include "encoder_convrot.hpp"
+#include "reference_budget.hpp"
+#include "sequence.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -22,17 +24,13 @@ Tensor resize_axis(const Tensor &input, int axis, int size) {
     auto fraction = mx::reshape(coordinate - mx::astype(lower, mx::float32), shape);
     return mx::take(input, lower, axis) * (1.f - fraction) + mx::take(input, upper, axis) * fraction;
 }
-}
-Tensor resize_reference(const Tensor &input, int resolution) {
+void validate_reference(const Tensor &input) {
     require(input.ndim() == 4 && input.shape(0) == 1 && input.shape(3) == 4 &&
             input.shape(1) > 0 && input.shape(2) > 0, "Qwen21 reference must be NHWC RGBA");
-    require(resolution >= 32 && resolution <= 2048, "invalid Qwen21 reference resolution");
+}
+
+Tensor resize_reference_to(const Tensor &input, int rw, int rh) {
     const int h = input.shape(1), w = input.shape(2);
-    const double ratio = double(w) / h;
-    const int rw = round_even(std::sqrt(double(resolution) * resolution * ratio) / 32) * 32;
-    const int rh = round_even(std::sqrt(double(resolution) * resolution / ratio) / 32) * 32;
-    require(rh >= 32 && rw >= 32 && int64_t(rh) * rw <= 12845056,
-            "Qwen21 reference aspect ratio exceeds supported area");
     if (rh == h && rw == w) return input;
     auto pixels = mx::astype(input, mx::float32);
     mx::eval(pixels);
@@ -82,6 +80,25 @@ Tensor resize_reference(const Tensor &input, int resolution) {
     }
     return Tensor(output.data(), {1, rh, rw, 4}, mx::float32);
 }
+}
+
+Tensor resize_reference(const Tensor &input, int resolution) {
+    validate_reference(input);
+    require(resolution >= 32 && resolution <= 2048, "invalid Qwen21 reference resolution");
+    const double ratio = double(input.shape(2)) / input.shape(1);
+    const int width = round_even(std::sqrt(double(resolution) * resolution * ratio) / 32) * 32;
+    const int height = round_even(std::sqrt(double(resolution) * resolution / ratio) / 32) * 32;
+    require(height >= 32 && width >= 32 && int64_t(height) * width <= 12845056,
+            "Qwen21 reference aspect ratio exceeds supported area");
+    return resize_reference_to(input, width, height);
+}
+
+Tensor resize_budgeted_reference(const Tensor &input, int grid_quota) {
+    validate_reference(input);
+    const auto [width, height] = fit_reference_pixels(input.shape(2), input.shape(1), grid_quota);
+    return resize_reference_to(input, width, height);
+}
+
 VisionInput vision_input(const Tensor &pixels, int min_pixels, int max_pixels) {
     require(pixels.ndim() == 4 && pixels.shape(0) == 1 && pixels.shape(3) == 3 &&
             pixels.shape(1) > 0 && pixels.shape(2) > 0, "Qwen21 vision expects one NHWC RGB image");
@@ -110,7 +127,7 @@ VisionInput vision_input(const Tensor &pixels, int min_pixels, int max_pixels) {
 }
 
 std::string reference_prompt_template(const std::string &prompt, size_t count) {
-    require(count <= 10, "Qwen21 supports at most ten reference images");
+    require(count <= max_edit_references, "Qwen21 supports at most ten reference images");
     std::string refs;
     for (size_t i = 0; i < count; ++i) {
         if (i) refs += " ";
@@ -125,7 +142,7 @@ MultimodalPrompt assemble_token_rows(const Tokens &tokens,const Tensor &table,in
     require(table.ndim() == 2 && table.shape(0)==int(tokens.ids.size()) && table.shape(1) > 0,
             "invalid Qwen21 gathered embedding rows");
     require(tokens.valid > 0 && tokens.valid == int(tokens.ids.size()), "multimodal prompt must be unpadded");
-    require(refs.size() <= 10 && max_tokens > 0, "invalid Qwen21 reference/token limit");
+    require(refs.size() <= max_edit_references && max_tokens > 0, "invalid Qwen21 reference/token limit");
     constexpr int image_pad = 151655, im_start = 151644;
     int64_t count = tokens.valid;
     size_t levels = refs.empty() ? 0 : refs[0].features.deepstack.size();

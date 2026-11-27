@@ -423,3 +423,43 @@ ANE 还需要与模型、LoRA、强度和总行数匹配的分区：图像行数
 ANE 实测更慢时，可使用输入框旁的“改用 GPU”。此操作不会绕过 1024 tokens 的执行器上限。
 
 真实模型边界验证：`build/native/turbocider-z-image-prompt-tests MODEL OUTPUT`。
+
+
+## Import a LoRA manifest
+
+Open **模型 → LoRA → 导入 LoRA 清单…**, or run
+
+```bash
+turbocider library import-lora /path/to/model-style.tclora.json
+```
+
+Keep the referenced Safetensors file next to the JSON or in a subdirectory.
+TurboCider verifies the checksum and tensor container, then copies the weights
+into the managed model library. Raw-file registration remains available.
+
+```json
+{
+  "kind": "turbocider.lora",
+  "schemaVersion": 1,
+  "id": "com.example.tailoring",
+  "version": "1.0.0",
+  "name": "Tailoring",
+  "artifact": {
+    "path": "weights/tailoring.safetensors",
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "targets": [{
+    "modelID": "qwen-image-2.1",
+    "variants": ["qwen-image-2.1-turbo"],
+    "weightFormats": ["int8-convrot"]
+  }],
+  "component": "transformer",
+  "defaultStrength": 0.75
+}
+```
+
+Replace the illustrated SHA-256 with the file's actual digest. A model target
+may omit variant and format selectors. Compatibility declarations filter the
+model library and mini-app picker. Native execution verifies matching tensor
+names and shapes on binding. Use a new manifest version for changed bytes or
+defaults. The same version and contents can be imported again.

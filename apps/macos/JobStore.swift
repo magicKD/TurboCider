@@ -45,6 +45,19 @@ enum Qwen21MemoryPresentation {
     }
 }
 
+struct MiniAppJobOrigin: Codable, Sendable, Equatable {
+    var appID: String
+    var appVersion: String
+    var appName: String
+    var workflow: String
+    var requestID: UUID
+    var requestDigest: String? = nil
+    var label: String?
+    var context: String? = nil
+    var references: [UUID]
+    var dependencies: [UUID]? = nil
+}
+
 struct NativeJob: Codable, Identifiable, Sendable {
     let id: UUID
     let createdAt: Date
@@ -79,6 +92,7 @@ struct NativeJob: Codable, Identifiable, Sendable {
     /// Optional provenance for independently persisted Playground templates.
     /// Missing in older histories; it does not affect native execution.
     var workflowID: String? = nil
+    var miniAppOrigin: MiniAppJobOrigin? = nil
     /// Immutable App input metadata, in the exact submitted request order.
     /// Native requests still contain paths only. Older/API histories can omit
     /// this snapshot and reuse their current input files as the baseline.
@@ -101,12 +115,13 @@ struct NativeJob: Codable, Identifiable, Sendable {
     }
     var reusableInputAssets: [StudioAsset]? { Self.matchingInputAssets(inputAssets, for: request) }
     var workflowName: String? {
+        if let miniAppOrigin { return miniAppOrigin.appName }
         switch workflowID {
-        case "playground.outfit": return "Playground · 换装"
-        case "playground.identity": return "Playground · 人物一致性"
-        case "playground.face": return "Playground · 换脸"
-        case "playground.outpaint": return "Playground · 扩图"
-        case "playground.transparent": return "Playground · 透明图"
+        case "playground.outfit": return "创作模板 · 换装"
+        case "playground.identity": return "创作模板 · 人物一致性"
+        case "playground.face": return "创作模板 · 换脸"
+        case "playground.outpaint": return "创作模板 · 扩图"
+        case "playground.transparent": return "创作模板 · 透明图"
         default: return nil
         }
     }
@@ -813,11 +828,34 @@ final class NativeJobStore: ObservableObject {
             throw error
         }
     }
+    func enqueueMiniAppJobs(_ batch: [NativeJob]) throws {
+        guard storageError == nil else { throw NativeFailure(message: storageError!) }
+        let ids = Set(batch.map(\.id))
+        guard !batch.isEmpty, ids.count == batch.count, !jobs.contains(where: { ids.contains($0.id) }),
+              batch.allSatisfy({ $0.state == "queued" && $0.miniAppOrigin != nil }) else {
+            throw NativeFailure(message: "应用任务批次无效或已提交。")
+        }
+        let previous = jobs
+        jobs.insert(contentsOf: batch.reversed(), at: 0)
+        do { try persist() }
+        catch { jobs = previous; throw error }
+    }
+    func finishQueuedMiniAppJob(_ id: UUID, error: Error?) throws {
+        guard let index = jobs.firstIndex(where: { $0.id == id && ["queued", "cancelling"].contains($0.state) && $0.miniAppOrigin != nil }) else { return }
+        let previous = jobs[index]
+        jobs[index].state = error == nil ? "cancelled" : "failed"
+        jobs[index].phase = jobs[index].state
+        jobs[index].error = error?.localizedDescription
+        do { try persist() }
+        catch { jobs[index] = previous; throw error }
+    }
+
     func generate(modelURL: URL, request: NativeRequest,
                   streamingRequest: NativeRequestV2? = nil,
                   runtimeOptions: RuntimeImageWorker.Options? = nil,
                   workflowID: String? = nil,
-                  inputAssets: [StudioAsset]? = nil) async throws -> NativeJob {
+                  inputAssets: [StudioAsset]? = nil,
+                  queuedMiniAppJob: UUID? = nil) async throws -> NativeJob {
         guard !busy else { throw NativeFailure(message: "一次只能生成一张图或一个视频。") }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         guard runtimeOptions == nil || streamingRequest == nil,
@@ -825,8 +863,11 @@ final class NativeJobStore: ObservableObject {
             throw NativeFailure(message: "Runtime 实验必须通过独立工作进程提交，不能与流式选择器混用。")
         }
         // Capture before the first suspension; never read a changing UI draft.
+        let queuedJob = queuedMiniAppJob.flatMap { id in jobs.first { $0.id == id && $0.state == "queued" && $0.miniAppOrigin != nil } }
+        guard queuedMiniAppJob == nil || queuedJob != nil else { throw CancellationError() }
         let frozenInputAssets = NativeJob.matchingInputAssets(inputAssets, for: request)
         // Close the reentrancy window before any async plan/session operation.
+        if let queuedJob { activeID = queuedJob.id }
         busy = true; cancelRequested = false; actualRoute = nil
         livePreview = nil; livePreviewStep = 0; livePreviewTotal = request.steps; livePreviewWorkflowID = workflowID
         defer {
@@ -849,8 +890,12 @@ final class NativeJobStore: ObservableObject {
         activePreviewOutput = generationRequest.output
         if streamingRequest == nil && runtimeOptions == nil {
             let planRequest = generationRequest
-            do { _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value }
-            catch { throw error }
+            let installation = modelURL
+            if queuedJob != nil || planRequest.model == "qwen-image-2.1" && planRequest.model_variant != nil {
+                _ = try await Task.detached { try NativeEngine.plan(planRequest, installation: installation) }.value
+            } else {
+                _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value
+            }
         }
         let usesImageWorker = stagedStreamingRequest != nil && ["z-image-turbo", "flux2-klein-4b"].contains(request.model)
         var publicWorkerArtifact: WorkerTerminalEnvelope.Artifact?
@@ -860,11 +905,24 @@ final class NativeJobStore: ObservableObject {
         let publicStreamingIntentJSON = try streamingRequest.map {
             String(decoding: try JSONEncoder().encode($0), as: UTF8.self)
         }
-        let id = UUID(); activeID = id; telemetry = StepTelemetry(); lastSequence = -1; denoiseStart = nil; lastDetailUpdate = 0
-        jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
-                              publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
-                              publicStreamingIntentJSON: publicStreamingIntentJSON, runtimeOptions: runtimeOptions,
-                              workflowID: workflowID, inputAssets: frozenInputAssets), at: 0)
+        let id = queuedJob?.id ?? UUID()
+        activeID = id; telemetry = StepTelemetry(); lastSequence = -1; denoiseStart = nil; lastDetailUpdate = 0
+        if let index = jobs.firstIndex(where: { $0.id == id }) {
+            jobs[index].state = "preparing"
+            jobs[index].phase = "prepare"
+        } else {
+            jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing", phase: "prepare", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
+                                  publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
+                                  publicStreamingIntentJSON: publicStreamingIntentJSON, runtimeOptions: runtimeOptions,
+                                  workflowID: workflowID, inputAssets: frozenInputAssets), at: 0)
+        }
+        if cancelRequested {
+            if let index = jobs.firstIndex(where: { $0.id == id }) {
+                jobs[index].state = "cancelled"; jobs[index].phase = "cancelled"
+                try persist()
+            }
+            throw CancellationError()
+        }
         let start = ContinuousClock.now
         do {
             try persist()

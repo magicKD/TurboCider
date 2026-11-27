@@ -34,7 +34,7 @@ struct PlaygroundView: View {
         return job
     }
     private var submitBlocker: String? {
-        if store.requiresProcessRestart { return "引擎需要重启 App 后才能继续生成。Playground 草稿已保留。" }
+        if store.requiresProcessRestart { return "引擎需要重启 App 后才能继续生成。创作模板草稿已保留。" }
         if let error = store.storageError { return "任务历史保存失败：\(error)" }
         if api.running || api.changing { return "本地 API 正在占用引擎，请先停止 API 服务。" }
         return state.generationBlocker
@@ -103,7 +103,7 @@ struct PlaygroundView: View {
     private var header: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Playground").font(.title2.weight(.semibold))
+                Text("创作模板").font(.title2.weight(.semibold))
                 Text("独立图片工作区").font(.caption).foregroundStyle(.secondary)
             }
             Picker("模板", selection: Binding(get: { state.template }, set: { state.selectTemplate($0) })) {
@@ -111,7 +111,7 @@ struct PlaygroundView: View {
                     Text(template.title).tag(template).accessibilityIdentifier("playgroundTemplate.\(template.rawValue)")
                 }
             }.pickerStyle(.menu).labelsHidden().frame(width: 174).disabled(controlsLocked)
-                .help("选择 Playground 模板")
+                .help("选择创作模板")
                 .accessibilityIdentifier("playgroundTemplatePicker")
             Spacer(minLength: 8)
             Text(state.saved ? "已保存" : "未保存").font(.caption).foregroundStyle(.secondary)
@@ -327,7 +327,7 @@ struct PlaygroundView: View {
                     .accessibilityIdentifier("playgroundUseGPU")
             }
             if state.settings.upscaleAfterGeneration {
-                Text("Playground 不执行生成后自动超分。")
+                Text("创作模板不执行生成后自动超分。")
                     .font(.caption2).foregroundStyle(.orange)
                 Button("关闭自动超分") { state.updateSettings { $0.upscaleAfterGeneration = false } }
                     .accessibilityIdentifier("playgroundDisableAutoUpscale")
@@ -647,7 +647,7 @@ struct PlaygroundView: View {
                 try Task.checkCancellation()
                 guard !api.running, !api.changing, !store.busy else { throw NativeFailure(message: "引擎状态已改变，请稍后重新生成。") }
                 state.recordSubmission(resolved, seed: pair.legacy.seed, template: workflow)
-                guard state.storageError == nil else { throw NativeFailure(message: state.storageError ?? "Playground 保存失败。") }
+                guard state.storageError == nil else { throw NativeFailure(message: state.storageError ?? "创作模板保存失败。") }
                 try Task.checkCancellation()
                 state.generationOwnsStore = true
                 let job = try await store.generate(modelURL: URL(fileURLWithPath: resolved.modelPath),

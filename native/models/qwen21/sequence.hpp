@@ -1,8 +1,11 @@
 #pragma once
 #include <array>
+#include <cstddef>
 #include <vector>
 
 namespace tc::qwen21 {
+inline constexpr std::size_t max_edit_references = 10;
+
 struct ReferenceGeometry {
     int height, width, text_slot;
     bool operator==(const ReferenceGeometry &) const = default;

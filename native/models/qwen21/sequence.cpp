@@ -6,7 +6,7 @@
 namespace tc::qwen21 {
 SequenceGeometry make_sequence_geometry(int text_length, int height, int width,
                                        const std::vector<ReferenceGeometry> &references) {
-    require(text_length > 0 && height > 0 && width > 0 && references.size() <= 10,
+    require(text_length > 0 && height > 0 && width > 0 && references.size() <= max_edit_references,
             "invalid Qwen21 sequence geometry/reference count");
     int previous = 0;
     int64_t tokens = int64_t(height) * width + text_length;

@@ -20,6 +20,10 @@
 #include "../runtime/streaming/resolved_request.hpp"
 #include "../models/ltx_runtime/ltx_gemma_tokenizer.h"
 #include "../models/ltx_runtime/ltx_weights.h"
+#include "../models/qwen21/checkpoint_recipe.hpp"
+#include "../models/qwen21/encoder_convrot.hpp"
+#include "../models/qwen21/memory_policy.hpp"
+#include "../runtime/residency.hpp"
 #import <Metal/Metal.h>
 #include <algorithm>
 #include <cmath>
@@ -607,6 +611,46 @@ int tc_plan_json(const char *r, char **out, char **error) {
                 *error = strdup("unknown native error");
             return 1;
         }
+    }
+}
+int tc_plan_for_installation_json(const char *r, const char *model_root, char **out, char **error) {
+    if (out) *out = nullptr;
+    if (error) *error = nullptr;
+    @autoreleasepool {
+        try {
+            tc::require(r && out && model_root && *model_root, "missing installed plan inputs");
+            auto request = tc::request_from_json(tc::parse_json(r));
+            if (request.model != "qwen-image-2.1") return tc_plan_json(r, out, error);
+            namespace qwen = tc::qwen21;
+            const std::filesystem::path root(model_root);
+            const auto dit = qwen::transformer_checkpoint_source(root);
+            const auto encoder = qwen::encoder_checkpoint_source(root);
+            const auto vae = root / "vae/qwen_image_2.1_vae_bf16.safetensors";
+            tc::require(std::filesystem::is_regular_file(vae) &&
+                        std::filesystem::is_regular_file(root / "processor/tokenizer.json"),
+                        "missing Qwen21 VAE or tokenizer");
+            const auto variant = qwen::turbo_checkpoint(dit) ? "qwen-image-2.1-turbo" : "qwen-image-2.1";
+            tc::require(request.model_variant == "auto" || request.model_variant == variant,
+                        "Qwen21 requested model variant differs from the selected installation");
+            request.model_variant = variant;
+            auto plan = tc::make_plan(request);
+            qwen::validate_checkpoint_recipe(plan.request, dit, tc::convrot_w8a8_available());
+            qwen::apply_installed_gpu_budget(plan, qwen::convrot_checkpoint(dit) ||
+                qwen::convrot_encoder_checkpoint(encoder), dit, encoder, vae);
+            if (qwen::plain_gpu_reference_route(plan.request) && !plan.request.streaming.active())
+                qwen::validate_installed_budget(plan, tc::device_info().physical_memory);
+            NSMutableDictionary *result = [tc::to_dictionary(plan) mutableCopy];
+            result[@"model_variant"] = @(variant);
+            result[@"requested_references"] = @(plan.request.inputs.size());
+            result[@"structural_max_references"] = @(qwen::max_edit_references);
+            if (qwen::plain_gpu_reference_route(plan.request) && !plan.request.streaming.active()) {
+                result[@"system_reserve_bytes"] = @(qwen::installed_system_reserve);
+                result[@"physical_memory_bytes"] = @(tc::device_info().physical_memory);
+            }
+            *out = copy(tc::json(result));
+            return 0;
+        } catch (const std::exception &e) { return fail(error, e); }
+        catch (...) { if (error) *error = strdup("unknown installed plan error"); return 1; }
     }
 }
 static int streaming_options_for_container(const char *r, const char *container, char **out, char **error) {

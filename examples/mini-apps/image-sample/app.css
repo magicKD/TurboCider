@@ -1,0 +1,5 @@
+:root { color-scheme: light dark; font: 15px system-ui; }
+main { max-width: 560px; margin: 32px auto; padding: 0 24px; }
+form, label { display: grid; gap: 8px; }
+textarea { padding: 8px; font: inherit; }
+img { max-width: 100%; margin-top: 16px; border-radius: 10px; }

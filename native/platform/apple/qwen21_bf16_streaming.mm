@@ -65,7 +65,8 @@ void validate_projection(const Fields &fields, const std::string &stem, bool ten
 }
 }
 Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
-        uint32_t layers,uint32_t prefix,uint32_t passes,std::atomic<bool> &cancel,StreamWeightMode mode) {
+        uint32_t layers,uint32_t prefix,uint32_t passes,std::atomic<bool> &cancel,StreamWeightMode mode,
+        bool include_vision) {
     const bool convrot_request = mode != StreamWeightMode::Bf16;
     const bool convrot = mode == StreamWeightMode::ConvRotFloat || mode == StreamWeightMode::ConvRotW8A8;
     const bool tensorops = mode == StreamWeightMode::ConvRotW8A8;
@@ -152,10 +153,10 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
             const auto lo=integer(offsets[0]),hi=integer(offsets[1]);
             require(lo<=hi && hi-lo==bytes && hi<=identity.bytes-header_bytes-8,"Qwen weight stream payload range mismatch");
             intervals.emplace_back(lo,hi);
-            // Base language conditioning does not consume the LM head or visual tower.
-            if (encoder && name.starts_with("model.visual.")) {
+            const bool visual = encoder && name.starts_with("model.visual.");
+            if (visual) {
                 require(dtype == "BF16", "unsupported quantized Qwen3-VL visual tensor: " + name);
-                continue;
+                if (!include_vision) continue;
             }
             if (encoder && !convrot && name == "lm_head.weight") continue;
             const uint64_t offset = 8 + header_bytes + lo;
@@ -174,7 +175,7 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
             if (!name.starts_with(stem)) {
                 const bool is_head = encoder && convrot && name.starts_with("lm_head.");
                 const auto &allowed = is_head ? head_types : fixed_types;
-                if (convrot) {
+                if (convrot && !visual) {
                     const auto found = allowed.find(name);
                     require(found != allowed.end() && found->second == dtype,
                         "unexpected fixed Qwen ConvRot tensor or type: " + name);
@@ -207,13 +208,16 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
     require(!fixed.empty() && (!encoder || (fixed.contains("model.embed_tokens.weight") && fixed.contains("model.norm.weight"))),
         "Qwen weight stream missing resident embedding/norm/fixed fields");
     if (convrot) {
-        require(fixed.size() == fixed_types.size(), "Qwen ConvRot stream fixed source closure incomplete");
+        require(std::all_of(fixed_types.begin(), fixed_types.end(), [&](const auto &entry) { return fixed.contains(entry.first); }),
+                "Qwen ConvRot stream fixed source closure incomplete");
         if (encoder) validate_projection(fixed, "model.embed_tokens", false);
         if (!unused_head.empty()) {
             require(unused_head.size() == head_types.size(), "Qwen ConvRot LM head source closure incomplete");
             validate_projection(unused_head, "lm_head", false);
         }
     }
+    if (include_vision)
+        require(encoder && fixed.contains("model.visual.patch_embed.proj.weight"), "missing streamed Qwen vision fields");
     if (convrot && encoder) {
         plan.embedding = StreamEmbeddingSource{std::move(fixed.at("model.embed_tokens.weight")),
             std::move(fixed.at("model.embed_tokens.weight_scale"))};
@@ -245,6 +249,7 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
             convrot_request ? "original-bf16-convrot-companion-two-slot-v1" : "original-bf16-two-slot-private-v1",{std::move(stage)},
         {{source.logical_id,identity.content_digest,identity.bytes,streaming::SourceIdentityKind::content_sha256}},
         {{"component",encoder ? "encoder" : "denoiser"},{"full_layers",std::to_string(layers)},{"resident_prefix",std::to_string(prefix)}}};
+    if (include_vision) plan.descriptor.workload["vision"] = "true";
     StreamingConfig config;config.enabled=true;config.schema_version=1;config.selection="manual";config.retention="request";
     config.stages[plan.descriptor.stages[0].id]={"streamed",1,2,0,1,1};
     plan.layout=streaming::compile_layout(config,plan.descriptor);

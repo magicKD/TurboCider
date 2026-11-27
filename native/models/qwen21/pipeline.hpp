@@ -87,6 +87,7 @@ class Session final : public ModelSession {
         VisualReference visual;
         Tensor latent;
         int height, width;
+        int grid_quota = 0;
     };
     // One bounded group, evaluated values only; never retains encoder weights.
     // Slots belong to the current prompt and are deliberately not cached here.

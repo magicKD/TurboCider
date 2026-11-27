@@ -31,7 +31,7 @@ struct Bf16StreamPlan {
 // describes only consumed language/fixed/layer fields. No payload allocation.
 Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &,bool encoder,
     uint32_t layers,uint32_t prefix,uint32_t passes,std::atomic<bool> &cancel,
-    StreamWeightMode mode = StreamWeightMode::Bf16);
+    StreamWeightMode mode = StreamWeightMode::Bf16, bool include_vision = false);
 uint64_t bf16_stream_managed_capacity(const Bf16StreamPlan &);
 // Retains an exact raw DiT prefix within both the requested weight budget and
 // the caller's physical-headroom policy. Encoder layers are consumed once.

@@ -13,6 +13,7 @@ struct ConditioningCache {
         Tensor text;
         std::vector<int> image_slots;
         std::vector<ReferenceLatents> reference_latents;
+        int pixel_budget = 0;
     };
     std::optional<Tensor> text;
     std::string prompt;
@@ -32,9 +33,9 @@ struct ConditioningCache {
         return text && prompt == value;
     }
     bool edit_hit(const std::string &value, int size,
-                  const std::vector<std::string> &digests) const {
+                  const std::vector<std::string> &digests, int pixel_budget = 0) const {
         return !digests.empty() && edit && edit->prompt == value &&
-            edit->reference_size == size && edit->image_sha256 == digests;
+            edit->reference_size == size && edit->pixel_budget == pixel_budget && edit->image_sha256 == digests;
     }
 };
 } // namespace tc::qwen21

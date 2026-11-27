@@ -9,6 +9,7 @@
 #include "encoder_convrot.hpp"
 #include "memory_policy.hpp"
 #include "scheduler.hpp"
+#include "streamed_prefix_cache.hpp"
 #include "vae.hpp"
 #include "vae_decode_residency.hpp"
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
@@ -127,7 +128,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         (tiny_decoder ? "tiny_vae" : "bf16_vae");
     auto emit = [&](const char *phase, int completed, int total) { if (event) event(phase, completed, total); };
     auto make_encoder_plan = [&] {
-        auto plan = bf16_stream_plan(encoder_source_, true, 36, encoder_prefix, 1, cancelled, encoder_mode);
+        auto plan = bf16_stream_plan(encoder_source_, true, 36, encoder_prefix, 1, cancelled, encoder_mode, !r.inputs.empty());
         return plan;
     };
     auto make_dit_plan = [&] {
@@ -171,16 +172,66 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
 
     components::TinyPreview preview(r, event, cancelled);
     Tensor text(0.f);
+    std::vector<ReferenceLatents> references;
+    std::vector<Tensor> images;
+    if (!r.inputs.empty()) {
+        const auto image_start = Clock::now();
+        bf16_stream_scope([&] {
+            Weights vae;
+            emit("load_qwen21_vae", 0, 1);
+            vae.load_file(root_ / "vae/qwen_image_2.1_vae_bf16.safetensors");
+            vae.materialize();
+            emit("load_qwen21_vae", 1, 1);
+            VAE encoder(vae);
+            for (size_t i = 0; i < r.inputs.size(); ++i) {
+                checkpoint(cancelled);
+                const int quota = reference_grid_quota(r.qwen21_reference_pixel_budget, int(r.inputs.size()), int(i));
+                auto image = resize_budgeted_reference(load_rgba_image_tensor(r.inputs[i].path), quota);
+                auto latent = encoder.encode(mx::transpose(image * 2.f - 1.f, {0, 3, 1, 2}), event, cancelled);
+                latent = mx::astype(mx::reshape(mx::transpose(latent, {0, 2, 3, 1}), {1, -1, 64}), mx::bfloat16);
+                mx::eval(latent);
+                references.push_back({latent, {image.shape(1) / 16, image.shape(2) / 16, 0}});
+                result.reference_tokens += latent.shape(1);
+                images.push_back(std::move(image));
+            }
+        });
+        require(result.reference_tokens <= r.qwen21_reference_pixel_budget / reference_latent_pixels,
+                "Qwen21 encoded reference tokens exceed the shared pixel budget");
+        mx::clear_cache();
+        result.timings.image = elapsed(image_start);
+    }
     const auto text_start = Clock::now();
     bf16_stream_scope([&] {
         emit("load_qwen21_text", 0, 1);
         Bf16StreamBank bank(make_encoder_plan(), budget, cancelled, allocation_admission);
         emit("load_qwen21_text", 1, 1);
         Tokenizer tokenizer(root_ / "processor");
-        const auto tokens = tokenizer.raw_bounded(reference_prompt_template(r.prompt, 0), Tokenizer::qwen21_limit);
+        const auto tokens = tokenizer.raw_bounded(reference_prompt_template(r.prompt, images.size()), Tokenizer::qwen21_limit);
+        std::vector<VisualReference> visuals;
+        if (!images.empty()) {
+            {
+                VisionEncoder vision(bank.resident());
+                for (const auto &pixels : images) {
+                    checkpoint(cancelled);
+                    const auto alpha = slice_axis(pixels, 3, 3, 4);
+                    const auto rgb = slice_axis(pixels, 3, 0, 3) * alpha + (1.f - alpha);
+                    auto input = vision_input(rgb, reference_grid_pixels, pixels.shape(1) * pixels.shape(2));
+                    auto features = vision.encode(input.patches, input.grid_height, input.grid_width, event, cancelled);
+                    mx::eval(features.merged); mx::eval(features.deepstack);
+                    visuals.push_back({std::move(features), input.grid_height, input.grid_width});
+                }
+            }
+            images.clear();
+            auto fields = bank.resident().sorted_keys();
+            std::erase_if(fields, [](const auto &name) { return !name.starts_with("model.visual."); });
+            bank.release_fixed_fields(fields);
+            mx::clear_cache();
+        }
         auto assembled = convrot_encoder ?
-            assemble_prompt_rows(tokens, bank.embedding_rows(tokens), bank.embedding_vocabulary(), {}) :
-            assemble_prompt(tokens, bank.resident(), {});
+            assemble_prompt_rows(tokens, bank.embedding_rows(tokens), bank.embedding_vocabulary(), visuals) :
+            assemble_prompt(tokens, bank.resident(), visuals);
+        for (size_t i = 0; i < references.size(); ++i)
+            references[i].geometry.text_slot = assembled.image_slots.at(i);
         TextConfig config;
         config.final_norm = false;
         TextEncoder encoder(bank.resident(), config);
@@ -188,7 +239,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
                                   [&](int layer) { bank.retire(layer); });
         bank.begin_pass(0);
         text = assembled.retain(encoder.encode_embeddings(assembled.embeddings, assembled.positions,
-                                                         assembled.embeddings.shape(1), event, cancelled));
+            assembled.embeddings.shape(1), event, cancelled, assembled.deepstack_deltas));
         mx::eval(text);
         require(mx::all(mx::isfinite(text)).item<bool>(), "nonfinite streamed Qwen encoder output");
         bank.finish_pass();
@@ -204,7 +255,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     const int columns = r.width / 16;
     const int image_tokens = rows * columns;
     result.text_tokens = result.valid_text_tokens = text.shape(1);
-    result.total_tokens = text.shape(1) + image_tokens;
+    result.total_tokens = text.shape(1) + result.reference_tokens + image_tokens;
     auto schedule = turbo ? turbo_sigmas(r.width, r.height, r.steps) : sigmas(r.width, r.height, r.steps);
     mx::eval(schedule);
     auto latents = mx::astype(mx::random::normal({1, image_tokens, 64}, mx::float32, mx::random::key(r.seed)), mx::bfloat16);
@@ -228,6 +279,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         auto dit_plan=make_dit_plan();
         const auto time_source=timestep_cache ? dit_plan.lease->descriptor().files.at(0).content_digest : std::string{};
         Bf16StreamBank bank(std::move(dit_plan), budget, cancelled, allocation_admission);
+        std::unique_ptr<StreamedPrefixCache> prefix_file;
         emit("load_qwen21_transformer", 1, 1);
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
         std::unique_ptr<ConvrotStreamAne> hybrid;
@@ -253,6 +305,13 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
 #endif
             bank.retire(layer);
         });
+        const char *prefix_mode_option = std::getenv("TURBOCIDER_QWEN21_STREAM_PREFIX_KV");
+        const std::string_view prefix_mode = prefix_mode_option ? prefix_mode_option : "auto";
+        if (!references.empty())
+            require(prefix_mode == "auto" || prefix_mode == "memory" || prefix_mode == "disk",
+                    "Qwen streamed reference K/V mode must be auto, memory or disk");
+        bool paging_unavailable = false;
+        const uint64_t prefix_bytes = uint64_t(result.text_tokens + result.reference_tokens) * bf16_prefix_bytes_per_token;
         emit("denoise", 0, r.steps);
         const float *sigma = schedule.data<float>();
         std::vector<Transformer::PreparedTimestepCondition> time_conditions;
@@ -304,13 +363,29 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
                     bank.evict_cached_layers();
                     mx::clear_cache();
                 }
+                if (!references.empty() && !prefix_file && !paging_unavailable) {
+                    const auto prefix_admission = ane::admit_streaming_memory(observed,
+                        {uint64_t(4) << 30, observed.memory.physical_bytes}, (uint64_t(1) << 29) + prefix_bytes);
+                    if (prefix_mode == "disk" || (prefix_mode == "auto" &&
+                        (!prefix_admission.allowed() || observed.pressure != ane::StreamingMemoryPressure::Normal))) {
+                        try {
+                            auto storage = std::make_unique<StreamedPrefixCache>(cancelled);
+                            dit.stream_prefix(*storage);
+                            prefix_file = std::move(storage);
+                            mx::clear_cache();
+                        } catch (const std::system_error &) {
+                            if (prefix_mode == "disk") throw;
+                            paging_unavailable = true;
+                        }
+                    }
+                }
             }
             bank.begin_pass(uint32_t(step));
             const auto step_start = Clock::now();
-            const bool reuse = dit.prefix_matches(text, rows, columns, {});
+            const bool reuse = dit.prefix_matches(text, rows, columns, references);
             auto velocity = timestep_cache ?
-                dit.forward(latents, text, sigma[step], rows, columns, true,nullptr,{},&time_conditions.at(size_t(step))) :
-                dit.forward(latents, text, sigma[step], rows, columns, true);
+                dit.forward(latents, text, sigma[step], rows, columns, true,nullptr,references,&time_conditions.at(size_t(step))) :
+                dit.forward(latents, text, sigma[step], rows, columns, true,nullptr,references);
             std::optional<Tensor> preview_estimate;
             if (preview.due(step + 1) && step + 1 < r.steps)
                 preview_estimate = components::flow_preview_estimate(latents, velocity, sigma[step]);
@@ -336,6 +411,17 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         }
 #endif
         bank.finish();
+        if (!references.empty()) {
+            if (prefix_file) {
+                result.qwen_streamed_reference_kv = QwenStreamedPrefixMetrics{true, prefix_file->bytes(),
+                    prefix_file->max_layer_bytes(), prefix_file->read_bytes(), prefix_file->reads()};
+                result.selection += "; request-local file-backed reference prefix KV, one layer per refill";
+            } else {
+                const auto backing = dit.prefix_storage();
+                result.qwen_streamed_reference_kv = QwenStreamedPrefixMetrics{false, backing.logical_bytes, backing.backing_bytes};
+                result.selection += "; compact request-local reference prefix KV";
+            }
+        }
         if (convrot) result.qwen_convrot_streaming->denoiser = bank.metrics();
         else result.qwen_bf16_streaming->denoiser = bank.metrics();
     });

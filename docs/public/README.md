@@ -10,6 +10,7 @@ CLI, C / Swift SDK or local job API.
 | [FLUX.2 Klein 4B preparation](FLUX_PREPARATION.md) | Download and inspect weights, export/compile ANE partitions and plan a first comparison |
 | [Z-Image 512² GPU/ANE](Z_IMAGE_ANE.md) | Use the fastest measured local W8A8 hybrid manifest from the CLI, with its exact qualification limits |
 | [Usage reference](USAGE.md) | Configure requests, model capabilities, LoRA, ANE and SDKs |
+| [Web mini apps](MINI_APPS.md) | Open 人物工作室 or build and install a community app |
 | [Model library](MODEL_LIBRARY.md) | Register, inspect, download and share model components |
 | [RelayVSR 2× image/video super-resolution](RELAYVSR.md) | Run SSD-streamed 2× restoration with existing ConvRot and Flash weights |
 | [SeedVR2 image/video super-resolution](SEEDVR2.md) | Use the SeedVR2 超分 sidebar, source-based resolution shortcuts and native PNG/MP4 restoration |
