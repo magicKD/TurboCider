@@ -35,6 +35,7 @@
   const ITEMS = {};
   const DATA = {};
   const LOAD = {};
+  const BUNDLED = {};
   const materialErrors = new Map();
   let galleryRevision = 0;
 
@@ -82,20 +83,35 @@
     return item.k;
   }
 
+  function bundledCatalog(type) {
+    if (!BUNDLED[type]) {
+      BUNDLED[type] = fetch(CATALOG_FILES[type]).then(response => {
+        if (!response.ok) throw Error(response.status);
+        return response.json();
+      }).catch(error => { delete BUNDLED[type]; throw error; });
+    }
+    return BUNDLED[type];
+  }
+
+  async function demos(type) {
+    const raw = await bundledCatalog(type);
+    return (Array.isArray(raw) ? raw : (raw.items || [])).filter(item => item.demo === true).map((item, index) => {
+      const key = PFX[type] + item.id;
+      return ITEMS[key] ||= { ...item, type, k: key, ord: index, ai: 0 };
+    });
+  }
+
   function load(type) {
     if (LOAD[type]) return LOAD[type];
     const revision = galleryRevision;
-    const bundledRequest = fetch(CATALOG_FILES[type]).then(response => {
-      if (!response.ok) throw Error(response.status);
-      return response.json();
-    });
+    const bundledRequest = bundledCatalog(type);
     const onlineRequest = Promise.resolve(desktop?.materials.catalog(type) || []).catch(error => {
       if (revision === galleryRevision) materialErrors.set(type, error.message);
       return [];
     });
     const request = Promise.all([bundledRequest, onlineRequest]).then(([raw, available]) => {
       if (revision !== galleryRevision) return load(type);
-      const bundled = Array.isArray(raw) ? raw : (raw.items || []);
+      const bundled = (Array.isArray(raw) ? raw : (raw.items || [])).map(item => ({ ...item }));
       const local = desktop ? (LS('wbLocalItems') || []).filter(item => item.type === type)
         .map(item => localEntry(type, item.media)) : [];
       const list = [...bundled, ...local, ...available];
@@ -2419,6 +2435,7 @@
     apply,
     li: () => li,
     load,
+    demos,
     ITEMS,
     DATA,
     thumb,

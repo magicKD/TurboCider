@@ -2,6 +2,13 @@
 
 Open **应用** in the macOS sidebar. **人物工作室** is the bundled app adapted from PoseWear. **创作模板** opens the existing native templates. Community developers can install a local `.tcapp` from **安装应用…**.
 
+The Web workspace offers 人物工作室 and installed community packages to paired
+or direct browsers. It uses the same workflows, model configuration and
+material sources as the desktop host. Browser uploads, settings and results
+belong to that workspace. An authorized manager can install community packages
+and change the official app's shared material settings. For setup, see
+[Web workspace](LOCAL_API.md#web-workspace).
+
 ## 人物工作室
 
 Use the gallery, full workbench or floating workbench to select references. The full workbench also accepts local person, clothing, pose, depth, expression, hair, scene, lighting, prop and furniture images.
@@ -46,7 +53,7 @@ python3 tools/mini-apps/pack.py examples/mini-apps/image-sample /tmp/image-sampl
 
 Use an external script file for app code. UTF-8 files have relative ASCII package paths. The host accepts HTML, JavaScript, CSS, JSON, text, supported raster images and WOFF fonts. ZIPs may use stored or deflated entries. The installer validates paths, entry limits, CRC values and expanded size. The package limit is 64 MiB and 1,024 entries. Users confirm a package's identity and permissions on installation or replacement.
 
-The first release accepts locally installed packages. Each WebView has its own offline runtime and scoped host storage. The host serves its package and media URLs. It blocks external navigation and resource requests. The built-in People Studio can request material data through a dedicated host service that fetches PoseWear's published catalog and media from approved source URLs. The host verifies catalog fingerprints and parses data without executing the upstream scripts. Install updates from sources you trust because the replacement uses that app's scoped data.
+The Mac WebView has its own offline runtime and scoped host storage. In a browser, the community package runs in a sandboxed iframe with an opaque origin. The parent forwards SDK messages for the current app and browser session. Use the SDK for host media and generation, and relative URLs for package resources. The built-in People Studio can request material data through a dedicated host service that fetches PoseWear's published catalog and media from approved source URLs. The host verifies catalog fingerprints and parses data without executing the upstream scripts. Install updates from sources you trust because the replacement uses that app's scoped data.
 
 ## SDK v1
 

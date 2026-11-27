@@ -29,6 +29,7 @@ Image results are warm medians. The ComfyUI table reuses TurboCider's best recor
 
 ## Features
 
+- **Web workspace** for image and video creation, PoseWear, materials and jobs over the local network. The browser, macOS App and local HTTP API share one task queue. [Web setup](docs/public/LOCAL_API.md#web-workspace)
 - **Image and video creation:** text-to-image, image transforms, reference editing, text-to-video and image-to-video, according to each model's capabilities.
 - **LoRA and generation controls:** manage adapters, strengths, seeds, dimensions and steps, with supported runtime or in-memory merge strategies.
 - **Local API:** start an HTTP service from the App; discover models, validate requests, submit jobs, track progress, cancel and download results. A Unix socket service, Python HTTP client and C / Swift SDK are also available.
@@ -42,7 +43,8 @@ Image results are warm medians. The ComfyUI table reuses TurboCider's best recor
 
 ## API and ComfyUI
 
-Open **Local API** in the App and click **Start**. The default endpoint is `http://127.0.0.1:8765`; the page includes curl and Python examples.
+Open **本地 API** in the App and click **启动 HTTP API**. The default endpoint is
+`http://127.0.0.1:8765`. The page includes curl and Python examples.
 
 ```sh
 curl http://127.0.0.1:8765/v1/health

@@ -52,6 +52,7 @@ gaps. Report failures and skips with their reasons.
 | Streaming API contracts | `make test-streaming-contract` | Native build and its dependencies |
 | Runtime ANE host contracts | `make test-runtime-ane-host` | Project environment and host fixtures; no model inference |
 | App state and interaction | `make test-app` | Built Swift test executables, macOS session and clipboard access |
+| LAN Web workspace | `make test-lan-web` | Native library, no model weights. Tests pairing and direct access, host permissions, image preparation, ranged video and shared queue admission |
 | Desktop media history and image-to-video handoff | `TURBOCIDER_APP_TARGETS=desktop-media make build-app`, then `build/native/turbocider-desktop-media-tests` | Native build and tiny local image fixtures; no model weights or inference |
 | LTX first/last frame workflow | `build/native/turbocider-keyframe-workflow-tests` | Same desktop-media build; explicit roles, private copies, swap/undo, draft migration, history reuse and cancellation |
 | LTX endpoint positions | `python3 tests/native/test_ltx_keyframe_positions.py` | Clang; no model inference |
@@ -60,6 +61,17 @@ gaps. Report failures and skips with their reasons.
 | Model library and downloads | `make test-library` | Built test executables and tiny local HTTP fixtures |
 | Local API lifecycle | `make test-api` | Built executables, local Unix sockets and child processes |
 | ComfyUI nodes | `make test-comfyui` | Existing torch/NumPy/Pillow environment; use `COMFYUI_PYTHON` for node tests |
+
+For browser acceptance, start `turbocider-lan-web-tests PEOPLE_STUDIO WEB_STUDIO
+--serve STATE QWEN_TURBO_INSTALLATION lan` from the native build, then run
+`node tests/integration/lan_web_browser.cjs STATE PEOPLE_STUDIO`. Use a fresh
+state directory under `build/` for screenshots, session state and outputs.
+The script requires Playwright, WebKit and Chromium. Set
+`TURBOCIDER_PLAYWRIGHT` to the path of `playwright-core` if Node cannot resolve
+it, and `TURBOCIDER_CHROME` to an installed Chrome executable if needed.
+Set `TURBOCIDER_WEB_TEST_LTX` or `TURBOCIDER_WEB_TEST_RELAY` in both processes
+to exercise real video generation or video upscaling with the corresponding
+model directory.
 
 Native contract tests that support `TURBOCIDER_TEST_NATIVE_DIR`, such as
 [test_contract.py](native/test_contract.py), can select an isolated matching build:

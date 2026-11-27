@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Foundation
+import ImageIO
 import UniformTypeIdentifiers
 
 struct MiniAppReference: Codable, Sendable {
@@ -103,6 +104,16 @@ struct MiniAppShot: Codable, Sendable {
 
 @MainActor
 final class MiniAppRuntime: ObservableObject {
+    private struct Scope: Hashable, Sendable {
+        let app: String
+        let device: UUID?
+
+        func owns(_ origin: MiniAppJobOrigin?) -> Bool { origin?.appID == app && origin?.deviceID == device }
+        func mediaURL(_ id: UUID) -> String {
+            if device != nil { return "/apps/\(app)/_media/\(id.uuidString)" }
+            return "tcapp://\(app)/_media/\(id.uuidString)"
+        }
+    }
     struct Failure: LocalizedError {
         let code: String
         let message: String
@@ -121,6 +132,7 @@ final class MiniAppRuntime: ObservableObject {
         let shots: [MiniAppShot]
     }
     private struct Plan: Sendable {
+        let scope: Scope
         let appDigest: String
         let requestID: UUID
         let requestDigest: String
@@ -131,9 +143,8 @@ final class MiniAppRuntime: ObservableObject {
     private struct DataRequest: Decodable { let data: String; let name: String? }
     private struct PathRequest: Decodable { let path: String }
     private struct StorageRequest: Decodable { let key: String; let value: String? }
-    private static let maxImageBytes = 16 * 1024 * 1024
+    static let maxImageBytes = 16 * 1024 * 1024
     private static let maxExportBytes = 24 * 1024 * 1024
-    private static let maximumQueued = 32
 
     @Published private(set) var packages: [MiniAppPackage] = []
     @Published var message: String?
@@ -141,17 +152,15 @@ final class MiniAppRuntime: ObservableObject {
     private let peopleMaterials: PeopleStudioMaterials
     private var appsFolder: URL { root.appendingPathComponent("packages", isDirectory: true) }
     let store: NativeJobStore
-    private let studio: StudioState
-    private var media: [String: [UUID: MediaRecord]] = [:]
-    private var importers: [String: StudioAssetImporter] = [:]
+    let studio: StudioState
+    private var media: [Scope: [UUID: MediaRecord]] = [:]
+    private var importers: [Scope: StudioAssetImporter] = [:]
     private var plans: [UUID: Plan] = [:]
-    private var queueTask: Task<Void, Never>?
-    private var planningApps = Set<String>()
-    private var importingApps = Set<String>()
+    private var planningApps = Set<Scope>()
+    private var importingApps = Set<Scope>()
     private var panelActive = false
     private var configuredTurboModel: String?
     private var modelPreference: URL { root.appendingPathComponent("qwen-turbo.json") }
-    var hasPendingJobs: Bool { store.jobs.contains { $0.state == "queued" && $0.miniAppOrigin != nil } }
 
     init(store: NativeJobStore, studio: StudioState, builtIn: URL?, materials: PeopleStudioMaterials? = nil) {
         self.store = store
@@ -190,14 +199,14 @@ final class MiniAppRuntime: ObservableObject {
         try archive.write(to: appsFolder.appendingPathComponent(package.id + ".tcapp"), options: .atomic)
         packages.removeAll { $0.id == package.id }
         packages.append(package)
-        plans = plans.filter { $0.value.jobs.first?.miniAppOrigin?.appID != package.id }
+        plans = plans.filter { $0.value.scope.app != package.id }
     }
 
     func uninstall(_ package: MiniAppPackage) throws {
         guard !package.builtIn else { return }
         try FileManager.default.removeItem(at: appsFolder.appendingPathComponent(package.id + ".tcapp"))
         packages.removeAll { $0.id == package.id }
-        plans = plans.filter { $0.value.jobs.first?.miniAppOrigin?.appID != package.id }
+        plans = plans.filter { $0.value.scope.app != package.id }
     }
 
     private func library() throws -> LibraryIndex {
@@ -256,38 +265,42 @@ final class MiniAppRuntime: ObservableObject {
         return true
     }
 
-    private func dataDirectory(_ app: String) -> URL { root.appendingPathComponent("data/\(app)", isDirectory: true) }
-    private func records(_ app: String) throws -> [UUID: MediaRecord] {
-        if let cached = media[app] { return cached }
-        let file = dataDirectory(app).appendingPathComponent("media.json")
+    private func dataDirectory(_ scope: Scope) -> URL {
+        let path = scope.device.map { "browser/\($0.uuidString)/\(scope.app)" } ?? "data/\(scope.app)"
+        return root.appendingPathComponent(path, isDirectory: true)
+    }
+    private func records(_ scope: Scope) throws -> [UUID: MediaRecord] {
+        if let cached = media[scope] { return cached }
+        let file = dataDirectory(scope).appendingPathComponent("media.json")
         let value = FileManager.default.fileExists(atPath: file.path)
             ? try JSONDecoder().decode([UUID: MediaRecord].self, from: Data(contentsOf: file)) : [:]
-        media[app] = value
+        media[scope] = value
         return value
     }
 
-    private func descriptor(_ asset: StudioAsset, id: UUID, app: String) -> [String: Any] {
-        ["id": id.uuidString, "url": "tcapp://\(app)/_media/\(id.uuidString)",
+    private func descriptor(_ asset: StudioAsset, id: UUID, scope: Scope) -> [String: Any] {
+        ["id": id.uuidString, "url": scope.mediaURL(id),
          "name": asset.name, "width": asset.width, "height": asset.height]
     }
 
-    private func resultAsset(id: UUID, app: String) -> StudioAsset? {
-        guard let job = store.jobs.first(where: { $0.id == id && $0.miniAppOrigin?.appID == app }), job.hasOutput else { return nil }
+    private func resultAsset(id: UUID, scope: Scope) -> StudioAsset? {
+        guard let job = store.jobs.first(where: { $0.id == id && scope.owns($0.miniAppOrigin) }), job.hasOutput else { return nil }
         let output = URL(fileURLWithPath: job.request.output)
         return StudioAsset(path: output.path, name: output.lastPathComponent, width: job.request.width, height: job.request.height)
     }
 
-    private func asset(id: UUID, app: String) throws -> StudioAsset {
-        guard let record = try records(app)[id]?.asset ?? resultAsset(id: id, app: app),
+    private func asset(id: UUID, scope: Scope) throws -> StudioAsset {
+        guard let record = try records(scope)[id]?.asset ?? resultAsset(id: id, scope: scope),
               FileManager.default.isReadableFile(atPath: record.path) else {
             throw Failure("mediaNotFound", "找不到此应用的图片。请重新导入。")
         }
         return record
     }
 
-    func mediaFile(_ id: UUID, package: MiniAppPackage) throws -> (URL, String) {
+    func mediaFile(_ id: UUID, package: MiniAppPackage, device: UUID? = nil, exporting: Bool = false) throws -> (URL, String) {
         try requireCurrent(package)
-        let asset = try asset(id: id, app: package.id)
+        if exporting { try authorize(.exportMedia, package) }
+        let asset = try asset(id: id, scope: Scope(app: package.id, device: device))
         let path = URL(fileURLWithPath: asset.path).resolvingSymlinksInPath()
         let type = MiniAppPackage.mimeTypes[path.pathExtension.lowercased()]
             ?? UTType(filenameExtension: path.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
@@ -315,7 +328,7 @@ final class MiniAppRuntime: ObservableObject {
         }
     }
 
-    private func materialCall(_ method: String, payload: [String: Any], app: MiniAppPackage) async throws -> Any {
+    private func materialCall(_ method: String, payload: [String: Any], app: MiniAppPackage, scope: Scope) async throws -> Any {
         try authorizePeopleMaterials(app)
         switch method {
         case "materials.status":
@@ -341,11 +354,12 @@ final class MiniAppRuntime: ObservableObject {
             guard let id = payload["id"] as? String else { throw Failure("invalidRequest", "无效的素材标识。") }
             let image = try await peopleMaterials.sourceImage(id, full: true, forReference: true)
             let digest = SHA256.hash(data: image.data).map { String(format: "%02x", $0) }.joined()
-            return try await ingest(image.data, name: image.name, bundled: "material/\(id)/\(digest)", app: app)
+            return try await ingest(image.data, name: image.name, bundled: "material/\(id)/\(digest)", app: app, scope: scope)
         case "materials.openSource":
             guard let id = payload["source"] as? String, let page = PeopleMaterialSources.pages[id] else {
                 throw Failure("invalidRequest", "无效的素材来源入口。")
             }
+            if scope.device != nil { return page.absoluteString }
             return NSWorkspace.shared.open(page)
         default:
             throw Failure("unknownMethod", "应用 SDK 没有此方法。")
@@ -371,21 +385,21 @@ final class MiniAppRuntime: ObservableObject {
         }
     }
 
-    private func ingest(_ data: Data, name: String?, bundled: String? = nil, app: MiniAppPackage) async throws -> [String: Any] {
+    private func ingest(_ data: Data, name: String?, bundled: String? = nil, app: MiniAppPackage, scope: Scope) async throws -> [String: Any] {
         guard (1...Self.maxImageBytes).contains(data.count) else {
             throw Failure("mediaLimit", "单张图片上限为 16 MiB。")
         }
-        var existing = try records(app.id)
+        var existing = try records(scope)
         if let bundled, let found = existing.first(where: { $0.value.bundledPath == bundled && $0.value.bundledDigest == app.digest }) {
-            return descriptor(found.value.asset, id: found.key, app: app.id)
+            return descriptor(found.value.asset, id: found.key, scope: scope)
         }
-        guard existing.count < 512, importingApps.insert(app.id).inserted else {
+        guard existing.count < 512, importingApps.insert(scope).inserted else {
             throw Failure("mediaLimit", "应用图片数量已达上限，或正在导入另一张图片。")
         }
-        defer { importingApps.remove(app.id) }
-        let dir = dataDirectory(app.id)
-        let importer = importers[app.id] ?? StudioAssetImporter(directory: dir.appendingPathComponent("media"))
-        importers[app.id] = importer
+        defer { importingApps.remove(scope) }
+        let dir = dataDirectory(scope)
+        let importer = importers[scope] ?? StudioAssetImporter(directory: dir.appendingPathComponent("media"))
+        importers[scope] = importer
         let accounted = existing.values.reduce(0) { total, record in
             total + ((try? URL(fileURLWithPath: record.asset.path).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
@@ -402,23 +416,23 @@ final class MiniAppRuntime: ObservableObject {
         asset.name = String(URL(fileURLWithPath: name ?? "导入图片").lastPathComponent.prefix(160))
         existing[asset.id] = MediaRecord(asset: asset, bundledPath: bundled, bundledDigest: bundled == nil ? nil : app.digest)
         try JSONEncoder().encode(existing).write(to: dir.appendingPathComponent("media.json"), options: .atomic)
-        media[app.id] = existing
+        media[scope] = existing
         saved = true
-        return descriptor(asset, id: asset.id, app: app.id)
+        return descriptor(asset, id: asset.id, scope: scope)
     }
 
-    func storageSnapshot(_ app: MiniAppPackage) -> [String: String] {
-        let file = dataDirectory(app.id).appendingPathComponent("storage.json")
+    func storageSnapshot(_ app: MiniAppPackage, device: UUID? = nil) -> [String: String] {
+        let file = dataDirectory(Scope(app: app.id, device: device)).appendingPathComponent("storage.json")
         guard package(app.id)?.digest == app.digest, let data = try? Data(contentsOf: file), data.count <= 512 * 1024 else { return [:] }
         return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
     }
 
-    private func storage(_ request: StorageRequest, app: MiniAppPackage, write: Bool) throws -> Any {
+    private func storage(_ request: StorageRequest, scope: Scope, write: Bool) throws -> Any {
         let key = request.key
         guard (1...80).contains(key.utf8.count), MiniAppPackage.validPath(key), !key.contains("/") else {
             throw Failure("invalidRequest", "应用存储键无效。")
         }
-        let dir = dataDirectory(app.id)
+        let dir = dataDirectory(scope)
         let file = dir.appendingPathComponent("storage.json")
         var values: [String: String] = FileManager.default.fileExists(atPath: file.path)
             ? try JSONDecoder().decode([String: String].self, from: Data(contentsOf: file)) : [:]
@@ -439,6 +453,7 @@ final class MiniAppRuntime: ObservableObject {
 
     private func jobInfo(_ job: NativeJob) -> [String: Any] {
         let origin = job.miniAppOrigin!
+        let scope = Scope(app: origin.appID, device: origin.deviceID)
         var info: [String: Any] = ["id": job.id.uuidString, "requestID": origin.requestID.uuidString,
             "state": job.state, "phase": job.phase, "completed": job.completed, "total": job.total,
             "workflow": origin.workflow, "label": origin.label ?? "", "seed": job.request.seed,
@@ -454,8 +469,8 @@ final class MiniAppRuntime: ObservableObject {
             }
         }
         if let error = job.error { info["error"] = Self.redact(error) }
-        if let result = resultAsset(id: job.id, app: origin.appID) {
-            info["output"] = descriptor(result, id: job.id, app: origin.appID)
+        if let result = resultAsset(id: job.id, scope: scope) {
+            info["output"] = descriptor(result, id: job.id, scope: scope)
         }
         return info
     }
@@ -469,32 +484,75 @@ final class MiniAppRuntime: ObservableObject {
         catch { throw Failure("invalidRequest", "应用请求参数无效。") }
     }
 
-    func call(_ method: String, payload: [String: Any], app: MiniAppPackage) async throws -> Any {
+    func importBrowserImage(_ data: Data, name: String?, app: MiniAppPackage, device: UUID) async throws -> [String: Any] {
         try requireCurrent(app)
-        if method.hasPrefix("materials.") { return try await materialCall(method, payload: payload, app: app) }
+        try authorize(.importMedia, app)
+        guard !data.isEmpty, data.count <= Self.maxImageBytes else {
+            throw Failure("invalidMedia", "应用只接收不超过 16 MiB 的图片。")
+        }
+        let compatible = try await Task.detached { try Self.browserBitmap(data) }.value
+        try Task.checkCancellation()
+        try requireCurrent(app)
+        return try await ingest(compatible, name: name, app: app, scope: Scope(app: app.id, device: device))
+    }
+
+    private nonisolated static func browserBitmap(_ bytes: Data) throws -> Data {
+        let supported = Set(["public.png", "public.jpeg", "org.webmproject.webp", "com.compuserve.gif", "public.avif"])
+        guard let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let type = CGImageSourceGetType(source) as String?,
+              CGImageSourceGetCount(source) == 1,
+              let info = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = info[kCGImagePropertyPixelWidth] as? Int, let height = info[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, Double(width) * Double(height) <= 80_000_000 else {
+            throw Failure("invalidMedia", "请选择有效的单帧图片，限 8000 万像素。")
+        }
+        if supported.contains(type) { return bytes }
+        // Normalize phone HEIC and other ImageIO bitmaps for Chromium/WebKit.
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 1600]
+        let data = NSMutableData()
+        guard type != "public.svg-image", let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              let output = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+            throw Failure("invalidMedia", "无法将这张照片转换为网页支持的图片。")
+        }
+        CGImageDestinationAddImage(output, image, nil)
+        guard CGImageDestinationFinalize(output) else { throw Failure("invalidMedia", "转换图片失败。") }
+        return data as Data
+    }
+
+    func call(_ method: String, payload: [String: Any], app: MiniAppPackage, device: UUID? = nil,
+              managesHost: Bool = false) async throws -> Any {
+        try requireCurrent(app)
+        let scope = Scope(app: app.id, device: device)
+        if device != nil && (["models.chooseTurbo", "media.import", "media.export"].contains(method) ||
+            !managesHost && ["materials.online", "materials.download", "materials.cancel"].contains(method)) {
+            throw Failure("permissionDenied", "请使用此浏览器的文件操作，或在 Mac 上管理模型与素材库。")
+        }
+        if method.hasPrefix("materials.") { return try await materialCall(method, payload: payload, app: app, scope: scope) }
         switch method {
         case "handshake":
             return ["sdkVersion": MiniAppPackage.sdkVersion, "appID": app.id, "appVersion": app.manifest.version,
                     "permissions": app.manifest.permissions.map(\.rawValue), "maxReferences": 10, "maxBatchSize": 12,
                     "supportsDependentShots": true]
         case "storage.get", "storage.set":
-            return try storage(decode(StorageRequest.self, payload), app: app, write: method == "storage.set")
+            return try storage(decode(StorageRequest.self, payload), scope: scope, write: method == "storage.set")
         case "media.bundled":
             let path = try decode(PathRequest.self, payload).path
             guard let data = app.files[path], MiniAppPackage.imageExtensions.contains((path as NSString).pathExtension.lowercased()) else {
                 throw Failure("mediaNotFound", "应用包中找不到这张位图。")
             }
-            return try await ingest(data, name: path, bundled: path, app: app)
+            return try await ingest(data, name: path, bundled: path, app: app, scope: scope)
         case "media.import":
             try authorize(.importMedia, app)
             let input = try decode(DataRequest.self, payload)
             guard input.data.utf8.count <= 4 * ((Self.maxImageBytes + 2) / 3), let data = Data(base64Encoded: input.data) else {
                 throw Failure("invalidMedia", "图片数据无效或超过导入上限。")
             }
-            return try await ingest(data, name: input.name, app: app)
+            return try await ingest(data, name: input.name, app: app, scope: scope)
         case "media.get":
             let id = try decode(IDRequest.self, payload).id
-            return try descriptor(asset(id: id, app: app.id), id: id, app: app.id)
+            return try descriptor(asset(id: id, scope: scope), id: id, scope: scope)
         case "media.export":
             try authorize(.exportMedia, app)
             if payload["id"] != nil {
@@ -526,19 +584,18 @@ final class MiniAppRuntime: ObservableObject {
             }
         case "workflow.plan":
             try authorize(.generate, app)
-            return try await prepare(decode(PrepareRequest.self, payload), app: app)
+            return try await prepare(decode(PrepareRequest.self, payload), app: app, scope: scope)
         case "jobs.submit":
             try authorize(.generate, app)
-            return try submit(decode(IDRequest.self, payload).id, app: app)
+            return try submit(decode(IDRequest.self, payload).id, app: app, scope: scope)
         case "jobs.get", "jobs.cancel", "jobs.remove":
             try authorize(.generate, app)
             let id = try decode(IDRequest.self, payload).id
-            guard let job = store.jobs.first(where: { $0.id == id && $0.miniAppOrigin?.appID == app.id }) else {
+            guard let job = store.jobs.first(where: { $0.id == id && scope.owns($0.miniAppOrigin) }) else {
                 throw Failure("jobNotFound", "找不到此应用的任务。")
             }
             if method == "jobs.cancel" {
-                if store.activeJob?.id == id { store.cancel() }
-                else { try store.finishQueuedMiniAppJob(id, error: nil) }
+                try store.cancelGeneration(id)
                 return true
             }
             if method == "jobs.remove" {
@@ -548,7 +605,7 @@ final class MiniAppRuntime: ObservableObject {
             return jobInfo(job)
         case "jobs.list":
             try authorize(.generate, app)
-            return Array(store.jobs.lazy.filter { $0.miniAppOrigin?.appID == app.id }.prefix(200).map(jobInfo))
+            return Array(store.jobs.lazy.filter { scope.owns($0.miniAppOrigin) }.prefix(200).map(jobInfo))
         default: throw Failure("unknownMethod", "应用 SDK 没有此方法。")
         }
     }
@@ -573,23 +630,23 @@ final class MiniAppRuntime: ObservableObject {
         return true
     }
 
-    private func prepare(_ input: PrepareRequest, app: MiniAppPackage) async throws -> [String: Any] {
+    private func prepare(_ input: PrepareRequest, app: MiniAppPackage, scope: Scope) async throws -> [String: Any] {
         guard (1...12).contains(input.shots.count), MiniAppPackage.validPath(input.workflow),
               !input.workflow.contains("/"), input.workflow.utf8.count <= 80,
               !store.externalServiceActive, !store.requiresProcessRestart,
-              planningApps.insert(app.id).inserted else {
+              planningApps.insert(scope).inserted else {
             throw Failure("notReady", "应用计划参数无效，或 GPU 正被本地 API 占用。")
         }
-        defer { planningApps.remove(app.id) }
+        defer { planningApps.remove(scope) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let requestDigest = SHA256.hash(data: try encoder.encode(input)).map { String(format: "%02x", $0) }.joined()
-        let submitted = submittedJobs(requestID: input.requestID, app: app.id)
+        let submitted = submittedJobs(requestID: input.requestID, scope: scope)
         if !submitted.isEmpty {
             guard submitted.allSatisfy({ $0.miniAppOrigin?.requestDigest == requestDigest }) else {
                 throw Failure("requestConflict", "这个提交 ID 已用于另一份请求。")
             }
-            return preview(app: app, requestID: input.requestID, requestDigest: requestDigest,
+            return preview(app: app, scope: scope, requestID: input.requestID, requestDigest: requestDigest,
                            jobs: submitted, estimates: submitted.map { _ in [:] })
         }
         let selection = try installation(input.engine ?? Qwen21Installation.turboID)
@@ -608,7 +665,7 @@ final class MiniAppRuntime: ObservableObject {
                 var bound: StudioAsset
                 switch (reference.mediaID, reference.shotIndex) {
                 case (let id?, nil):
-                    bound = try asset(id: id, app: app.id)
+                    bound = try asset(id: id, scope: scope)
                     references.append(id)
                 case (nil, let index?) where jobs.indices.contains(index):
                     let parent = jobs[index]
@@ -649,14 +706,15 @@ final class MiniAppRuntime: ObservableObject {
                                   total: candidate.steps, elapsed: 0, modelPath: selection.0.path,
                                   miniAppOrigin: MiniAppJobOrigin(appID: app.id, appVersion: app.manifest.version, appName: app.manifest.name,
                                       workflow: input.workflow, requestID: input.requestID, requestDigest: requestDigest,
-                                      label: shot.label, context: shot.context, references: references, dependencies: dependencies),
+                                      label: shot.label, context: shot.context, references: references, dependencies: dependencies,
+                                      deviceID: scope.device),
                                   inputAssets: assets.isEmpty ? nil : assets))
         }
         try requireCurrent(app)
-        return preview(app: app, requestID: input.requestID, requestDigest: requestDigest, jobs: jobs, estimates: estimates)
+        return preview(app: app, scope: scope, requestID: input.requestID, requestDigest: requestDigest, jobs: jobs, estimates: estimates)
     }
 
-    private static func hasConvRotSources(_ installation: URL) -> Bool {
+    static func hasConvRotSources(_ installation: URL) -> Bool {
         let floatEncoder = installation.appendingPathComponent("text_encoders/qwen3vl_8b_bf16.safetensors")
         let int8Encoder = installation.appendingPathComponent("text_encoders/qwen3vl_8b_int8_convrot.safetensors")
         let floatAvailable = (try? floatEncoder.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
@@ -680,12 +738,14 @@ final class MiniAppRuntime: ObservableObject {
         }.value
     }
 
-    private func preview(app: MiniAppPackage, requestID: UUID, requestDigest: String,
+    private func preview(app: MiniAppPackage, scope: Scope, requestID: UUID, requestDigest: String,
                          jobs: [NativeJob], estimates: [[String: Int]]) -> [String: Any] {
         let now = Date()
-        plans = plans.filter { now.timeIntervalSince($0.value.created) < 600 && $0.value.jobs.first?.miniAppOrigin?.appID != app.id }
+        plans = plans.filter { now.timeIntervalSince($0.value.created) < 600 }
+        let scoped = plans.filter { $0.value.scope == scope }.sorted { $0.value.created < $1.value.created }
+        for (id, _) in scoped.prefix(max(0, scoped.count - 7)) { plans.removeValue(forKey: id) }
         let id = UUID()
-        plans[id] = Plan(appDigest: app.digest, requestID: requestID, requestDigest: requestDigest, jobs: jobs, created: now)
+        plans[id] = Plan(scope: scope, appDigest: app.digest, requestID: requestID, requestDigest: requestDigest, jobs: jobs, created: now)
         return ["id": id.uuidString, "jobs": zip(jobs, estimates).enumerated().map { index, entry in
             let (job, summary) = entry
             var result: [String: Any] = ["index": index, "seed": job.request.seed,
@@ -699,58 +759,24 @@ final class MiniAppRuntime: ObservableObject {
         }]
     }
 
-    private func submittedJobs(requestID: UUID, app: String) -> [NativeJob] {
-        store.jobs.reversed().filter { $0.miniAppOrigin?.appID == app && $0.miniAppOrigin?.requestID == requestID }
+    private func submittedJobs(requestID: UUID, scope: Scope) -> [NativeJob] {
+        store.jobs.reversed().filter { scope.owns($0.miniAppOrigin) && $0.miniAppOrigin?.requestID == requestID }
     }
 
-    private func submit(_ id: UUID, app: MiniAppPackage) throws -> [[String: Any]] {
-        guard let plan = plans[id], plan.appDigest == app.digest, Date().timeIntervalSince(plan.created) < 600 else {
+    private func submit(_ id: UUID, app: MiniAppPackage, scope: Scope) throws -> [[String: Any]] {
+        guard let plan = plans[id], plan.scope == scope, plan.appDigest == app.digest,
+              Date().timeIntervalSince(plan.created) < 600 else {
             throw Failure("planExpired", "生成计划已过期，请重新预检。")
         }
-        let existing = submittedJobs(requestID: plan.requestID, app: app.id)
+        let existing = submittedJobs(requestID: plan.requestID, scope: scope)
         if !existing.isEmpty {
             guard existing.allSatisfy({ $0.miniAppOrigin?.requestDigest == plan.requestDigest }) else {
                 throw Failure("requestConflict", "这个提交 ID 已用于另一份请求。")
             }
             return existing.map(jobInfo)
         }
-        guard !store.requiresProcessRestart, !store.externalServiceActive,
-              store.jobs.filter({ $0.miniAppOrigin != nil && !$0.isTerminal }).count + plan.jobs.count <= Self.maximumQueued else {
-            throw Failure("queueFull", "应用队列已满，或 GPU 正被本地 API 占用。")
-        }
-        try store.enqueueMiniAppJobs(plan.jobs)
-        startQueue()
+        do { try store.enqueueMiniAppJobs(plan.jobs) }
+        catch { throw Failure("queueUnavailable", Self.redact(error.localizedDescription)) }
         return plan.jobs.map(jobInfo)
-    }
-
-    private func startQueue() {
-        guard queueTask == nil else { return }
-        queueTask = Task { [weak self] in
-            guard let self else { return }
-            defer { self.queueTask = nil }
-            while let job = self.store.jobs.last(where: { $0.state == "queued" && $0.miniAppOrigin != nil }) {
-                if self.store.busy || self.store.externalServiceActive {
-                    try? await Task.sleep(for: .milliseconds(250))
-                    if Task.isCancelled { return }
-                    continue
-                }
-                do {
-                    guard let path = job.modelPath else { throw Failure("modelMissing", "任务的模型安装已不存在。") }
-                    if let origin = job.miniAppOrigin {
-                        for id in origin.dependencies ?? [] {
-                            guard let asset = self.resultAsset(id: id, app: origin.appID),
-                                  FileManager.default.isReadableFile(atPath: asset.path) else {
-                                throw Failure("dependencyUnavailable", "所依赖的前置任务未生成可用图片。")
-                            }
-                        }
-                    }
-                    _ = try await self.store.generate(modelURL: URL(fileURLWithPath: path), request: job.request,
-                        inputAssets: job.inputAssets, queuedMiniAppJob: job.id)
-                } catch {
-                    do { try self.store.finishQueuedMiniAppJob(job.id, error: error is CancellationError ? nil : error) }
-                    catch { self.message = error.localizedDescription; return }
-                }
-            }
-        }
     }
 }

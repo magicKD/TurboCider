@@ -66,6 +66,7 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
     @Published var requestedHTTPPort = UserDefaults.standard.object(forKey: "localAPIHTTPPort") as? Int ?? 8765
     var httpURL: String { "http://127.0.0.1:\(httpPort == 0 ? requestedHTTPPort : httpPort)" }
     @Published private(set) var running = false
+    @Published private(set) var shared = false
     @Published private(set) var changing = false
     @Published private(set) var status = "服务未启动"
     @Published private(set) var jobCount = 0
@@ -86,6 +87,7 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
     let socketPath: String
     private let executable: URL
     private var gateway: LocalHTTPGateway?
+    private var sharedQueue: LocalAPIQueue?
     private var process: Process?
     private var logHandle: FileHandle?
     private var lifecycleID = UUID()
@@ -101,8 +103,34 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
         self.rpcTransport = rpcTransport
         if let httpPort { requestedHTTPPort = httpPort }
     }
+    func startShared(store: NativeJobStore) async {
+        guard !changing, !running, process == nil, !store.externalServiceActive else { return }
+        let generation = UUID(); lifecycleID = generation
+        invalidateJobs()
+        changing = true; error = nil; status = "正在启动 HTTP API…"
+        let queue = LocalAPIQueue(store: store)
+        let http = LocalHTTPGateway(root: directory.appendingPathComponent("http"),
+            outputDirectory: store.directory.appendingPathComponent("outputs/api"), rpc: queue.call,
+            onFailure: { [weak self] message in
+                guard let self, self.lifecycleID == generation else { return }
+                self.stop(); self.error = message
+            })
+        sharedQueue = queue; gateway = http
+        do {
+            let port = try await http.start(port: requestedHTTPPort)
+            guard lifecycleID == generation else { http.stop(); return }
+            httpPort = port
+            if requestedHTTPPort != 0 { UserDefaults.standard.set(requestedHTTPPort, forKey: "localAPIHTTPPort") }
+            shared = true; running = true; changing = false
+            status = "HTTP API 已启动 · 与桌面和网页共用任务队列"
+        } catch {
+            guard lifecycleID == generation else { return }
+            stop(); self.error = error.localizedDescription; status = "启动失败"
+        }
+    }
+
     func start(store: NativeJobStore) async {
-        guard !changing, process == nil, !store.busy else { return }
+        guard !changing, !running, process == nil, !store.busy, !store.hasQueuedGeneration else { return }
         guard (0...65535).contains(requestedHTTPPort) else {
             error = "HTTP 端口必须在 0–65535 之间（0 自动分配）。"; status = "启动失败"; return
         }
@@ -194,6 +222,7 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
     func stop() {
         lifecycleID = UUID(); running = false
         gateway?.stop(); gateway = nil; httpPort = 0
+        sharedQueue = nil; shared = false
         invalidateJobs()
         guard let process else {
             changing = false; ownedStore?.externalServiceActive = false; ownedStore = nil
@@ -205,14 +234,19 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
         // stop waiter must never unlock a later service start.
     }
     func terminateNow() { stop() }
+    private func current(_ generation: UUID) -> Bool {
+        running && lifecycleID == generation && (sharedQueue != nil || process?.isRunning == true)
+    }
+
     func refresh() async {
-        guard running, let child = process else { return }
         let generation = lifecycleID
+        guard current(generation) else { return }
         do {
             let raw = try await rpc(["action": "service_status"])
-            guard lifecycleID == generation, process === child, running, child.isRunning else { return }
+            guard current(generation) else { return }
             let result = raw["result"] as? [String: Any]
-            guard result?["pid"] as? Int == Int(child.processIdentifier) else {
+            let expectedPID = process?.processIdentifier ?? getpid()
+            guard result?["pid"] as? Int == Int(expectedPID) else {
                 throw NativeFailure(message: "Socket 已由其他进程使用。")
             }
             jobCount = result?["history_count"] as? Int ?? 0
@@ -220,7 +254,7 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
             sessionModel = result?["session_model"] as? String ?? ""
             externalWorkerActive = result?["external_worker_active"] as? Bool ?? false
         } catch {
-            guard lifecycleID == generation, process === child, running, child.isRunning else { return }
+            guard current(generation) else { return }
             self.error = error.localizedDescription
             jobsStale = true
         }
@@ -235,20 +269,20 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
         return number.intValue
     }
     func refreshJobs(offset: Int? = nil) async {
-        guard running, let child = process, child.isRunning else { jobsStale = true; return }
+        let generation = lifecycleID
+        guard current(generation) else { jobsStale = true; return }
         let page = offset ?? jobsOffset
         guard (0...Int(Int32.max)).contains(page) else {
             jobsError = "API 历史页码超出支持范围。"; jobsStale = true; return
         }
-        let generation = lifecycleID, requestID = UUID(); jobsRequestID = requestID
+        let requestID = UUID(); jobsRequestID = requestID
         jobsLoading = true
         defer {
-            if lifecycleID == generation, process === child, jobsRequestID == requestID { jobsLoading = false }
+            if current(generation), jobsRequestID == requestID { jobsLoading = false }
         }
         do {
             let raw = try await rpc(["action": "jobs", "offset": page, "limit": Self.jobsPageSize])
-            guard lifecycleID == generation, process === child, running, child.isRunning,
-                  jobsRequestID == requestID else { return }
+            guard current(generation), jobsRequestID == requestID else { return }
             guard let result = raw["result"] as? [String: Any],
                   let entries = result["jobs"] as? [[String: Any]], entries.count <= Self.jobsPageSize,
                   let total = Self.pageInteger(result["total"], maximum: 10000), entries.count <= total else {
@@ -268,12 +302,12 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
             jobs = loaded; jobsTotal = total; jobsOffset = total == 0 ? 0 : page; jobsNextOffset = next
             jobsStale = false; jobsError = nil; jobsUpdatedAt = Date()
         } catch {
-            guard lifecycleID == generation, process === child, running, child.isRunning,
-                  jobsRequestID == requestID else { return }
+            guard current(generation), jobsRequestID == requestID else { return }
             jobsError = error.localizedDescription; jobsStale = true
         }
     }
     private func rpc(_ value: [String: Any]) async throws -> [String: Any] {
+        if let sharedQueue { return ["ok": true, "result": try await sharedQueue.call(value)] }
         if let rpcTransport { return try await rpcTransport(value) }
         let data = try JSONSerialization.data(withJSONObject: value)
         let response = try await LibraryTool.run(["rpc", socketPath, "{request}"], payload: data, executable: executable)

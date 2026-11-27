@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f7f6f2">
+  <title>TurboCider 工作台</title>
+  <link rel="icon" href="/studio-mark.webp" type="image/webp">
+  <link rel="stylesheet" href="/shell.css">
+  <script src="/shell.js" defer></script>
+  <script src="/workspace.js" defer></script>
+</head>
+<body>
+  <div class="entry" id="entry">
+    <div class="entry-inner">
+      <a class="brand" href="/" aria-label="TurboCider 首页"><i class="brand-mark" aria-hidden="true"></i><span>TurboCider</span></a>
+      <main class="pairing" id="pairing">
+        <span class="connection-label"><i data-icon="desktop"></i> 局域网工作台</span>
+        <h1>连接你的<br>TurboCider</h1>
+        <p id="pair-status" role="status">正在连接 Mac…</p>
+        <form id="pair-form" hidden>
+          <label for="device-name">设备名称</label>
+          <input id="device-name" maxlength="60" autocomplete="off" placeholder="例如 iPad 或工作电脑">
+          <button class="primary" type="submit">请求配对 <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="pair-code" id="pair-code" hidden></p>
+        <button id="connect" class="primary" type="button" hidden>进入工作台 <span aria-hidden="true">↗</span></button>
+        <button id="retry" type="button" hidden>重试连接</button>
+      </main>
+    </div>
+    <div class="entry-art" aria-hidden="true"></div>
+  </div>
+
+  <div id="workspace" class="workspace" hidden>
+    <a class="skip" id="skip" href="#main">跳到工作区</a>
+    <aside class="rail">
+      <a class="brand" href="#create" aria-label="TurboCider 创作"><i class="brand-mark" aria-hidden="true"></i><span>TurboCider</span></a>
+      <nav id="navigation" aria-label="工作台">
+        <a href="#create" data-nav="create"><i data-icon="create"></i><span>创作</span></a>
+        <a href="#upscale" data-nav="upscale"><i data-icon="upscale"></i><span>超分</span></a>
+        <a href="#apps" data-nav="apps"><i data-icon="apps"></i><span>应用</span></a>
+        <a href="#library" data-nav="library"><i data-icon="library"></i><span>素材库</span></a>
+        <a href="#jobs" data-nav="jobs"><i data-icon="jobs"></i><span>任务</span><b id="job-count" hidden></b></a>
+        <a href="#models" data-nav="models"><i data-icon="models"></i><span>模型</span></a>
+        <a href="#settings" data-nav="settings" class="rail-settings"><i data-icon="settings"></i><span>设置</span></a>
+      </nav>
+      <div class="rail-foot"><i data-icon="desktop"></i><span id="rail-device">已连接 Mac</span></div>
+    </aside>
+    <div class="workbody">
+      <header class="topbar">
+        <a class="brand mobile-brand" href="#create" aria-label="TurboCider 创作"><i class="brand-mark" aria-hidden="true"></i><span>TurboCider</span></a>
+        <p class="breadcrumb"><span>工作台</span><span aria-hidden="true">/</span><strong id="current-page">创作</strong></p>
+        <div class="topbar-actions">
+          <a class="connection-pill" href="#jobs" id="queue"><i class="status-dot"></i><span id="queue-text">Mac 已连接</span></a>
+          <a class="icon-button mobile-settings" href="#settings" aria-label="设置" title="设置"><i data-icon="settings"></i></a>
+          <button class="icon-button" id="theme" type="button" aria-label="更换色彩主题" title="更换色彩主题"></button>
+        </div>
+      </header>
+      <main class="main" id="main" tabindex="-1">
+        <section id="create" class="page" aria-label="创作"></section>
+        <section id="upscale" class="page" aria-label="超分" hidden></section>
+        <section id="apps" class="page" aria-label="应用" hidden>
+          <div class="page-heading"><div><h1>应用</h1><p>选择工作室，或从一个创作模板开始。</p></div><div id="app-admin"></div></div>
+          <div id="app-list" class="app-list"></div>
+          <h2 class="group-title">创作模板</h2><div id="template-list" class="tile-grid"></div>
+        </section>
+        <section id="template" class="page" aria-label="创作模板" hidden></section>
+        <section id="library" class="page" aria-label="素材库" hidden>
+          <div class="page-heading"><div><h1>素材库</h1><p>查看上传的原始素材与创作结果。</p></div><div id="library-options" class="actions"></div></div>
+          <div id="library-filters" class="tabs" aria-label="素材筛选"></div>
+          <div id="library-list" class="gallery"></div>
+        </section>
+        <section id="jobs" class="page" aria-label="任务" hidden>
+          <div class="page-heading"><div><h1>任务队列</h1><p>网页、Mac 和本地 API 共用同一个推理队列。</p></div><div class="actions" id="job-options"><button id="refresh" type="button">刷新</button></div></div>
+          <div id="job-filters" class="tabs" aria-label="任务筛选"></div>
+          <div id="job-status" role="status" hidden></div>
+          <ul id="job-list" class="job-list"></ul>
+        </section>
+        <section id="models" class="page" aria-label="模型" hidden></section>
+        <section id="settings" class="page" aria-label="设置" hidden></section>
+      </main>
+    </div>
+  </div>
+  <dialog id="media-dialog" class="dialog" aria-labelledby="dialog-title">
+    <div class="dialog-head"><h2 id="dialog-title"></h2><form method="dialog"><button class="icon-button" type="submit" aria-label="关闭"><i data-icon="close"></i></button></form></div>
+    <div id="dialog-content"></div>
+  </dialog>
+  <p id="toast" class="toast" role="status" hidden></p>
+</body>
+</html>

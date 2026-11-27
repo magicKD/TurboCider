@@ -10,7 +10,8 @@
   function apply() {
     const resolved = selected === 'system' ? (system.matches ? 'dark' : 'light') : selected;
     root.dataset.theme = resolved;
-    if (tint) tint.content = resolved === 'dark' ? '#111111' : '#ffffff';
+    if (tint) tint.content = root.dataset.tcWeb
+      ? (resolved === 'dark' ? '#17191b' : '#f7f6f2') : (resolved === 'dark' ? '#111111' : '#ffffff');
     for (const button of document.querySelectorAll('[data-theme-choice]')) {
       button.setAttribute('aria-pressed', String(button.dataset.themeChoice === selected));
     }

@@ -33,9 +33,9 @@ enum LTXWorker {
              (request.residency == "streamed" && (request.memory_budget_bytes ?? 0) > 0))
     }
 
-    static func generate(model: URL, request: NativeRequest, executable: URL? = nil,
+    static func generate(model: URL, request: NativeRequest, executable: URL? = nil, payload: Data? = nil,
                          onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
-        try await generatePayload(model: model, request: request,
+        try await generatePayload(model: model, payload: payload ?? JSONEncoder().encode(request),
                                   expected: NativeRequestV2(legacy: request),
                                   outputPath: request.output,
                                   executable: executable, onEvent: onEvent)
@@ -47,14 +47,14 @@ enum LTXWorker {
     static func generate(model: URL, request: NativeRequestV2, outputPath: String,
                          executable: URL? = nil,
                          onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
-        try await generatePayload(model: model, request: request,
+        try await generatePayload(model: model, payload: JSONEncoder().encode(request),
                                   expected: request,
                                   outputPath: outputPath,
                                   executable: executable, onEvent: onEvent)
     }
 
-    private static func generatePayload<Request: Encodable & Sendable>(
-            model: URL, request: Request, expected: NativeRequestV2, outputPath: String,
+    private static func generatePayload(
+            model: URL, payload data: Data, expected: NativeRequestV2, outputPath: String,
             executable: URL?,
             onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
         let worker = Task.detached(priority: .userInitiated) { () throws -> Data in
@@ -75,7 +75,9 @@ enum LTXWorker {
             let artifact = staging.appendingPathComponent("output.mp4")
             var bound = expected
             bound.outputs[0].path = artifact.path
-            var payload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+            guard var payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw NativeFailure(message: "worker_request_invalid: 视频请求必须是 JSON 对象。")
+            }
             if payload["schema_version"] as? Int == 2 {
                 var outputs = payload["outputs"] as! [[String: Any]]
                 outputs[0]["path"] = artifact.path

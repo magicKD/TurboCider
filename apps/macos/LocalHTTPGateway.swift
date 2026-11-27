@@ -1,10 +1,10 @@
 import Foundation
 import Network
 
-/// App-owned loopback HTTP transport. Uses the same schema-1 contract as the
-/// standalone adapter, and delegates all execution decisions to native plan.
+/// Bounded HTTP transport for the loopback API and the separate browser host.
 @MainActor final class LocalHTTPGateway {
     typealias RPC = ([String: Any]) async throws -> [String: Any]
+    typealias WebRoute = (Request) async throws -> Response
     struct Failure: LocalizedError {
         let status: Int
         let message: String
@@ -13,12 +13,24 @@ import Network
     @MainActor private final class Connection {
         let network: NWConnection
         var buffer = Data()
+        var head: Head?
+        var upload: (url: URL, file: FileHandle, received: Int)?
         var timeout: Task<Void, Never>?
         var request: Task<Void, Never>?
         init(_ network: NWConnection) { self.network = network }
     }
+    private struct Head {
+        let request: Request
+        let length: Int
+        let streamedUpload: Bool
+    }
     private let root: URL
+    private let outputDirectory: URL
     private let rpc: RPC
+    private let host: String
+    private let webRoute: WebRoute?
+    private let authorizeUpload: ((Request) -> Bool)?
+    private let uploadDirectory: URL?
     private let onFailure: (String) -> Void
     private var listener: NWListener?
     private var ready: CheckedContinuation<Int, Error>?
@@ -28,18 +40,29 @@ import Network
     private(set) var port = 0
     private let maxUpload = 64 * 1024 * 1024
 
-    init(root: URL, rpc: @escaping RPC, onFailure: @escaping (String) -> Void = { _ in }) {
+    init(root: URL, outputDirectory: URL? = nil, rpc: @escaping RPC, onFailure: @escaping (String) -> Void = { _ in }) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
+        self.outputDirectory = (outputDirectory ?? root.appendingPathComponent("outputs")).standardizedFileURL.resolvingSymlinksInPath()
         self.rpc = rpc; self.onFailure = onFailure
+        host = "127.0.0.1"; webRoute = nil; authorizeUpload = nil; uploadDirectory = nil
+    }
+
+    init(webHost: String, uploadDirectory: URL? = nil, route: @escaping WebRoute, authorizeUpload: @escaping (Request) -> Bool,
+         onFailure: @escaping (String) -> Void) {
+        root = FileManager.default.temporaryDirectory
+        outputDirectory = root
+        rpc = { _ in throw Failure(status: 404, message: "Unknown endpoint") }
+        host = webHost; webRoute = route; self.authorizeUpload = authorizeUpload; self.onFailure = onFailure
+        self.uploadDirectory = uploadDirectory
     }
     func start(port: Int) async throws -> Int {
         guard listener == nil, (0...65535).contains(port) else { throw fail("Invalid HTTP port") }
-        for name in ["inputs", "outputs"] {
-            try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true,
+        for directory in webRoute == nil ? [root.appendingPathComponent("inputs"), outputDirectory] : [] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
         }
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: UInt16(port))!)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: UInt16(port))!)
         let server = try NWListener(using: parameters)
         listener = server
         server.newConnectionHandler = { [weak self] connection in
@@ -103,6 +126,10 @@ import Network
     private func close(_ id: UUID) {
         guard let connection = connections.removeValue(forKey: id) else { return }
         connection.timeout?.cancel(); connection.request?.cancel(); connection.network.cancel()
+        if let upload = connection.upload {
+            try? upload.file.close()
+            try? FileManager.default.removeItem(at: upload.url)
+        }
     }
     private func receive(_ id: UUID) {
         guard let connection = connections[id] else { return }
@@ -111,7 +138,7 @@ import Network
                 guard let self, self.connections[id] === connection else { return }
                 if let data { connection.buffer.append(data) }
                 do {
-                    if let request = try self.parse(connection.buffer) {
+                    if let request = try self.parse(connection, id: id) {
                         connection.timeout?.cancel()
                         connection.timeout = Task { [weak self] in
                             do { try await Task.sleep(for: .seconds(180)) } catch { return }
@@ -123,7 +150,7 @@ import Network
                             do {
                                 let response = try await self.route(request)
                                 try Task.checkCancellation()
-                                await self.send(id, response: response)
+                                await self.send(id, response: response, range: request.headers["range"])
                             } catch is CancellationError { self.close(id) }
                             catch { await self.sendError(id, error) }
                         }
@@ -137,16 +164,63 @@ import Network
         let method: String
         let path: String
         let headers: [String: String]
-        let body: Data
+        var body: Data
+        var bodyFile: URL? = nil
     }
     struct Response {
         let status: Int
         let data: Data
         var mime = "application/json"
         var file: URL? = nil
+        var headers: [String: String] = [:]
+        var ranges = false
+        var sandboxPolicy: String? = nil
     }
     private func fail(_ message: String, _ status: Int = 400) -> Failure { Failure(status: status, message: message) }
-    private func parse(_ data: Data) throws -> Request? {
+    private func parse(_ connection: Connection, id: UUID) throws -> Request? {
+        if connection.head == nil {
+            guard let (head, headerBytes) = try parseHead(connection.buffer) else { return nil }
+            connection.head = head
+            // Data slices retain their original indices. Body readers use offsets from zero.
+            connection.buffer = Data(connection.buffer.dropFirst(headerBytes))
+            if head.streamedUpload {
+                guard let uploadDirectory, connections.values.lazy.filter({ $0.upload != nil }).count < 4 else {
+                    throw fail("同时上传的文件过多，请稍后重试。", 429)
+                }
+                try FileManager.default.createDirectory(at: uploadDirectory, withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+                let url = uploadDirectory.appendingPathComponent(UUID().uuidString)
+                guard FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+                    throw fail("无法建立上传文件。", 503)
+                }
+                do { connection.upload = (url, try FileHandle(forWritingTo: url), 0) }
+                catch { try? FileManager.default.removeItem(at: url); throw error }
+                connection.timeout?.cancel()
+                connection.timeout = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(180)) } catch { return }
+                    self?.close(id)
+                }
+            }
+        }
+        guard let head = connection.head else { return nil }
+        var request = head.request
+        if var upload = connection.upload {
+            upload.received += connection.buffer.count
+            guard upload.received <= head.length else { throw fail("HTTP pipelining is unsupported") }
+            try upload.file.write(contentsOf: connection.buffer)
+            connection.buffer = Data()
+            connection.upload = upload
+            guard upload.received == head.length else { return nil }
+            try upload.file.close()
+            request.bodyFile = upload.url
+        } else {
+            guard connection.buffer.count >= head.length else { return nil }
+            guard connection.buffer.count == head.length else { throw fail("HTTP pipelining is unsupported") }
+            request.body = connection.buffer
+        }
+        return request
+    }
+    private func parseHead(_ data: Data) throws -> (Head, Int)? {
         guard let end = data.range(of: Data("\r\n\r\n".utf8)) else {
             if data.count > 16384 { throw fail("HTTP headers too large", 413) }
             return nil
@@ -162,37 +236,59 @@ import Network
             guard !name.isEmpty, !name.contains(where: { $0.isWhitespace }), headers[name] == nil else { throw fail("Duplicate or invalid header") }
             headers[name] = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
         }
-        guard headers["origin"] == nil else { throw fail("Browser-origin requests are disabled; use backend clients", 403) }
-        let host = headers["host"]?.lowercased() ?? ""
-        guard host == "127.0.0.1" || host == "localhost" || host == "127.0.0.1:\(port)" || host == "localhost:\(port)" else {
-            throw fail("Only loopback Host headers are accepted", 403)
-        }
-        guard headers["transfer-encoding"] == nil else { throw fail("Chunked requests are unsupported") }
         let method = String(line[0]), path = String(line[1])
         guard method == "GET" || method == "POST" else { throw fail("Method not allowed", 405) }
+        guard headers["transfer-encoding"] == nil else { throw fail("Chunked requests are unsupported") }
+        let requestHost = headers["host"]?.lowercased() ?? ""
+        if webRoute != nil {
+            let authority = port == 80 ? host : "\(host):\(port)"
+            guard requestHost == authority || (port == 80 && requestHost == "\(host):80") else {
+                throw fail("Invalid web Host", 403)
+            }
+            if method == "POST" {
+                guard headers["origin"] == "http://\(authority)",
+                      headers["sec-fetch-site"].map({ $0 == "same-origin" }) ?? true else {
+                    throw fail("Invalid browser origin", 403)
+                }
+            }
+        } else {
+            guard headers["origin"] == nil else { throw fail("Browser-origin requests are disabled; use backend clients", 403) }
+            guard ["127.0.0.1", "localhost", "127.0.0.1:\(port)", "localhost:\(port)"].contains(requestHost) else {
+                throw fail("Only loopback Host headers are accepted", 403)
+            }
+        }
         let rawLength = headers["content-length"] ?? (method == "GET" ? "0" : "")
         guard !rawLength.isEmpty, rawLength.allSatisfy({ $0.isASCII && $0.isNumber }), let length = Int(rawLength) else { throw fail("Missing or invalid Content-Length") }
-        guard length <= (path == "/v1/assets" ? maxUpload : 1048576) else { throw fail("Request too large", 413) }
+        let streamedUpload = webRoute != nil && ["/api/studio/upload", "/api/studio/host/upload"].contains(path)
+        let browserUpload = webRoute != nil && (path == "/api/media" || streamedUpload)
+        let apiUpload = webRoute == nil && path == "/v1/assets"
+        let limit = streamedUpload ? 256 * 1024 * 1024 : browserUpload ? 16 * 1024 * 1024 : apiUpload ? maxUpload : 1024 * 1024
+        guard length <= limit else { throw fail("Request too large", 413) }
         guard method != "GET" || length == 0 else { throw fail("GET body is unsupported") }
         if method == "POST" {
-            let expected = path == "/v1/assets" ? "image/png" : "application/json"
+            let expected = browserUpload ? "application/octet-stream" : apiUpload ? "image/png" : "application/json"
             guard headers["content-type"]?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased() == expected else { throw fail("Content-Type must be \(expected)") }
+            if browserUpload, authorizeUpload?(Request(method: method, path: path, headers: headers, body: Data())) != true {
+                if path == "/api/studio/host/upload" { throw fail("这台设备没有 Mac 管理权限。", 403) }
+                throw fail("请先连接网页工作台。", 401)
+            }
         }
-        guard data.count >= end.upperBound + length else { return nil }
-        guard data.count == end.upperBound + length else { throw fail("HTTP pipelining is unsupported") }
-        return Request(method: method, path: path, headers: headers, body: Data(data[end.upperBound...]))
+        let request = Request(method: method, path: path, headers: headers, body: Data())
+        return (Head(request: request, length: length, streamedUpload: streamedUpload), end.upperBound)
     }
     private func json(_ value: Any, status: Int = 200) throws -> Response {
         Response(status: status, data: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]))
     }
-    private func object(_ data: Data) throws -> [String: Any] {
+    static func object(_ data: Data) throws -> [String: Any] {
         // Check duplicate object keys before Foundation collapses them. JSON
         // decoding below remains authoritative for numbers, escapes and syntax.
         do {
             try UniqueJSONKeys.validate(data)
-            guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw fail("Expected a JSON object") }
+            guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw Failure(status: 400, message: "Expected a JSON object")
+            }
             return value
-        } catch { throw fail("Invalid JSON object: \(error.localizedDescription)") }
+        } catch { throw Failure(status: 400, message: "Invalid JSON object: \(error.localizedDescription)") }
     }
     private func catalog() async throws -> [String: Any] {
         let models = try await rpc(["action": "models"])["models"] as? [[String: Any]] ?? []
@@ -219,8 +315,9 @@ import Network
         guard request["model"] == nil || request["model"] as? String == modelID else { throw fail("Request model does not match installation") }
         request["model"] = modelID
         let model = (inventory["models"] as? [[String: Any]])?.first { $0["id"] as? String == modelID }
-        let ext = model?["output"] as? String == "video" ? "mp4" : "png"
-        request["output"] = root.appendingPathComponent("outputs/\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()).\(ext)").path
+        let video = (request["operation"] as? String)?.hasPrefix("video.") ?? (model?["output"] as? String == "video")
+        let ext = video ? "mp4" : "png"
+        request["output"] = outputDirectory.appendingPathComponent("\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()).\(ext)").path
         if let values = request["inputs"] {
             guard var inputs = values as? [[String: Any]] else { throw fail("inputs must be a list of objects") }
             for index in inputs.indices where inputs[index]["asset_id"] != nil {
@@ -248,17 +345,18 @@ import Network
         let value = try await rpc(["action": "status", "id": id])
         guard let request = value["request"] as? [String: Any], let path = request["output"] as? String else { throw fail("Unknown gateway job") }
         let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
-        guard url.deletingLastPathComponent().path == root.appendingPathComponent("outputs").path,
+        guard url.deletingLastPathComponent().path == outputDirectory.path,
               url.lastPathComponent.range(of: "^[0-9a-f]{32}\\.(png|mp4)$", options: .regularExpression) != nil else { throw fail("Unknown gateway job") }
         return value
     }
     private func route(_ request: Request) async throws -> Response {
+        if let webRoute { return try await webRoute(request) }
         switch (request.method, request.path) {
         case ("GET", "/v1/health"): return try json(await rpc(["action": "service_status"]))
         case ("GET", "/v1/catalog"): return try json(await catalog())
         case ("GET", "/v1/jobs"): return try json(await rpc(["action": "jobs", "limit": 100]))
         case ("POST", "/v1/plan"), ("POST", "/v1/jobs"):
-            let (path, value) = try await prepare(object(request.body))
+            let (path, value) = try await prepare(Self.object(request.body))
             if request.path == "/v1/plan" { return try json(await rpc(["action": "plan", "request": value])) }
             return try json(await rpc(["action": "submit", "model_path": path, "request": value]), status: 202)
         case ("POST", "/v1/assets"):
@@ -277,7 +375,7 @@ import Network
             let suffix = parts.count == 5 ? String(parts[4]) : ""
             if request.method == "GET", suffix.isEmpty { return try json(await job(id)) }
             if request.method == "POST", suffix == "cancel" {
-                guard try object(request.body).isEmpty else { throw fail("Cancel body must be {}") }
+                guard try Self.object(request.body).isEmpty else { throw fail("Cancel body must be {}") }
                 _ = try await job(id)
                 return try json(await rpc(["action": "cancel", "id": id]))
             }
@@ -302,22 +400,59 @@ import Network
         if let response = try? json(value, status: failure?.status ?? 503) { await send(id, response: response) }
         else { close(id) }
     }
-    private func send(_ id: UUID, response: Response) async {
+    private func send(_ id: UUID, response: Response, range: String? = nil) async {
         guard let connection = connections[id] else { return }
         do {
             let file = try response.file.map { try FileHandle(forReadingFrom: $0) }
             defer { try? file?.close() }
             let size = try file?.seekToEnd() ?? UInt64(response.data.count)
-            try file?.seek(toOffset: 0)
-            let header = "HTTP/1.1 \(response.status) \(HTTPURLResponse.localizedString(forStatusCode: response.status))\r\nContent-Type: \(response.mime)\r\nContent-Length: \(size)\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n"
+            var status = response.status, offset: UInt64 = 0, count = size
+            var headers = response.headers
+            if response.ranges, file != nil {
+                headers["Accept-Ranges"] = "bytes"
+                if let range, range.hasPrefix("bytes="), !range.contains(",") {
+                    if let selected = Self.byteRange(String(range.dropFirst(6)), size: size) {
+                        status = 206; offset = selected.lowerBound; count = selected.upperBound - offset + 1
+                        headers["Content-Range"] = "bytes \(offset)-\(selected.upperBound)/\(size)"
+                    } else {
+                        status = 416; count = 0
+                        headers["Content-Range"] = "bytes */\(size)"
+                    }
+                }
+            }
+            try file?.seek(toOffset: offset)
+            var header = "HTTP/1.1 \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))\r\nContent-Type: \(response.mime)\r\nContent-Length: \(count)\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n"
+            if webRoute != nil {
+                header += "Referrer-Policy: no-referrer\r\n"
+                if let policy = response.sandboxPolicy {
+                    header += "Content-Security-Policy: \(policy)\r\n"
+                } else {
+                    header += "X-Frame-Options: DENY\r\nCross-Origin-Resource-Policy: same-origin\r\nContent-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; media-src 'self' blob:; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\n"
+                }
+            }
+            for (key, value) in headers { header += "\(key): \(value)\r\n" }
+            header += "\r\n"
             try await write(connection.network, Data(header.utf8))
             if let file {
-                while let data = try file.read(upToCount: 1024 * 1024), !data.isEmpty {
+                var remaining = count
+                while remaining > 0, let data = try file.read(upToCount: Int(min(remaining, 1024 * 1024))), !data.isEmpty {
                     try Task.checkCancellation(); try await write(connection.network, data)
+                    remaining -= UInt64(data.count)
                 }
             } else { try await write(connection.network, response.data) }
         } catch { /* Peer disconnects do not cancel native jobs. */ }
         close(id)
+    }
+    private static func byteRange(_ value: String, size: UInt64) -> ClosedRange<UInt64>? {
+        let parts = value.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        guard size > 0, parts.count == 2 else { return nil }
+        if parts[0].isEmpty {
+            guard let count = UInt64(parts[1]), count > 0 else { return nil }
+            return (size - min(size, count))...(size - 1)
+        }
+        guard let start = UInt64(parts[0]), start < size,
+              let end = parts[1].isEmpty ? size - 1 : UInt64(parts[1]), start <= end else { return nil }
+        return start...min(end, size - 1)
     }
     private func write(_ network: NWConnection, _ data: Data) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in

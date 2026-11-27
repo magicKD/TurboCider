@@ -408,6 +408,24 @@ struct StudioDraft: Codable, Sendable {
         residency = "streamed"
         ltxStreamingDefaultVersion = 1
     }
+    mutating func applyModelDefaults(_ model: StudioModel) {
+        modelID = model.id
+        operation = model.availableOperations.first ?? (model.isVideo ? "video.generate" : "image.generate")
+        let square = !model.isVideo || modelID == "ltx-2.5-distilled"
+        width = square ? 512 : model.default_width
+        height = square ? 512 : model.default_height
+        steps = model.default_steps; frames = model.default_frames
+        fps = model.default_fps ?? (model.isVideo ? 24 : 1)
+        audio = model.default_audio ?? false
+        ltxBackend = "auto"; ltxFastAV = true
+        ltxVideoAttentionBatch = false; ltxAccelerationMode = "quality"
+        streaming = StudioStreamingState()
+        qwen21DiTCache = "off"; qwen21DiTW8A8 = false
+        qwen21DiTSmoothQuantConvRot = false; qwen21ReferenceSize = 1024
+        residency = model.default_residency ?? "resident"
+        if modelID == "ltx-2.5-distilled" { residency = "streamed"; ltxStreamingDefaultVersion = 1 }
+        profilePath = ""; acceleration = StudioAcceleration(policy: "gpu")
+    }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
     func qwen21WeightCacheBytes() throws -> UInt64 {
         guard let selection=Qwen21WeightCacheBudget(rawValue:qwen21WeightCacheBudget) else {
@@ -1262,11 +1280,20 @@ actor StudioAssetImporter {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw NativeFailure(message: "剪贴板不包含可解码的图片。") }
         return try stage(source: source, name: "粘贴图片", sourceURL: nil, data: data)
     }
-    func importVideoFile(_ url: URL, preserveTiming: Bool = false) async throws -> StudioAsset {
+    func importVideoFile(_ url: URL, preserveTiming: Bool = false, selfContained: Bool = false) async throws -> StudioAsset {
         guard url.isFileURL else { throw NativeFailure(message: "请选择或拖入本地视频文件。") }
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        let asset = AVURLAsset(url: url)
+        let restrictions: [String: Any]? = selfContained
+            ? [AVURLAssetReferenceRestrictionsKey: NSNumber(value: AVAssetReferenceRestrictions.forbidAll.rawValue)] : nil
+        let asset = AVURLAsset(url: url, options: restrictions)
+        if selfContained {
+            for track in try await asset.load(.tracks) {
+                guard try await track.load(.isSelfContained) else {
+                    throw NativeFailure(message: "请上传包含完整音视频轨道的文件。")
+                }
+            }
+        }
         guard let track = try await asset.loadTracks(withMediaType: .video).first else {
             throw NativeFailure(message: "视频文件中没有视频轨：\(url.lastPathComponent)")
         }
@@ -2028,31 +2055,7 @@ final class StudioState: ObservableObject {
         let id = model.id
         message = nil
         draft.modelLoRAs[draft.modelID] = draft.loras
-        draft.modelID = id
-        draft.operation = (model.executor_operations ?? model.operations).first ??
-            (model.isVideo ? "video.generate" : "image.generate")
-        // Image and LTX creation start at 512 square. Explicit dimensions in
-        // saved drafts/history remain intact; other videos keep their defaults.
-        let squareDefault = !model.isVideo || id == "ltx-2.5-distilled"
-        draft.width = squareDefault ? 512 : model.default_width
-        draft.height = squareDefault ? 512 : model.default_height
-        draft.steps = model.default_steps; draft.frames = model.default_frames
-        draft.fps = model.default_fps ?? (model.isVideo ? 24 : 1)
-        draft.audio = model.default_audio ?? false
-        draft.ltxBackend = "auto"; draft.ltxFastAV = true
-        draft.ltxVideoAttentionBatch = false
-        draft.ltxAccelerationMode = "quality"
-        draft.streaming = StudioStreamingState()
-        draft.qwen21DiTCache = "off"
-        draft.qwen21DiTW8A8 = false
-        draft.qwen21DiTSmoothQuantConvRot = false
-        draft.qwen21ReferenceSize = 1024
-        draft.residency = model.default_residency ?? "resident"
-        if id == "ltx-2.5-distilled" {
-            draft.residency = "streamed"; draft.ltxStreamingDefaultVersion = 1
-        }
-        draft.profilePath = ""
-        draft.acceleration = StudioAcceleration(policy: "gpu")
+        draft.applyModelDefaults(model)
         draft.loras = draft.modelLoRAs[id] ?? []
         draft.loraStrategy = "auto"
         if draft.qwen21TurboLoRA != nil { configureQwen21TurboPreset() }

@@ -498,7 +498,7 @@
   async function loadExample(randomize = false) {
     if (!randomize && exampleRefs.length) return;
     const types = ['portrait', 'costume', 'pose'];
-    const groups = await Promise.allSettled(types.map(A.load));
+    const groups = await Promise.allSettled(types.map(desktop ? A.demos : A.load));
     const prevKeys = new Set(exampleRefs.map(it => it.k));
     exampleRefs = groups.flatMap(result => {
       if (result.status !== 'fulfilled') return [];

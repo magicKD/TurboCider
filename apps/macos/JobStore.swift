@@ -56,6 +56,17 @@ struct MiniAppJobOrigin: Codable, Sendable, Equatable {
     var context: String? = nil
     var references: [UUID]
     var dependencies: [UUID]? = nil
+    var deviceID: UUID? = nil
+}
+
+struct WebJobOrigin: Codable, Sendable {
+    let deviceID: UUID
+    let requestID: UUID
+    let digest: String
+    let mediaIDs: [UUID]
+    let template: String?
+    let afterJob: UUID?
+    var recipe: Data? = nil
 }
 
 struct NativeJob: Codable, Identifiable, Sendable {
@@ -93,6 +104,8 @@ struct NativeJob: Codable, Identifiable, Sendable {
     /// Missing in older histories; it does not affect native execution.
     var workflowID: String? = nil
     var miniAppOrigin: MiniAppJobOrigin? = nil
+    var webOrigin: WebJobOrigin? = nil
+    var automationRequestJSON: String? = nil
     /// Immutable App input metadata, in the exact submitted request order.
     /// Native requests still contain paths only. Older/API histories can omit
     /// this snapshot and reuse their current input files as the baseline.
@@ -228,12 +241,16 @@ final class NativeJobStore: ObservableObject {
     @Published private(set) var livePreviewTotal = 0
     private(set) var livePreviewWorkflowID: String?
     private var activePreviewOutput: String?
-    @Published private(set) var busy = false
+    @Published private(set) var busy = false {
+        didSet { if !busy && oldValue { startGenerationQueue() } }
+    }
     @Published private(set) var workerCleanupPending = false
     @Published private(set) var storageError: String?
     @Published private(set) var sessionState = "未加载"
     @Published private(set) var requiresProcessRestart = false
-    @Published var externalServiceActive = false
+    @Published var externalServiceActive = false {
+        didSet { if !externalServiceActive && oldValue { startGenerationQueue() } }
+    }
     @Published private(set) var loadedPath: String?
     @Published private(set) var loadedModelID: String?
     @Published private(set) var inspectingResources = false
@@ -241,7 +258,9 @@ final class NativeJobStore: ObservableObject {
     @Published private(set) var resourceReport: String?
     @Published private(set) var sessionReport: String?
     @Published private(set) var accelerationStatus: String?
-    @Published private(set) var resolvingAcceleration = false
+    @Published private(set) var resolvingAcceleration = false {
+        didSet { if !resolvingAcceleration && oldValue { startGenerationQueue() } }
+    }
     @Published private(set) var deletedJobs: [NativeJob] = []
     let directory: URL
     private var engine: NativeEngine?
@@ -260,6 +279,11 @@ final class NativeJobStore: ObservableObject {
     private var lastSequence = -1
     private var denoiseStart: Int?
     private var lastDetailUpdate = 0.0
+    private var generationQueue: Task<Void, Never>?
+    private var generationWaiters: [UUID: CheckedContinuation<NativeJob, Error>] = [:]
+    private var afterGenerationUpscales: [UUID: (model: URL, compute: UpscaleCompute)] = [:]
+    private var upscalingGenerationID: UUID?
+    var hasQueuedGeneration: Bool { jobs.contains { $0.state == "queued" } }
     var activeJob: NativeJob? { jobs.first { $0.id == activeID } }
     var canUnload: Bool { (engine != nil || upscaleReady != nil) && !busy && !requiresProcessRestart }
     var deletableJobIDs: Set<UUID> { Set(jobs.filter { $0.isTerminal && $0.id != activeID }.map(\.id)) }
@@ -340,7 +364,8 @@ final class NativeJobStore: ObservableObject {
     }
     func deleteJobs(_ ids: Set<UUID>) throws {
         guard !ids.isEmpty else { return }
-        guard ids.isSubset(of: deletableJobIDs) else {
+        let required = Set(jobs.lazy.filter { !$0.isTerminal }.flatMap { $0.miniAppOrigin?.dependencies ?? [] })
+        guard ids.isSubset(of: deletableJobIDs), ids.isDisjoint(with: required) else {
             throw NativeFailure(message: "请先取消或等待任务完成，再删除记录。")
         }
         let previous = jobs
@@ -369,7 +394,9 @@ final class NativeJobStore: ObservableObject {
               (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
             throw NativeFailure(message: "只能在 App 中删除本 App 输出目录里的结果；外部文件请在 Finder 中管理。")
         }
-        guard !(activeJob?.request.inputs ?? []).contains(where: { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() == canonical }) else {
+        guard !jobs.lazy.filter({ !$0.isTerminal }).flatMap({ $0.request.inputs ?? [] }).contains(where: {
+            URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() == canonical
+        }) else {
             throw NativeFailure(message: "当前任务正在使用此图片，请等待完成。")
         }
         return url
@@ -759,30 +786,39 @@ final class NativeJobStore: ObservableObject {
         await upscaleSession.release(); upscaleReady = nil; upscaleStatus = "超分模型已释放"
         busy = false
     }
-    func upscale(source: URL, modelURL: URL, compute: UpscaleCompute = .gpu) async throws -> NativeJob {
+    func upscale(source: URL, modelURL: URL, compute: UpscaleCompute = .gpu, queuedJobID: UUID? = nil) async throws -> NativeJob {
         guard !busy, !externalServiceActive, !resolvingAcceleration, !requiresProcessRestart else {
             throw NativeFailure(message: "请等待当前任务或本地 API 停止，再进行超分。")
         }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
+        let queued = queuedJobID.flatMap { id in jobs.first { $0.id == id && $0.state == "queued" } }
+        guard queuedJobID == nil || queued != nil else { throw CancellationError() }
         try ImageUpscaler.validateModelURL(modelURL)
         _ = try ImageUpscaler.dimensions(source, scale: 2)
         busy = true; cancelRequested = false
+        if let queued { activeID = queued.id }
         defer { busy = false; activeID = nil; upscaleTask = nil }
         if let engine { _ = try await engine.unload(); self.engine = nil; loadedPath = nil; loadedModelID = nil }
         let modelInfo = try await prepareUpscaleModel(modelURL, compute: compute, warmup: false)
         let scale = modelInfo.scale
         let size = try ImageUpscaler.dimensions(source, scale: scale)
-        let output = directory.appendingPathComponent("outputs/\(UUID()).png")
+        let output = queued.map { URL(fileURLWithPath: $0.request.output) } ?? directory.appendingPathComponent("outputs/\(UUID()).png")
         var request = NativeRequest(prompt: "图像超分 ×\(scale)", output: output.path)
         request.model = scale == 2 ? "real-esrgan-x2plus" : "real-esrgan-x4plus"; request.operation = "image.upscale"
         request.width = size.width * scale; request.height = size.height * scale
         request.steps = 1; request.seed = 0; request.execution = compute.rawValue
         request.inputs = [NativeInput(kind: "image", role: "source", path: source.path)]
+        if let queued, queued.request.model != request.model {
+            throw NativeFailure(message: "所选 Core ML 模型的实际倍率与任务不一致。")
+        }
         let transaction = try ImageOutputTransaction(request: request)
-        let id = UUID(), start = ContinuousClock.now
+        let id = queued?.id ?? UUID(), start = ContinuousClock.now
         activeID = id; actualRoute = compute == .gpu ? "Core ML · CPU/GPU · \(scale)× 超分" : "Core ML · CPU/ANE · \(scale)× 超分（ANE 驻留未知）"
-        jobs.insert(NativeJob(id: id, createdAt: Date(), request: request, state: "preparing",
-                             phase: "upscale", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path), at: 0)
+        let running = NativeJob(id: id, createdAt: queued?.createdAt ?? Date(), request: request, state: "preparing",
+                               phase: "upscale", completed: 0, total: 1, elapsed: 0, modelPath: modelURL.path,
+                               webOrigin: queued?.webOrigin, inputAssets: queued?.inputAssets)
+        if let index = jobs.firstIndex(where: { $0.id == id }) { jobs[index] = running }
+        else { jobs.insert(running, at: 0) }
         do {
             try persist()
             if cancelRequested { throw CancellationError() }
@@ -829,19 +865,41 @@ final class NativeJobStore: ObservableObject {
         }
     }
     func enqueueMiniAppJobs(_ batch: [NativeJob]) throws {
+        guard batch.allSatisfy({ $0.miniAppOrigin != nil }) else {
+            throw NativeFailure(message: "应用任务批次无效。")
+        }
+        try enqueueGenerationJobs(batch)
+    }
+
+    func enqueueGenerationJobs(_ batch: [NativeJob]) throws {
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         let ids = Set(batch.map(\.id))
+        guard !externalServiceActive, !requiresProcessRestart, !workerCleanupPending else {
+            throw NativeFailure(message: "当前推理会话无法接收任务。")
+        }
+        guard jobs.lazy.filter({ $0.state == "queued" }).count + batch.count <= 32 else {
+            throw NativeFailure(message: "任务队列已满。")
+        }
         guard !batch.isEmpty, ids.count == batch.count, !jobs.contains(where: { ids.contains($0.id) }),
-              batch.allSatisfy({ $0.state == "queued" && $0.miniAppOrigin != nil }) else {
-            throw NativeFailure(message: "应用任务批次无效或已提交。")
+              batch.allSatisfy({ $0.state == "queued" }) else {
+            throw NativeFailure(message: "任务批次无效或已提交。")
         }
         let previous = jobs
         jobs.insert(contentsOf: batch.reversed(), at: 0)
         do { try persist() }
         catch { jobs = previous; throw error }
+        startGenerationQueue()
     }
-    func finishQueuedMiniAppJob(_ id: UUID, error: Error?) throws {
-        guard let index = jobs.firstIndex(where: { $0.id == id && ["queued", "cancelling"].contains($0.state) && $0.miniAppOrigin != nil }) else { return }
+
+    func cancelGeneration(_ id: UUID) throws {
+        if activeID == id || upscalingGenerationID == id { cancel(); return }
+        try finishQueuedGeneration(id, error: nil)
+        afterGenerationUpscales.removeValue(forKey: id)
+        generationWaiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
+    }
+
+    private func finishQueuedGeneration(_ id: UUID, error: Error?) throws {
+        guard let index = jobs.firstIndex(where: { $0.id == id && ["queued", "cancelling"].contains($0.state) }) else { return }
         let previous = jobs[index]
         jobs[index].state = error == nil ? "cancelled" : "failed"
         jobs[index].phase = jobs[index].state
@@ -850,21 +908,116 @@ final class NativeJobStore: ObservableObject {
         catch { jobs[index] = previous; throw error }
     }
 
+    func generateInQueue(modelURL: URL, request: NativeRequest,
+                         streamingRequest: NativeRequestV2? = nil,
+                         runtimeOptions: RuntimeImageWorker.Options? = nil,
+                         workflowID: String? = nil,
+                         inputAssets: [StudioAsset]? = nil,
+                         upscaleAfter: (model: URL, compute: UpscaleCompute)? = nil) async throws -> NativeJob {
+        try Task.checkCancellation()
+        let intent = try streamingRequest.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }
+        let job = NativeJob(id: UUID(), createdAt: Date(), request: request, state: "queued", phase: "queued",
+                            completed: 0, total: request.steps, elapsed: 0, modelPath: modelURL.path,
+                            publicStreamingTargetBytes: streamingRequest?.execution.streaming?.target_request_memory_bytes,
+                            publicStreamingIntentJSON: intent, runtimeOptions: runtimeOptions,
+                            workflowID: workflowID, inputAssets: NativeJob.matchingInputAssets(inputAssets, for: request))
+        try enqueueGenerationJobs([job])
+        afterGenerationUpscales[job.id] = upscaleAfter
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { generationWaiters[job.id] = $0 }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                do { try self?.cancelGeneration(job.id) }
+                catch { self?.storageError = error.localizedDescription }
+            }
+        }
+    }
+
+    private var canDrainGenerationQueue: Bool {
+        !busy && !resolvingAcceleration && !externalServiceActive && !requiresProcessRestart && storageError == nil
+    }
+
+    private func startGenerationQueue() {
+        guard generationQueue == nil, canDrainGenerationQueue, hasQueuedGeneration else { return }
+        generationQueue = Task { [weak self] in
+            guard let self else { return }
+            defer { self.generationQueue = nil }
+            while self.canDrainGenerationQueue, let job = self.jobs.last(where: { $0.state == "queued" }) {
+                await self.runQueuedGeneration(job)
+            }
+            if let failure = self.storageError ?? (self.requiresProcessRestart ? "请重启 App 恢复推理会话。" : nil) {
+                let waiters = self.generationWaiters
+                self.generationWaiters.removeAll()
+                self.afterGenerationUpscales.removeAll()
+                for waiter in waiters.values { waiter.resume(throwing: NativeFailure(message: failure)) }
+            }
+        }
+    }
+
+    private func runQueuedGeneration(_ job: NativeJob) async {
+        do {
+            guard let path = job.modelPath else { throw NativeFailure(message: "任务未指定模型安装。") }
+            let modelURL = URL(fileURLWithPath: path)
+            if job.request.operation == "image.upscale", UpscaleVariant.from(modelID: job.request.model) != nil {
+                let source = job.request.inputs?.first?.path
+                if let origin = job.webOrigin, let after = origin.afterJob {
+                    guard let parent = jobs.first(where: { $0.id == after }), parent.hasOutput,
+                          parent.webOrigin?.deviceID == origin.deviceID, parent.request.output == source else {
+                        throw NativeFailure(message: "前置创作没有生成可用图片。")
+                    }
+                }
+                guard let source, let compute = UpscaleCompute(rawValue: job.request.execution) else {
+                    throw NativeFailure(message: "超分任务缺少源图片或计算设置。")
+                }
+                let result = try await upscale(source: URL(fileURLWithPath: source), modelURL: modelURL, compute: compute, queuedJobID: job.id)
+                generationWaiters.removeValue(forKey: job.id)?.resume(returning: result)
+                return
+            }
+            if let origin = job.miniAppOrigin {
+                for id in origin.dependencies ?? [] {
+                    guard let parent = jobs.first(where: { $0.id == id }), parent.hasOutput,
+                          parent.miniAppOrigin?.appID == origin.appID, parent.miniAppOrigin?.deviceID == origin.deviceID,
+                          FileManager.default.isReadableFile(atPath: parent.request.output) else {
+                        throw NativeFailure(message: "所依赖的前置任务未生成可用图片。")
+                    }
+                }
+            }
+            let streaming = try job.publicStreamingIntentJSON.map { try JSONDecoder().decode(NativeRequestV2.self, from: Data($0.utf8)) }
+            var result = try await generate(modelURL: modelURL, request: job.request,
+                streamingRequest: streaming, runtimeOptions: job.runtimeOptions,
+                workflowID: job.workflowID, inputAssets: job.inputAssets, queuedJobID: job.id)
+            if let upscale = afterGenerationUpscales.removeValue(forKey: job.id) {
+                upscalingGenerationID = job.id
+                defer { upscalingGenerationID = nil }
+                result = try await self.upscale(source: URL(fileURLWithPath: result.request.output),
+                                                modelURL: upscale.model, compute: upscale.compute)
+            }
+            generationWaiters.removeValue(forKey: job.id)?.resume(returning: result)
+        } catch {
+            afterGenerationUpscales.removeValue(forKey: job.id)
+            do { try finishQueuedGeneration(job.id, error: error is CancellationError ? nil : error) }
+            catch { storageError = error.localizedDescription }
+            generationWaiters.removeValue(forKey: job.id)?.resume(throwing: error)
+        }
+    }
+
     func generate(modelURL: URL, request: NativeRequest,
                   streamingRequest: NativeRequestV2? = nil,
                   runtimeOptions: RuntimeImageWorker.Options? = nil,
                   workflowID: String? = nil,
                   inputAssets: [StudioAsset]? = nil,
-                  queuedMiniAppJob: UUID? = nil) async throws -> NativeJob {
-        guard !busy else { throw NativeFailure(message: "一次只能生成一张图或一个视频。") }
+                  queuedJobID: UUID? = nil) async throws -> NativeJob {
+        guard !busy, !externalServiceActive, queuedJobID != nil || !hasQueuedGeneration else {
+            throw NativeFailure(message: "一次只能生成一张图或一个视频。")
+        }
         guard storageError == nil else { throw NativeFailure(message: storageError!) }
         guard runtimeOptions == nil || streamingRequest == nil,
               (request.hybrid_mlp_mode == "runtime") == (runtimeOptions != nil) else {
             throw NativeFailure(message: "Runtime 实验必须通过独立工作进程提交，不能与流式选择器混用。")
         }
         // Capture before the first suspension; never read a changing UI draft.
-        let queuedJob = queuedMiniAppJob.flatMap { id in jobs.first { $0.id == id && $0.state == "queued" && $0.miniAppOrigin != nil } }
-        guard queuedMiniAppJob == nil || queuedJob != nil else { throw CancellationError() }
+        let queuedJob = queuedJobID.flatMap { id in jobs.first { $0.id == id && $0.state == "queued" } }
+        guard queuedJobID == nil || queuedJob != nil else { throw CancellationError() }
         let frozenInputAssets = NativeJob.matchingInputAssets(inputAssets, for: request)
         // Close the reentrancy window before any async plan/session operation.
         if let queuedJob { activeID = queuedJob.id }
@@ -888,10 +1041,17 @@ final class NativeJobStore: ObservableObject {
             }
         }
         activePreviewOutput = generationRequest.output
-        if streamingRequest == nil && runtimeOptions == nil {
+        let automationPayload = try queuedJob?.automationRequestJSON.map { json in
+            guard var value = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
+                throw NativeFailure(message: "Invalid stored API request.")
+            }
+            value["output"] = generationRequest.output
+            return try JSONSerialization.data(withJSONObject: value)
+        }
+        if streamingRequest == nil && runtimeOptions == nil && automationPayload == nil {
             let planRequest = generationRequest
             let installation = modelURL
-            if queuedJob != nil || planRequest.model == "qwen-image-2.1" && planRequest.model_variant != nil {
+            if queuedJob?.miniAppOrigin != nil || queuedJob?.webOrigin != nil || planRequest.model == "qwen-image-2.1" && planRequest.model_variant != nil {
                 _ = try await Task.detached { try NativeEngine.plan(planRequest, installation: installation) }.value
             } else {
                 _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value
@@ -1090,7 +1250,7 @@ final class NativeJobStore: ObservableObject {
                 engine = nil; loadedPath = nil; loadedModelID = nil; sessionReport = nil
                 if cancelRequested { throw CancellationError() }
                 sessionState = "LTX 独立 GPU 进程运行中"
-                let work = Task { try await LTXWorker.generate(model: modelURL, request: request, onEvent: callback) }
+                let work = Task { try await LTXWorker.generate(model: modelURL, request: request, payload: automationPayload, onEvent: callback) }
                 ltxTask = work
                 result = try await work.value
             } else {
@@ -1104,6 +1264,8 @@ final class NativeJobStore: ObservableObject {
                 sessionState = "使用中"
                 if let streamingRequest = frozenStreamingRequest {
                     result = try await opened.generate(streamingRequest, onEvent: callback)
+                } else if let automationPayload {
+                    result = try await opened.generateSchema1(automationPayload, onEvent: callback)
                 } else {
                     result = try await opened.generate(generationRequest, onEvent: callback)
                 }

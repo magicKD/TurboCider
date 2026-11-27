@@ -31,7 +31,7 @@ LIBRARY+=(services/model-library/TinyVAEAssets.swift)
 LIBRARY+=(services/model-library/TensorCache.swift)
 LIBRARY+=(services/model-library/DiagnosticTensorCache.swift)
 LIBRARY+=(services/model-library/InstallationInspection.swift services/model-library/LibraryComponents.swift)
-STATE+=("${LIBRARY[@]}" apps/macos/ModelLibraryController.swift apps/macos/LocalAPIController.swift apps/macos/LocalHTTPGateway.swift)
+STATE+=("${LIBRARY[@]}" apps/macos/ModelLibraryController.swift apps/macos/LocalAPIController.swift apps/macos/LocalHTTPGateway.swift apps/macos/LocalAPIQueue.swift)
 STATE+=(apps/macos/RunInsights.swift)
 STATE+=(apps/macos/TensorCacheController.swift)
 STATE+=(apps/macos/LTXWorker.swift)
@@ -43,7 +43,7 @@ STATE+=(apps/macos/SeedVR2ResourceAdvice.swift)
 STATE+=(apps/macos/SeedVR2Workflow.swift)
 STATE+=(apps/macos/HistorySelection.swift apps/macos/ImageUpscaler.swift)
 STATE+=(apps/macos/ModelHubPresentation.swift)
-STATE+=(apps/macos/MiniAppPackage.swift apps/macos/PeopleStudioMaterials.swift apps/macos/MiniAppRuntime.swift)
+STATE+=(apps/macos/MiniAppPackage.swift apps/macos/PeopleStudioMaterials.swift apps/macos/MiniAppRuntime.swift apps/macos/LANWebServer.swift apps/macos/WebStudioRuntime.swift)
 STATE+=(apps/macos/EditingCanvasSizing.swift apps/macos/ItemProviderDataLoader.swift apps/macos/PlaygroundState.swift)
 VIDEO_VIEWS=(apps/macos/VideoUpscaleComparison.swift apps/macos/UpscaleComparisonDivider.swift)
 APP_VIEWS=(
@@ -51,7 +51,7 @@ APP_VIEWS=(
  apps/macos/EditingCanvasSizingView.swift apps/macos/PlaygroundView.swift apps/macos/MiniAppWebHost.swift
  apps/macos/ReferenceImagePreparationView.swift apps/macos/ModelLibraryView.swift
  apps/macos/ModelLoRALibraryView.swift apps/macos/ANELibraryView.swift
- apps/macos/ModelDownloadView.swift apps/macos/LocalAPIView.swift
+ apps/macos/ModelDownloadView.swift apps/macos/LocalAPIView.swift apps/macos/LANWebServiceView.swift
  apps/macos/RunInsightsView.swift apps/macos/TensorCacheView.swift
  "${VIDEO_VIEWS[@]}" apps/macos/MediaViews.swift apps/macos/AccelerationView.swift apps/macos/CoreMLStorageView.swift
  apps/macos/TinyVAEViews.swift apps/macos/TinyVAELibraryView.swift apps/macos/App.swift
@@ -63,9 +63,14 @@ build_app_integration_test() {
 }
 APP_TARGETS="${TURBOCIDER_APP_TARGETS:-all}"
 case "$APP_TARGETS" in
- all|seedvr2|upscale-presentation|tiny-vae|prunavaed|desktop-media|mini-apps) ;;
- *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae, prunavaed, desktop-media or mini-apps\n' >&2; exit 2 ;;
+ all|seedvr2|upscale-presentation|tiny-vae|prunavaed|desktop-media|mini-apps|lan-web) ;;
+ *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae, prunavaed, desktop-media, mini-apps or lan-web\n' >&2; exit 2 ;;
 esac
+if [[ "$APP_TARGETS" == lan-web ]]; then
+ build_app_integration_test turbocider-lan-web-tests tests/integration/LANWebTests.swift
+ printf 'Built LAN Web integration tests\n'
+ exit 0
+fi
 if [[ "$APP_TARGETS" == mini-apps ]]; then
  build_app_integration_test turbocider-mini-app-tests apps/macos/MiniAppWebHost.swift tests/integration/MiniAppTests.swift
  printf 'Built mini-app package, host and WebKit tests\n'
@@ -148,6 +153,7 @@ build_app_integration_test turbocider-lora-management-tests tests/integration/Mo
 build_app_integration_test turbocider-model-library-tests tests/integration/ModelLibraryTests.swift
 build_app_integration_test turbocider-library-tool-tests tests/integration/LibraryToolTests.swift
 build_app_integration_test turbocider-local-api-tests tests/integration/LocalAPITests.swift
+build_app_integration_test turbocider-lan-web-tests tests/integration/LANWebTests.swift
 "$SWIFTC" "${FLAGS[@]}" apps/macos/LocalHTTPGateway.swift tests/integration/LocalHTTPGatewayTests.swift -o "$OUT/turbocider-http-gateway-tests"
 build_app_integration_test turbocider-run-insights-tests tests/integration/RunInsightsTests.swift
 build_app_integration_test turbocider-studio-gpu-model-tests tests/integration/StudioGPUModelTests.swift

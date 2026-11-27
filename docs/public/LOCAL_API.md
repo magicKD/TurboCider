@@ -2,12 +2,53 @@
 
 [Documentation](README.md) · [Usage reference](USAGE.md)
 
-TurboCider exposes a persistent job service over a user-only Unix socket.
-The App's local API page starts an owned service and its HTTP gateway, showing
-the socket path and HTTP URL (default `http://127.0.0.1:8765`).
-It releases the embedded model session first. Stop the API to resume generation
-inside the App. Quit or unexpected App termination stops its owned service;
-an independently launched CLI service has its own lifecycle.
+In the App, **启动 HTTP API** opens the loopback API at
+`http://127.0.0.1:8765` by default. It shares the persistent generation queue
+and model session with desktop creation and the Web workspace. Closing the
+listener leaves submitted jobs in the App's queue.
+
+**启动独立 Unix 服务** starts the standalone service and its loopback HTTP
+gateway. This mode owns a separate queue and model session. Use it with the
+desktop queue idle and the Web workspace closed. Quitting the App stops
+services it opened. A CLI service started independently has its own lifecycle.
+
+## Web workspace
+
+Open **本地 API → 网页服务**. Select **仅本机** for this Mac's browser or
+**局域网** for phones, tablets, and computers on the same reachable network.
+In LAN mode the service binds the IPv4 address of the selected interface.
+The default Web port is 8766 and can be changed before starting.
+
+Scan the QR code or copy the full pairing link to the browser. Submit a device
+name, then verify the six-digit code on the Mac and approve it. The link starts
+one pairing request and expires after three minutes. The Mac can revoke any
+paired device. A paired client opens the regular Web address on subsequent visits.
+
+**允许免配对直连** is off by default. Enable it in the Mac's **网页服务** panel
+to let devices on the reachable network open the workspace using the plain URL
+or QR code. Each browser receives its own session and private media, job history
+and drafts. Turning off direct access drops those sessions immediately. Paired
+devices keep their existing sessions. Restarting TurboCider returns to pairing.
+
+The workspace includes image and video creation, ordered references and
+keyframes, image and video upscaling, PoseWear, the native creation templates,
+installed community apps, a media library, jobs and the model center. Web
+creation and upscaling use the same queue as Mac desktop and the local API.
+The media library supports reuse, comparison and downloads. Video uploads use
+MP4, MOV or M4V with a 256 MiB Web limit. The image upload limit is 32 MiB for
+the workspace and 16 MiB for a mini app.
+
+Choose **允许并授权管理** when approving a device, or enable **可管理这台 Mac**
+on an existing pairing, to let that browser manage downloads, LoRAs, community
+packages, caches and the Mac's loopback HTTP API. The manager can also switch to
+the Mac/API job history. Actions that pick an existing Mac folder or configuration
+open a file chooser on that Mac. Direct sessions cannot obtain management
+permissions or open paired-device or Mac history.
+
+The Mac must remain awake with TurboCider running while it serves pages or
+processes jobs. HTTP on a LAN does not encrypt uploads or results. Use it on a
+trusted network. If a guest network isolates devices, choose a network where
+the browser can reach the Mac's address.
 
 ## CLI lifecycle
 
@@ -392,17 +433,14 @@ errors, creation time and result timing. Completed local image results can be
 previewed, opened, located in Finder or imported into the current creation
 draft as references. Videos and other local results provide file location.
 Importing a reference preserves the draft's model, prompt and generation
-settings; stop the API service before generating from the creation page.
-API jobs remain in their service history and are not automatically inserted
-into the App's creation history or copied into its materials. The task list
-loads when the page opens or the service starts, and on manual refresh; it does
-not continuously poll history. If the service stops or a refresh fails, the
+settings. Shared HTTP jobs also appear in the desktop task list. In standalone
+mode, API jobs stay in the service's own history. The API task list loads when
+the page opens or the service starts and on manual refresh. If the service stops or a refresh fails, the
 last successful page remains visible and is explicitly marked as possibly
 outdated, with its last refresh time. A failed read is not shown as empty
 history. Installation discovery is available through
 `installations` for registered metadata; it does not verify
-files or scan for unregistered models. Shared App history and a persisted
-workflow scheduler are not part of this protocol revision.
+files or scan for unregistered models.
 
 ## Troubleshooting
 
@@ -417,11 +455,9 @@ Use unique output paths; stop an App-owned service through its local API page.
 
 ## ComfyUI HTTP gateway
 
-The App Local API page starts a native loopback HTTP gateway together with the
-Unix service (default `http://127.0.0.1:8765`, configurable before starting). It
-displays routes and copyable curl/Python examples. Stop and App quit close both
-services; HTTP startup failure rolls back the owned native service. The App
-gateway needs no Python runtime.
+The App Local API page displays the loopback HTTP address, routes and copyable
+curl/Python examples. ComfyUI uses the same schema-1 HTTP routes in shared or
+standalone mode. The App gateway runs using the bundled Swift executable.
 
 The optional [ComfyUI integration](COMFYUI.md) adds a standalone gateway,
 image transfer, model/LoRA discovery, cancellation and ComfyUI custom nodes.

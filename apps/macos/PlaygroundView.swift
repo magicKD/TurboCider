@@ -6,7 +6,6 @@ struct PlaygroundView: View {
     @ObservedObject var state: PlaygroundState
     @ObservedObject var creator: StudioState
     @ObservedObject var store: NativeJobStore
-    @ObservedObject var api: LocalAPIController
     @Binding var submitting: Bool
     let showCreation: () -> Void
     let continueInCreation: (NativeJob) -> Void
@@ -15,7 +14,11 @@ struct PlaygroundView: View {
     @State private var showPrompt = false
     @AppStorage("playgroundInspectorVisible") private var inspectorVisible = true
 
-    private var controlsLocked: Bool { state.importing || state.importTask != nil || submitting || store.busy || api.running || api.changing }
+    private var controlsLocked: Bool { submitLocked || store.busy }
+    private var submitLocked: Bool {
+        state.importing || state.importTask != nil || submitting || store.externalServiceActive || store.workerCleanupPending ||
+            (store.busy && (state.settings.usesANE || state.settings.usesRuntimeANE))
+    }
     private var referenceTitle: String { "\(state.template.title(for: state.template.primaryRole))参考" }
     private var executionLabel: String {
         state.settings.executionDeviceLabel
@@ -36,7 +39,7 @@ struct PlaygroundView: View {
     private var submitBlocker: String? {
         if store.requiresProcessRestart { return "引擎需要重启 App 后才能继续生成。创作模板草稿已保留。" }
         if let error = store.storageError { return "任务历史保存失败：\(error)" }
-        if api.running || api.changing { return "本地 API 正在占用引擎，请先停止 API 服务。" }
+        if store.externalServiceActive { return "请先停止独立原生服务。" }
         return state.generationBlocker
     }
     private var statusText: String? {
@@ -47,10 +50,10 @@ struct PlaygroundView: View {
             }
             return "\(state.template.title) · \(job.phase) · \(job.completed)/\(job.total) · \(Int(job.elapsed)) 秒"
         }
-        if submitting { return "正在检查参数与执行资源…" }
+        if submitting { return "正在检查参数或等待队列…" }
         if state.importing || state.importTask != nil { return "正在处理参考图，原始副本与之前的任务输入会保留…" }
         if store.workerCleanupPending { return "正在等待工作进程清理，完成后可继续生成。" }
-        if store.busy { return "引擎正在执行其他任务，完成后可生成。" }
+        if store.busy { return "引擎正在执行其他任务，新任务将进入队列。" }
         return state.storageError ?? submitBlocker ?? state.message
     }
 
@@ -599,12 +602,12 @@ struct PlaygroundView: View {
             if ownedActiveJob != nil || (state.generationTask != nil && submitting) {
                 Button("取消生成", role: .destructive) {
                     state.generationTask?.cancel()
-                    if ownedActiveJob != nil || state.generationOwnsStore { store.cancel() }
+                    if let job = ownedActiveJob { try? store.cancelGeneration(job.id) }
                 }.accessibilityIdentifier("playgroundCancelGeneration")
             }
             Button("生成 · \(state.template.title)", systemImage: "sparkles") { generate() }
                 .buttonStyle(.borderedProminent).controlSize(.large)
-                .disabled(controlsLocked || submitBlocker != nil || creator.imageInputsBusy)
+                .disabled(submitLocked || submitBlocker != nil || creator.imageInputsBusy)
                 .accessibilityIdentifier("playgroundGenerate")
         }.padding(.horizontal, 18).padding(.vertical, 10)
     }
@@ -626,7 +629,7 @@ struct PlaygroundView: View {
         return state.startImport { state in await state.importProviders(providers, replacing: role) } != nil
     }
     private func generate() {
-        guard !controlsLocked, !creator.imageInputsBusy, submitBlocker == nil else { return }
+        guard !submitLocked, !creator.imageInputsBusy, submitBlocker == nil else { return }
         let snapshot: StudioDraft
         do {
             state.save()
@@ -636,7 +639,7 @@ struct PlaygroundView: View {
         let output = store.directory.appendingPathComponent("outputs/\(UUID().uuidString).png")
         submitting = true; state.message = nil
         state.generationTask = Task {
-            defer { submitting = false; state.generationTask = nil; state.generationOwnsStore = false }
+            defer { submitting = false; state.generationTask = nil }
             do {
                 let resolved = try await store.resolveAcceleration(snapshot)
                 try Task.checkCancellation()
@@ -645,12 +648,10 @@ struct PlaygroundView: View {
                     try await requestTask.value
                 } onCancel: { requestTask.cancel() }
                 try Task.checkCancellation()
-                guard !api.running, !api.changing, !store.busy else { throw NativeFailure(message: "引擎状态已改变，请稍后重新生成。") }
                 state.recordSubmission(resolved, seed: pair.legacy.seed, template: workflow)
                 guard state.storageError == nil else { throw NativeFailure(message: state.storageError ?? "创作模板保存失败。") }
                 try Task.checkCancellation()
-                state.generationOwnsStore = true
-                let job = try await store.generate(modelURL: URL(fileURLWithPath: resolved.modelPath),
+                let job = try await store.generateInQueue(modelURL: URL(fileURLWithPath: resolved.modelPath),
                     request: pair.legacy, streamingRequest: pair.v2,
                     runtimeOptions: try resolved.runtimeOptions(store: store.directory), workflowID: workflow.workflowID,
                     inputAssets: resolved.activeAssets)

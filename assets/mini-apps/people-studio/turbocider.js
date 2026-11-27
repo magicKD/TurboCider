@@ -2,6 +2,7 @@
 (() => {
   const host = window.TurboCider;
   if (!host) return;
+  const browser = host.platform === 'browser';
   const settings = Object.assign(Object.create(null), window.TurboCiderStorage || {});
   const get = key => {
     try { return JSON.parse(settings[key] ?? 'null'); } catch { return null; }
@@ -51,7 +52,8 @@
   }
 
   function imageURL(id) {
-    return id ? `tcapp://${location.hostname}/_media/${id}` : null;
+    if (!id) return null;
+    return host.media.url?.(id) ?? `tcapp://${location.hostname}/_media/${id}`;
   }
 
   function shotGroups(batch, job, items) {
@@ -136,11 +138,19 @@
 
   async function wait(initial, signal, status) {
     let job = initial;
+    let delay = browser ? 1050 : 550;
     while (!['succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.state)) {
       signal.throwIfAborted();
       status(job);
-      await new Promise(resolve => setTimeout(resolve, 550));
-      job = await host.jobs.get(job.id);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      signal.throwIfAborted();
+      try {
+        job = await host.jobs.get(job.id);
+        delay = browser ? 1050 : 550;
+      } catch (error) {
+        if (!browser || !(error instanceof TypeError)) throw error;
+        delay = Math.min(6000, delay * 2);
+      }
     }
     signal.throwIfAborted();
     if (job.state !== 'succeeded' || !job.output) throw new Error(job.error || '本机任务未完成。');
@@ -198,7 +208,8 @@
       list.replaceChildren();
       try {
         const models = await host.call('models.list');
-        status.textContent = models.find(item => item.id === engine)?.installed ? model : '请选择已下载的 Qwen Image 2.1 Turbo 模型目录。';
+        status.textContent = models.find(item => item.id === engine)?.installed ? model
+          : browser ? '请在 Mac 的 TurboCider 中选择 Qwen Image 2.1 Turbo 模型目录。' : '请选择已下载的 Qwen Image 2.1 Turbo 模型目录。';
         if (!models.find(item => item.id === engine)?.installed) return;
         const adapters = await host.call('adapters.list', { engine });
         if (!adapters.length) {
@@ -235,7 +246,9 @@
         };
       } catch (error) { status.textContent = error.message; }
     };
-    document.querySelector('#tcChooseModel').onclick = async () => {
+    const choose = document.querySelector('#tcChooseModel');
+    choose.hidden = browser;
+    choose.onclick = async () => {
       try { await host.call('models.chooseTurbo'); await update(); }
       catch (error) { status.textContent = error.message; }
     };
@@ -260,8 +273,19 @@
     enable: enabled => host.call('materials.online', { enabled }),
     download: collection => host.call('materials.download', { collection }),
     cancel: collection => host.call('materials.cancel', { collection }),
-    openSource: source => host.call('materials.openSource', { source })
+    async openSource(source) {
+      if (!browser) return host.call('materials.openSource', { source });
+      const page = window.open('about:blank', '_blank');
+      if (page) page.opener = null;
+      try {
+        const url = await host.call('materials.openSource', { source });
+        (page || window).location.assign(url);
+      } catch (error) {
+        page?.close();
+        throw error;
+      }
+    }
   };
-  window.PeopleStudioNative = { model, get, set, asBlob, importImage, imageURL, submit, wait, record, remember,
+  window.PeopleStudioNative = { model, browser, get, set, asBlob, importImage, imageURL, submit, wait, record, remember,
     transaction, settingsDialog, materials };
 })();

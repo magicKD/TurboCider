@@ -6,6 +6,7 @@
   <title>人物工作室 · TurboCider</title>
   <meta name="theme-color" content="#ffffff">
   <meta http-equiv="x-dns-prefetch-control" content="off">
+  <!-- turbocider-web-host -->
   <script src="turbocider.js"></script>
   <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css">
@@ -25,6 +26,10 @@
     </a>
 
     <nav class="tabs" aria-label="栏目">
+      <a class="tc-web-back" href="/#apps" aria-label="返回 TurboCider 应用页" title="返回 TurboCider 应用页" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+        <span>所有应用</span>
+      </a>
       <details class="shell-menu" name="header-popover" id="libraryMenu">
         <summary class="nav-trigger">
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
@@ -950,9 +955,10 @@
     <section>
       <label><input id="tcMaterialsOnline" type="checkbox"> 开启在线素材</label>
       <p>访问 PoseWear 官网目录，按需加载图片。提交生成时保存本次选用的可用参考。</p>
+      <p id="tcMaterialsHostNote" hidden>在线设置和离线下载可在 Mac 上管理。</p>
       <button id="tcMaterialsRefresh" type="button">刷新当前图库</button>
     </section>
-    <section>
+    <section id="tcDesktopMaterialDownloads">
       <h3>下载可离线使用的素材</h3>
       <p>历代服饰、场景、光影、道具和家具来自 Shisei。其他库通过在线来源按需访问。</p>
       <label for="tcMaterialCollection">素材库</label>

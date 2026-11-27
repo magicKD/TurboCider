@@ -31,6 +31,7 @@ Qwen Image 2.1／Z-Image 现支持原生 Tiny VAE 和可配置步数的实时预
 
 ## 支持的功能
 
+- **网页工作台**支持在同一局域网内使用图片与视频创作、PoseWear、素材库和任务队列。浏览器、Mac App 和本地 HTTP API 共用队列。[开启网页服务](docs/public/LOCAL_API.md#web-workspace)
 - **图像与视频创作：** 文生图、图片修改、多参考图编辑、文生视频和图生视频，按模型能力开放。
 - **LoRA 与生成控制：** 管理适配器、强度、随机种子、尺寸和步数，支持模型允许的运行时或内存合并策略。
 - **本地 API：** App 一键启停 HTTP 服务；支持模型发现、请求预检、任务提交、进度查询、取消和结果下载。另有 Unix socket 服务、Python HTTP 客户端及 C / Swift SDK。
@@ -44,7 +45,7 @@ Qwen Image 2.1／Z-Image 现支持原生 Tiny VAE 和可配置步数的实时预
 
 ## API 与 ComfyUI
 
-在 App 的「本地 API」页面点击「启动服务」，默认地址为 `http://127.0.0.1:8765`，可直接查看 curl / Python 示例。
+在 App 的「本地 API」页面点击「启动 HTTP API」。默认地址为 `http://127.0.0.1:8765`，页面提供 curl 和 Python 示例。
 
 ```sh
 curl http://127.0.0.1:8765/v1/health

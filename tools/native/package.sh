@@ -52,6 +52,7 @@ cp assets/branding/model-brands/* "$RES/ModelBrands/"
 cp assets/config/local-streaming-profile.json "$RES/"
 mkdir -p "$RES/MiniApps"
 cp -R assets/mini-apps/people-studio "$RES/MiniApps/"
+cp -R assets/web-studio "$RES/WebStudio"
 # Optional native-only image autoencoders. Never package conversion scripts,
 # .pth/pickle checkpoints, or a Python runtime. Users may also select their own
 # converted safetensors through the App without rebuilding it.
@@ -141,6 +142,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>TurboCiderBuildDate</key><string>${PACKAGE_BUILD_DATE}</string>
 <key>LSMinimumSystemVersion</key><string>${PACKAGE_MIN_MACOS}</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSLocalNetworkUsageDescription</key><string>让同一局域网中的手机、平板或电脑连接 TurboCider 网页工作台。</string>
 <key>UTExportedTypeDeclarations</key><array><dict>
 <key>UTTypeIdentifier</key><string>org.turbocider.studio-reference</string>
 <key>UTTypeDescription</key><string>TurboCider reference image ordering</string>

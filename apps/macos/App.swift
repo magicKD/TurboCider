@@ -10,6 +10,8 @@ struct TurboCiderNativeApp: App {
     @StateObject private var playground: PlaygroundState
     @StateObject private var api: LocalAPIController
     @StateObject private var miniApps: MiniAppRuntime
+    @StateObject private var web: LANWebServer
+    @StateObject private var library: ModelLibraryController
     @State private var submitting = false
     @NSApplicationDelegateAdaptor(StudioAppDelegate.self) private var delegate
     init() {
@@ -23,15 +25,24 @@ struct TurboCiderNativeApp: App {
         let studioState = StudioState(directory: directory)
         _studio = StateObject(wrappedValue: studioState)
         let builtInApp = Bundle.main.resourceURL?.appendingPathComponent("MiniApps/people-studio", isDirectory: true)
-        _miniApps = StateObject(wrappedValue: MiniAppRuntime(store: jobStore, studio: studioState, builtIn: builtInApp))
+        let runtime = MiniAppRuntime(store: jobStore, studio: studioState, builtIn: builtInApp)
+        _miniApps = StateObject(wrappedValue: runtime)
+        let libraryController = ModelLibraryController()
+        let apiController = LocalAPIController(directory: directory)
+        _library = StateObject(wrappedValue: libraryController)
+        _web = StateObject(wrappedValue: LANWebServer(runtime: runtime, library: libraryController, api: apiController))
         _playground = StateObject(wrappedValue: PlaygroundState(directory: directory,
             initialSettings: studioState.draft, models: studioState.models))
-        _api = StateObject(wrappedValue: LocalAPIController(directory: directory))
+        _api = StateObject(wrappedValue: apiController)
     }
     var body: some Scene {
         WindowGroup("TurboCider") {
-            StudioView(store: store, studio: studio, playground: playground, api: api, miniApps: miniApps, submitting: $submitting).frame(minWidth: 980, minHeight: 700)
-                .onAppear { delegate.store = store; delegate.studio = studio; delegate.playground = playground; delegate.api = api; delegate.miniApps = miniApps; delegate.submitting = submitting }
+            StudioView(store: store, studio: studio, playground: playground, api: api, miniApps: miniApps, web: web, library: library,
+                       submitting: $submitting).frame(minWidth: 980, minHeight: 700)
+                .onAppear {
+                    delegate.store = store; delegate.studio = studio; delegate.playground = playground
+                    delegate.api = api; delegate.web = web; delegate.submitting = submitting
+                }
                 .onChange(of: submitting) { _, value in delegate.submitting = value }
         }
         .commands {
@@ -65,13 +76,14 @@ struct TurboCiderNativeApp: App {
     weak var studio: StudioState?
     weak var playground: PlaygroundState?
     weak var api: LocalAPIController?
-    weak var miniApps: MiniAppRuntime?
+    weak var web: LANWebServer?
     var submitting = false
-    func applicationWillTerminate(_ notification: Notification) { api?.terminateNow() }
+    func applicationWillTerminate(_ notification: Notification) { web?.stop(); api?.terminateNow() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         studio?.save()
         playground?.save()
-        guard submitting || store?.busy == true || api?.running == true || miniApps?.hasPendingJobs == true ||
+        guard submitting || store?.busy == true || store?.hasQueuedGeneration == true || api?.running == true ||
+                (web?.mode ?? .off) != .off ||
                 studio?.imageInputsBusy == true || playground?.importing == true ||
                 playground?.importTask != nil else { return .terminateNow }
         let alert = NSAlert(); alert.messageText = "任务仍在进行中"; alert.informativeText = "退出会中断本机任务。草稿与历史记录会保留。"
@@ -91,7 +103,7 @@ private func operationName(_ value: String) -> String {
      "video.reference": "参考视频"][value] ?? value
 }
 private func stateName(_ value: String) -> String {
-    ["preparing": "准备中", "running": "生成中", "cleanup_pending": "等待进程清理", "finalizing": "正在保存结果", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
+    ["queued": "排队中", "preparing": "准备中", "running": "生成中", "cleanup_pending": "等待进程清理", "finalizing": "正在保存结果", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
 }
 private func phaseName(_ value: String) -> String {
     if let memory = Qwen21MemoryPresentation.phaseTitle(value) { return memory }
@@ -138,7 +150,8 @@ struct StudioView: View {
     @ObservedObject var playground: PlaygroundState
     @ObservedObject var api: LocalAPIController
     @ObservedObject var miniApps: MiniAppRuntime
-    @StateObject private var library = ModelLibraryController()
+    @ObservedObject var web: LANWebServer
+    @ObservedObject var library: ModelLibraryController
     @StateObject private var tensorCache = TensorCacheController()
     @State private var page: StudioPage? = .studio
     @State private var selected: UUID?
@@ -160,6 +173,7 @@ struct StudioView: View {
     @State private var pendingUpscaleReuseSource: String?
     @State private var librarySelection: String?
     @Binding var submitting: Bool
+    @State private var studioGenerationTask: Task<Void, Never>?
     @State private var annotationAsset: StudioAsset?
     @State private var preparationAsset: StudioAsset?
     @State private var showingCanvasSizing = false
@@ -197,7 +211,7 @@ struct StudioView: View {
     private var preparingSubmission: Bool { submitting && !store.busy }
     private var assetControlsLocked: Bool { preparingSubmission || studio.imageInputsBusy }
     private var upscaleControlsLocked: Bool {
-        store.busy || submitting || studio.imageInputsBusy || api.running || api.changing || store.resolvingAcceleration
+        store.busy || submitting || studio.imageInputsBusy || store.externalServiceActive || store.resolvingAcceleration
     }
     private var videoUpscaling: Bool { page == .upscale && studio.supportsVideoInputs }
     private var upscaleKind: String { imageUpscaling ? "image" : studio.creationKind }
@@ -312,7 +326,7 @@ struct StudioView: View {
                 case .upscale: workspace
                 case .playground:
                     ApplicationsView(runtime: miniApps, showModels: { page = .models }, showTasks: { page = .tasks }) {
-                        PlaygroundView(state: playground, creator: studio, store: store, api: api,
+                        PlaygroundView(state: playground, creator: studio, store: store,
                         submitting: $submitting, showCreation: { page = .studio },
                         continueInCreation: { job in
                             Task {
@@ -324,7 +338,7 @@ struct StudioView: View {
                 case .models: modelsPage
                 case .tasks: tasksPage
                 case .library: libraryPage
-                case .api: LocalAPIView(api: api, store: store, studio: studio).disabled(preparingSubmission)
+                case .api: LocalAPIView(api: api, store: store, studio: studio, web: web)
                 }
             }.background(Color(nsColor: .windowBackgroundColor))
         }
@@ -371,7 +385,7 @@ struct StudioView: View {
             showingRecentResults = false
             if next == .studio {
                 if imageUpscaling || studio.draft.operation.hasSuffix(".upscale") {
-                    guard !store.busy, !submitting, !studio.imageInputsBusy, !api.running, !api.changing,
+                    guard !store.busy, !submitting, !studio.imageInputsBusy, !store.externalServiceActive,
                           !store.resolvingAcceleration else {
                         page = previous
                         studio.message = "请先完成当前任务或停止本地 API，再返回创作。"
@@ -414,7 +428,7 @@ struct StudioView: View {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
             guard page == .studio || page == .upscale, !preparingSubmission, studio.draft.upscaleAutoPreload, (imageUpscaling || studio.draft.upscaleAfterGeneration),
                   (try? ImageUpscaler.validateModelURL(URL(fileURLWithPath: studio.draft.upscaleModelPath))) != nil,
-                  !studio.draft.upscaleModelPath.isEmpty, !store.busy, !api.running, !api.changing else { return }
+                  !studio.draft.upscaleModelPath.isEmpty, !store.busy, !store.externalServiceActive else { return }
             do {
                 try await store.preloadUpscaler(modelURL: URL(fileURLWithPath: studio.draft.upscaleModelPath), compute: studio.draft.upscaleCompute)
                 if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
@@ -762,7 +776,7 @@ struct StudioView: View {
         selectedHistoryIDs.contains(job.id) ? selectedHistoryIDs : [job.id]
     }
     private var historySourceLocked: Bool {
-        store.busy || submitting || studio.imageInputsBusy || api.running || api.changing
+        store.busy || submitting || studio.imageInputsBusy || store.externalServiceActive
     }
     private func useResultForVideo(_ job: NativeJob) {
         guard !historySourceLocked else { return }
@@ -877,16 +891,20 @@ struct StudioView: View {
                     } label: {
                         Text(studio.draft.upscaleAfterGeneration ? "超分 ×\(studio.draft.upscaleVariant.scale)" : "原始输出").font(.caption)
                     }.menuStyle(.borderlessButton).fixedSize()
-                        .disabled(store.busy || submitting || api.running || api.changing || studio.imageInputsBusy)
+                        .disabled(store.busy || submitting || store.externalServiceActive || studio.imageInputsBusy)
                         .accessibilityIdentifier("generationUpscale").help("生成后超分")
                 }
+                if let studioGenerationTask {
+                    Button("取消本次提交") { studioGenerationTask.cancel() }.accessibilityIdentifier("cancelStudioGeneration")
+                }
                 Button(action: generate) {
-                    Label(store.busy ? (studio.draft.isNativeUpscale ? "正在超分" : "正在生成")
+                    Label(submitting ? "已提交"
                           : studio.draft.isNativeUpscale ? "开始\(studio.creationKind == "video" ? "视频" : "图像")超分"
                           : (studio.creationKind == "video" ? "生成视频" : editingImage ? "生成修改" : "生成图片"), systemImage: "arrow.up")
                         .padding(.horizontal, 8).padding(.vertical, 4)
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
-                    .disabled(store.busy || api.running || api.changing || submitting || studio.imageInputsBusy ||
+                    .disabled(store.externalServiceActive || store.requiresProcessRestart || store.workerCleanupPending ||
+                              (store.busy && (studio.draft.usesANE || studio.draft.usesRuntimeANE)) || submitting || studio.imageInputsBusy ||
                               model?.executor != true || !studio.selectedStreamingTargetAvailable || generationBlocker != nil)
                     .accessibilityIdentifier("generate").help("⌘ Return")
             }
@@ -913,7 +931,7 @@ struct StudioView: View {
                     }
                     else if !studio.draft.qwen21TurboConfigurationIssues.isEmpty {
                         Button("应用 Turbo 设置") { studio.applyQwen21TurboPreset() }
-                            .font(.caption).disabled(assetControlsLocked || api.running || api.changing)
+                            .font(.caption).disabled(assetControlsLocked || store.externalServiceActive)
                             .accessibilityIdentifier("repairTurboSettings")
                     }
                     else if studio.draft.operation == "video.keyframes", studio.draft.firstKeyframe == nil {
@@ -1180,7 +1198,7 @@ struct StudioView: View {
                         })) {
                             ForEach(versions) { version in Text(version.title).tag(version.path) }
                         }
-                        .disabled(store.busy || submitting || studio.imageInputsBusy || library.busy || api.running || api.changing)
+                        .disabled(store.busy || submitting || studio.imageInputsBusy || library.busy || store.externalServiceActive)
                         .accessibilityIdentifier("zImageWeightVersion")
                         Text("选择已安装的版本；可在模型中心下载其他版本。")
                             .font(.caption2).foregroundStyle(.secondary)
@@ -1193,7 +1211,7 @@ struct StudioView: View {
                             studio.selectInstallation(modelID: Qwen21Installation.modelID, path: $0)
                         })) {
                             ForEach(versions) { version in Text(version.title).tag(version.path) }
-                        }.disabled(store.busy || submitting || studio.imageInputsBusy || library.busy || api.running || api.changing)
+                        }.disabled(store.busy || submitting || studio.imageInputsBusy || library.busy || store.externalServiceActive)
                             .accessibilityIdentifier("qwenWeightVersion")
                     }
                 }
@@ -1201,7 +1219,7 @@ struct StudioView: View {
                 if studio.draft.modelID == "ltx-2.5-distilled", !studio.draft.usesPublicStreaming,
                    studio.draft.residency != "streamed" {
                     Button("开启默认流式加载") { studio.setLTXResidency("streamed") }
-                        .disabled(store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+                        .disabled(store.busy || submitting || studio.imageInputsBusy || store.externalServiceActive)
                         .accessibilityIdentifier("enableLTXStreaming")
                 }
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
@@ -1404,7 +1422,7 @@ struct StudioView: View {
                 if studio.draft.operation == "image.edit" {
                     Divider()
                     Qwen21ReferenceEncodingSettings(draft: studio.draft,
-                        locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
+                        locked: store.busy || submitting || studio.imageInputsBusy || store.externalServiceActive,
                         setSize: { studio.setQwen21ReferenceSize($0) })
                 }
                 if !studio.draft.usesQwen21InstalledRecipe {
@@ -1418,11 +1436,11 @@ struct StudioView: View {
                 Divider()
                 DisclosureGroup("超分设置") {
                 UpscaleSettingsView(store: store, studio: studio,
-                                    locked: store.busy || submitting || api.running || api.changing,
+                                    locked: store.busy || submitting || store.externalServiceActive,
                                     showsVariantPicker: false, manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models })
                 }
             }
-            TinyVAEControls(draft: $studio.draft, locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+            TinyVAEControls(draft: $studio.draft, locked: store.busy || submitting || studio.imageInputsBusy || store.externalServiceActive)
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)
@@ -1827,6 +1845,11 @@ struct StudioView: View {
             if !store.deletedJobs.isEmpty { Button("撤销删除 \(store.deletedJobs.count) 项任务") { do { try store.undoDeleteJob() } catch { studio.message = error.localizedDescription } }.accessibilityIdentifier("undoDeleteJob") }
             List(store.jobs) { job in
                 DisclosureGroup {
+                    if job.automationRequestJSON != nil {
+                        Label("本机 HTTP API", systemImage: "network").font(.caption).foregroundStyle(.secondary)
+                    } else if job.miniAppOrigin?.deviceID != nil {
+                        Label("网页工作台", systemImage: "globe").font(.caption).foregroundStyle(.secondary)
+                    }
                     if let name = job.workflowName { Label(name, systemImage: "square.grid.2x2").font(.caption).foregroundStyle(.secondary) }
                     Text(job.request.prompt).textSelection(.enabled)
                     if job.request.model == "qwen-image-2.1", job.request.operation == "image.edit" {
@@ -1840,6 +1863,12 @@ struct StudioView: View {
                     }
                     if let error = job.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                     HStack {
+                        if job.state == "queued" {
+                            Button("取消排队") {
+                                do { try store.cancelGeneration(job.id) }
+                                catch { studio.message = error.localizedDescription }
+                            }
+                        }
                         Button("复用参数") { reuseParameters(job) }.disabled(assetControlsLocked)
                         if job.hasOutput {
                             Button("查看结果") { showResult(job) }
@@ -2044,7 +2073,7 @@ struct StudioView: View {
         }
     }
     private func loadModel(_ id: String) {
-        guard !api.running, !api.changing else { studio.message = "请先停止本地 API 服务，再加载 App 创作会话。"; return }
+        guard !store.externalServiceActive else { studio.message = "请先停止本地 API 服务，再加载 App 创作会话。"; return }
         guard let path = studio.draft.modelPaths[id], !path.isEmpty else { return }
         studio.message = nil
         if studio.draft.modelID != id { studio.selectModel(id) }
@@ -2075,7 +2104,8 @@ struct StudioView: View {
         catch { studio.message = error.localizedDescription }
     }
     private func generate() {
-        guard !store.busy, !api.running, !api.changing, !submitting, !studio.imageInputsBusy else { return }
+        guard !store.externalServiceActive, !store.requiresProcessRestart, !store.workerCleanupPending,
+              !submitting, !studio.imageInputsBusy else { return }
         if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
         if snapshot.upscaleAfterGeneration && studio.creationKind != "video" && !snapshot.isNativeUpscale {
@@ -2084,9 +2114,10 @@ struct StudioView: View {
         }
         let ext = snapshot.operation.hasPrefix("video.") ? "mp4" : "png"
         let output = store.directory.appendingPathComponent("outputs/\(UUID().uuidString).\(ext)")
+        let upscaleAfter = snapshot.upscaleAfterGeneration && ext == "png" && !snapshot.isNativeUpscale
         submitting = true; studio.message = nil
-        Task {
-            defer { submitting = false }
+        studioGenerationTask = Task {
+            defer { submitting = false; studioGenerationTask = nil }
             do {
                 let resolved = try await store.resolveAcceleration(snapshot)
                 studio.rememberAcceleration(resolved)
@@ -2094,19 +2125,16 @@ struct StudioView: View {
                     try resolved.publicStreamingRequest(output: output)
                 }.value
                 studio.lastSeed = pair.legacy.seed; studio.save()
-                let job = try await store.generate(
+                let job = try await store.generateInQueue(
                     modelURL: URL(fileURLWithPath: resolved.modelPath),
                     request: pair.legacy,
                     streamingRequest: pair.v2,
                     runtimeOptions: try resolved.runtimeOptions(store: store.directory),
-                    inputAssets: resolved.activeAssets)
+                    inputAssets: resolved.activeAssets,
+                    upscaleAfter: upscaleAfter ? (URL(fileURLWithPath: snapshot.upscaleModelPath), snapshot.upscaleCompute) : nil)
                 selected = job.id; compareOriginal = false
                 resultSelection.select(job.id, orderedIDs: outputIDs)
-                if snapshot.upscaleAfterGeneration && ext == "png" && !snapshot.isNativeUpscale {
-                    let upscaled = try await store.upscale(source: output, modelURL: URL(fileURLWithPath: snapshot.upscaleModelPath), compute: snapshot.upscaleCompute)
-                    if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
-                    selected = upscaled.id; resultSelection.select(upscaled.id, orderedIDs: outputIDs)
-                }
+                if upscaleAfter, let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
             } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : Qwen21MemoryPresentation.message(for: error) }
         }
     }

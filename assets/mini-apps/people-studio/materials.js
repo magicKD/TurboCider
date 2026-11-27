@@ -14,9 +14,16 @@
   let updating = false;
   let timer;
   let states = new Map();
+  const readOnly = window.PeopleStudioNative.browser && !window.TurboCider.canManage;
+  if (readOnly) {
+    toggle.disabled = true;
+    $('tcDesktopMaterialDownloads').hidden = true;
+    $('tcMaterialsHostNote').hidden = false;
+  }
 
   function paint(state) {
     toggle.checked = state.online;
+    if (readOnly) return;
     if (!select.options.length) {
       for (const choice of state.collections.filter(item => item.downloadable)) {
         select.append(new Option(choice.title, choice.id));

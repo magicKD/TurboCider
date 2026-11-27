@@ -5,6 +5,7 @@ struct LocalAPIView: View {
     @ObservedObject var api: LocalAPIController
     @ObservedObject var store: NativeJobStore
     @ObservedObject var studio: StudioState
+    @ObservedObject var web: LANWebServer
     @State private var previewJob: LocalAPIJob?
     @State private var importedJobID: String?
     @State private var resultMessage: String?
@@ -12,14 +13,14 @@ struct LocalAPIView: View {
         """
         使用本机 TurboCider 的 HTTP API 或 Unix socket API：
         HTTP: \(api.httpURL)
-        App“本地 API”页启动服务时自动启动 HTTP 网关，无需 Python 或手动运行网关脚本。仅本机可访问。
+        在 App 的「本地 API」选择「启动 HTTP API」。它仅供此 Mac 的客户端使用，与桌面创作和网页共用任务队列。
         HTTP JSON 路由：GET /v1/health、GET /v1/catalog、POST /v1/plan、POST /v1/jobs、GET /v1/jobs、GET /v1/jobs/{id}、POST /v1/jobs/{id}/cancel、GET /v1/jobs/{id}/artifact。
         先用 catalog 读取已登记 installations、loras 和 models，再用 {"installation_id":"登记ID","request":{...原生schema-1请求...}} plan / jobs；不要提供 output 或 model_path，由网关分配输出。
         图片上传：POST /v1/assets，Content-Type: image/png，二进制 PNG；返回 id。请求 inputs 使用 {"kind":"image","role":"reference","asset_id":"上传ID"}；LoRA 使用 {"id":"登记ID","role":"transformer","strength":1}。
         ComfyUI Model (API) 的 api_url 填 HTTP 地址；Desktop Remote Connection 填 ComfyUI 自身地址（通常 http://127.0.0.1:8188），不是网关地址。
-        HTTP 同时接受多个客户端，任务由原生队列执行。Unix RPC 调用格式如下：
+        使用「启动独立 Unix 服务」时，还可以调用 Unix RPC。
         Socket: \(api.socketPath)
-        先在 App 的“本地 API”页启动服务。每个连接发送一个 UTF-8 JSON 对象，以换行结尾；每个连接只处理一次请求。
+        每个连接发送一个 UTF-8 JSON 对象，以换行结尾。每个连接处理一次请求。
         首先发送 {"action":"capabilities"} 获取操作、字段类型和限制；再发送 {"action":"models"} 查询模型能力（不是已安装模型列表）。
         发送 {"action":"installations"} 获取此服务所用模型库的 root 和 index；其中 installations、loras、anePartitions 是已登记的本机路径。files_verified=false 表示未检查权重完整性，不能据此保证可运行。
         模型库查询由服务自身配套助手执行，不使用调用方的环境或默认目录；旧版服务不支持此操作时需更新完整 App/CLI 包，不扫描目录猜模型。
@@ -30,7 +31,7 @@ struct LocalAPIView: View {
         使用 plan 检查完整生成请求，使用 submit 提交 model_path 和 request，保存返回的 id；用 status 查询直到 succeeded/failed/cancelled/interrupted。
         模型、LoRA、参考图与输出均使用本机路径；参考图按 inputs 顺序编号，每步使用独立输出路径。上一任务 succeeded 后再将其输出用于下一步。
         提交后若连接中断，先用 jobs 核对是否已入队，不自动重复提交。等待超时不会取消任务；需要停止时显式调用 cancel 并继续查询状态。
-        本地 API 页可分页查看 API 任务和图片结果，完成图可预览、定位或导入创作参考；API 历史仍与创作页分开保存，不自动复制素材。退出 App 会停止它启动的服务。所有工作只使用已有本地文件，不下载模型。
+        本地 API 页可分页查看 API 任务和图片结果。共享 HTTP API 的任务也显示在桌面任务页，独立服务使用自己的历史。退出 App 会停止它启动的服务。
         """
     }
     var body: some View {
@@ -38,15 +39,16 @@ struct LocalAPIView: View {
             VStack(alignment: .leading, spacing: 22) {
                 Label("本地 API", systemImage: "network").font(.largeTitle.weight(.semibold))
                 Text("让本机脚本与其他应用通过同一任务服务调用 TurboCider。").foregroundStyle(.secondary)
+                LANWebServiceView(web: web, exclusiveServiceActive: store.externalServiceActive)
                 GroupBox {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             Circle().fill(api.running ? .green : .secondary).frame(width: 9, height: 9)
                             Text(api.status).font(.headline); Spacer()
                             if api.changing { ProgressView().controlSize(.small) }
-                            Button(api.running ? "停止服务" : "启动服务") {
-                                if api.running { api.stop() } else { Task { await api.start(store: store) } }
-                            }.disabled(api.changing || store.busy).accessibilityIdentifier("toggleLocalAPI")
+                            Button(api.running ? "停止 API" : "启动 HTTP API") {
+                                if api.running { api.stop() } else { Task { await api.startShared(store: store) } }
+                            }.disabled(api.changing).accessibilityIdentifier("toggleLocalAPI")
                         }
                         HStack {
                             Text("HTTP 端口")
@@ -57,11 +59,15 @@ struct LocalAPIView: View {
                         }
                         LabeledContent("HTTP API", value: api.httpURL).font(.callout.monospaced()).textSelection(.enabled)
                             .accessibilityIdentifier("localAPIHTTPURL")
-                        LabeledContent("Socket", value: api.socketPath).font(.callout.monospaced()).textSelection(.enabled)
-                        Text("启动时释放 App 的嵌入式模型会话；API 服务按需加载并复用模型。停止服务后可回到创作页生成。").font(.caption).foregroundStyle(.secondary)
+                        if api.running && !api.shared {
+                            LabeledContent("Unix socket", value: api.socketPath).font(.callout.monospaced()).textSelection(.enabled)
+                            Text("独立服务使用自己的模型会话和历史。").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("HTTP API 与桌面、网页共享任务队列。停止 HTTP 监听后，已提交的任务仍由 App 执行。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         HStack {
                             Button("复制 HTTP 地址") { copy(api.httpURL) }.accessibilityIdentifier("copyAPIHTTPURL")
-                            Button("复制 Socket 路径") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(api.socketPath, forType: .string) }
                             Button("复制 AI 接入说明") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(connectionInstructions, forType: .string) }
                                 .accessibilityIdentifier("copyAIConnectionInstructions")
                             Button("打开日志目录") { NSWorkspace.shared.open(api.directory) }
@@ -75,8 +81,14 @@ struct LocalAPIView: View {
                 }
                 httpUsageSection
                 jobsSection
-                Text("Unix socket 调用").font(.title2)
-                Text("原生接口也可通过 Unix socket JSON RPC 调用，适合当前 Mac 的本地进程。每个连接发送一个以换行结尾的 JSON 对象。").foregroundStyle(.secondary)
+                Text("独立原生服务").font(.title2)
+                Text("Unix socket 模式独立管理原生引擎和任务历史。可在桌面推理空闲、网页和共享 HTTP 服务关闭时启动。")
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("启动独立 Unix 服务") { Task { await api.start(store: store) } }
+                        .disabled(api.running || api.changing || store.busy || store.hasQueuedGeneration || web.mode != .off || web.changing)
+                    Button("复制 Socket 路径") { copy(api.socketPath) }
+                }
                 Text("turbocider rpc \(api.socketPath) rpc.json\n\nrpc.json:\n{\"action\":\"capabilities\"}")
                     .font(.system(.body, design: .monospaced)).textSelection(.enabled).padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
@@ -87,7 +99,7 @@ struct LocalAPIView: View {
                 }
                 Text("先用 capabilities 获取接口格式，用 models 查询模型能力、installations 读取已登记模型与 LoRA 路径。需要缩放参考图时显式调用 image_prepare，使用返回的 image_path；workflows 和 workflow_request 按图片角色组合请求，再用 plan 检查生成参数。submit 提交后保存任务 ID，用 status 查询进度，cancel 停止任务。复制接入说明后，可以交给本机 AI 编排多步创作。")
                     .font(.callout)
-                Text("停止服务或退出 App 会同时关闭 HTTP 网关和原生服务；独立运行可使用配套 start.py 启动器。API 任务记录位于服务目录中，与创作页历史分开保存。")
+                Text("独立模式可以使用 Unix RPC 和本机 HTTP；退出 App 会停止它启动的服务。")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(28)
         }.task {
@@ -211,7 +223,7 @@ struct LocalAPIView: View {
                         .disabled(!api.running || api.changing || api.jobsLoading)
                         .accessibilityIdentifier("refreshAPIJobs")
                 }
-                Text("按创建时间分页；图片可导入创作参考，任务记录仍保存在 API 服务中。")
+                Text("按创建时间分页。共享模式下的 API 任务也在桌面任务页可见。")
                     .font(.caption).foregroundStyle(.secondary)
                 if api.jobsStale {
                     Label(api.jobsUpdatedAt == nil ? (api.running ? "尚未成功读取任务列表" : "启动服务后可读取任务列表") : "显示上次读取的数据，当前列表可能已过时",
@@ -248,7 +260,7 @@ struct LocalAPIView: View {
                             Button("取消导入") { studio.cancelImageImport() }.disabled(studio.cancellingImageImport)
                         }
                     } else if let message = studio.message { Text(message).font(.caption).foregroundStyle(.secondary) }
-                    else { Text("已添加到创作参考。停止 API 服务后，可回到创作页编辑。") .font(.caption).foregroundStyle(.secondary) }
+                    else { Text("已添加到创作参考，可在创作页编辑。").font(.caption).foregroundStyle(.secondary) }
                 }
                 if let resultMessage { Text(resultMessage).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)

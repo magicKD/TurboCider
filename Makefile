@@ -27,6 +27,7 @@ help:
 	@echo 'TURBOCIDER_BUILD_APP_ONLY=1 make build-app  Build App/helper without compiling test targets'
 	@echo 'make build-vision-quality         Build optional public-Vision quality helper'
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
+	@echo 'make test-lan-web                 Verify pairing, browser media and shared queue admission'
 	@echo 'make test-library                 Verify model library using tiny loopback downloads'
 	@echo 'make test                         Verify repository boundaries and request contracts'
 	@echo 'make test-validation-helpers      Verify SeedVR2 files and H3 VAE metrics (NumPy; no models)'
@@ -392,6 +393,12 @@ h3-quant-cache: build
 test-comfyui:
 	@"$(PYTHON)" tests/comfyui/test_gateway.py
 	@"$(COMFYUI_PYTHON)" tests/comfyui/test_nodes.py
+
+.PHONY: test-lan-web
+test-lan-web:
+	@TURBOCIDER_APP_TARGETS=lan-web bash tools/native/build_app.sh
+	@"$${TURBOCIDER_BUILD_OUTPUT_DIR:-$${TURBOCIDER_NATIVE_OUT:-build/native}}/turbocider-lan-web-tests" \
+		assets/mini-apps/people-studio assets/web-studio
 
 .PHONY: test-mini-apps
 test-mini-apps:

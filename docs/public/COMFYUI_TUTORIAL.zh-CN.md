@@ -1,20 +1,20 @@
 # 在 ComfyUI / Comfy Desktop 中使用 TurboCider
 
-本教程适用于 `dev-comfyui` 分支及包含 `comfyui` 配套目录的发行包。模型和 LoRA 保留在 TurboCider 模型库中，由 TurboCider 加载与推理；ComfyUI 负责工作流、参考图、预览和保存，不需要安装任何模型权重。
+本教程适用于包含 `comfyui` 配套目录的 TurboCider 发行包。TurboCider 从本地模型库加载模型和 LoRA 并执行推理，ComfyUI 负责工作流、参考图、预览和保存。
 
 ## 1. App 里面有接口吗？
 
-**有。TurboCider App 的「本地 API」页面已经集成原生服务的启动、停止、连接信息及任务结果查看。** 页面提供「启动服务」「复制 Socket 路径」「复制 AI 接入说明」「打开日志目录」等操作。
-
-点击 App 的 **启动服务**会同时启动 **原生 API 和内置 HTTP 网关**，默认地址为 `http://127.0.0.1:8765`。页面可修改端口、复制 HTTP 地址、展开并复制 curl / Python 示例。App 网关是原生实现，不需要 Python 环境，也无需手动运行网关脚本。
+在 TurboCider App 的「本地 API」中点击 **启动 HTTP API**。默认地址是
+`http://127.0.0.1:8765`，连接的 ComfyUI 和桌面、网页共用任务队列。
+页面支持更改端口、复制地址、查看结果和复制 curl 或 Python 示例。
 
 ComfyUI 仍需安装一次 TurboCider 自定义节点；节点安装器和工作流工具位于同版本发行包的 `comfyui` 目录，或本分支源码中。原生 Unix socket 接口同时保留。
 
 ```mermaid
 flowchart LR
     D[Comfy Desktop 或浏览器] -->|8188| C[ComfyUI 工作流和 TurboCider 节点]
-    C -->|HTTP 8765| H[TurboCider HTTP 网关]
-    H -->|Unix socket| T[TurboCider 原生 API]
+    C -->|HTTP 8765| H[TurboCider HTTP API]
+    H --> T[TurboCider 任务队列]
     T --> M[已有模型和 LoRA · Metal 推理]
     T -->|结果图片| H
     H -->|IMAGE / MASK| C
@@ -93,14 +93,14 @@ python3 tools/comfyui/start.py
 
 独立方式由 CLI 持有原生服务，不需要打开 TurboCider App 的「本地 API」。退出 App 不会停止这套服务；在启动终端按 **Ctrl-C** 会停止该启动器创建的进程，生成结果保留。不要同时在 App 创作页执行另一份模型推理，以免争用 GPU 和内存。
 
-### 方式 B：由 TurboCider App 持有原生服务
+### 方式 B：在 TurboCider App 启动 HTTP API
 
 希望直接从 App 启停服务、查看任务和结果时，采用此方式。先用 Ctrl-C 停止方式 A，避免占用相同端口，然后：
 
 1. 打开更新后的 TurboCider App，进入 **本地 API**。
 2. 保持 **HTTP 端口**为 `8765`，或填写未被占用的端口。端口会在成功启动后保存。
-3. 点击 **启动服务**。App 会释放创作页的模型会话，同时启动原生 API 与 HTTP 网关。
-4. 等待显示 **HTTP 网关与原生服务已启动**，点击 **复制 HTTP 地址**。若端口冲突，App 会提示错误并停止本次创建的原生服务；停止旧服务或修改端口后重试。
+3. 点击 **启动 HTTP API**。HTTP 请求与桌面创作、网页工作台共用队列。
+4. 等待显示 **HTTP API 已启动**，点击 **复制 HTTP 地址**。若端口冲突，停止占用该端口的服务或修改端口后重试。
 5. 展开 **HTTP 调用方法**中的示例，可以直接复制服务检查、模型查询、参数校验、任务提交和结果下载命令。
 6. 在终端启动已经安装节点的 ComfyUI；如果它已正常运行，刷新节点定义或重启该服务即可：
 
@@ -111,11 +111,13 @@ TURBOCIDER_API_URL=http://127.0.0.1:8765 \
   --cpu --offline --listen 127.0.0.1 --port 8188
 ```
 
-此方式**不再运行 `start.py` 或 `serve.py`**，因为 App 已经启动原生服务和 HTTP 网关。若修改端口，还需同步修改上面的 `TURBOCIDER_API_URL` 及 Model 节点的 `api_url`。上面的 `--offline` 适用于验收版本；较旧 ComfyUI 若不识别该选项，可使用其 `--disable-api-nodes` 选项。
+使用 App 显示的 HTTP 地址连接 ComfyUI。若修改端口，同步修改上面的
+`TURBOCIDER_API_URL` 及 Model 节点的 `api_url`。较旧版本的 ComfyUI 可以用
+`--disable-api-nodes` 替代 `--offline`。
 
-执行工作流后，可在 App 的 **API 任务与结果**中刷新、预览图片、在 Finder 中定位，或导入为创作参考。API 历史与创作页历史分开保存。
+执行工作流后，可在 App 的 **API 任务与结果**中刷新、预览图片、在 Finder 中定位，或导入为创作参考。共享 HTTP API 的任务也会出现在桌面「任务」页。
 
-保持 App 打开；点击 **停止服务**或退出 App，会关闭网关并停止它创建的原生 API。要回到 App 创作页生成，先等待或取消 API 任务，再停止服务。ComfyUI 有独立生命周期，在其终端用 Ctrl-C 停止。
+保持 App 打开。点击 **停止 API** 会关闭监听，已接受的任务继续由 App 执行。退出 App 会停止生成。ComfyUI 有独立生命周期，在其终端用 Ctrl-C 停止。
 
 ## 5. 在 Comfy Desktop 打开并运行第一个工作流
 
@@ -278,7 +280,7 @@ curl --fail http://127.0.0.1:8765/v1/jobs
 | Z-Image 编辑报 unsupported operation | 当前只提供文生图，参考图编辑改用支持该操作的 FLUX / Qwen |
 | 首次生成慢或超时 | 先查看任务进度和服务日志；首次含模型加载。必要时增大 `timeout_seconds`，避免超时后立即重复提交 |
 | 端口占用、GPU lease 或内存不足 | 检查是否重复启动了两套服务或 App 同时推理；在对应终端停止自己启动的旧实例，保留一个工作栈 |
-| 图片生成了但 App 创作历史没有 | API 历史独立；App 方式在「本地 API」查看，独立方式在 ComfyUI 输出和 API 历史查看 |
+| 在哪里找生成结果 | App 启动的共享服务可在「任务」和「本地 API」中查看。独立服务的结果在 ComfyUI 输出和独立 API 历史中查看 |
 
 独立 Python 网关支持可选 Bearer Token：在该网关与 ComfyUI 进程环境中设置相同的 `TURBOCIDER_API_TOKEN`，Model 节点的 `token_env` 保留该变量名。工作流中无需保存 Token 明文。此时诊断请求也必须带对应 Authorization 头。App 内置网关目前不启用 Token 鉴权，仅提供可信本机访问。
 

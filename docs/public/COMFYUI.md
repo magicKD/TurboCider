@@ -52,18 +52,15 @@ Comfy Cloud cannot reach your Mac's loopback API; use the local connection.
 Packaged releases include the same files under `dist/comfyui/`; from that folder,
 run `python3 tools/comfyui/start.py` (finds the sibling `../cli/turbocider`).
 
-The App's **本地 API / Local API** page starts the native service and a built-in
-HTTP gateway together. Choose the port (default `8765`), click **启动服务 / Start**,
-and copy the displayed HTTP URL into the Model node. The App includes expandable
-curl/Python examples and a route reference. No Python runtime or external gateway
-script is required for this mode; start ComfyUI separately after installing nodes.
-Do not run `start.py` or `serve.py` on the same port alongside the App.
+Open **本地 API** in the App, choose a free port (default `8765`) and click
+**启动 HTTP API**. Copy its HTTP URL into the Model node. This listener shares
+the desktop and Web workspace queue. The App includes curl and Python examples
+and a route reference. Start ComfyUI separately after installing the nodes.
 
-Stopping the App service or quitting the App closes its HTTP listener and stops
-its native worker. An occupied port fails startup and rolls back the owned native
-service. The independent CLI launcher remains available when App ownership is
-not desired. For an older App or a separately managed Unix service, the standalone
-adapter can still be started with `serve.py --socket ... --data-dir ...`.
+Stopping the listener leaves accepted tasks in the App queue. Quitting the App
+stops its listener and inference. The independent CLI launcher and the
+`serve.py --socket ... --data-dir ...` adapter remain available for standalone
+operation. Give concurrently running listeners different ports.
 
 ## Nodes
 

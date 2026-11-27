@@ -64,6 +64,20 @@ enum PlaygroundTemplate: String, Codable, CaseIterable, Identifiable, Sendable {
         case .transparent: return "不添加原图时按描述生成透明图；添加原图后提取其中的主体。"
         }
     }
+    struct CompiledWorkflow: Decodable {
+        let operation: String
+        let prompt: String
+    }
+    func compile(paths: [String: String], instruction: String, modelID: String, expansion: Double) throws -> CompiledWorkflow {
+        guard definition != nil else {
+            throw NativeFailure(message: "工作流目录不可用，请重新安装完整 App。")
+        }
+        var input: [String: Any] = ["workflow_id": workflowID, "role_paths": paths, "instruction": instruction,
+                                    "request": ["schema_version": 1, "model": modelID]]
+        if self == .outpaint { input["expansion"] = expansion }
+        return try JSONDecoder().decode(CompiledWorkflow.self,
+            from: NativeEngine.workflowRequest(input: JSONSerialization.data(withJSONObject: input)))
+    }
 }
 
 enum PlaygroundRole: String, Codable, Identifiable, Sendable {
@@ -102,7 +116,6 @@ struct PlaygroundDocument: Codable, Sendable {
     // The submission outlives the SwiftUI page when the user visits another
     // workspace. Keep its cancellation handle with the persistent state object.
     @Published var generationTask: Task<Void, Never>?
-    @Published var generationOwnsStore = false
     @Published private(set) var importTask: Task<Bool, Never>?
     let models: [StudioModel]
     let importer: StudioAssetImporter
@@ -153,14 +166,7 @@ struct PlaygroundDocument: Codable, Sendable {
         var updated = document; updated.templates[template.rawValue]?.expansion = value
         commit(updated); return true
     }
-    private struct CompiledWorkflow: Decodable {
-        let operation: String
-        let prompt: String
-    }
-    private func compileWorkflow(preview: Bool = false) throws -> CompiledWorkflow {
-        guard template.definition != nil else {
-            throw NativeFailure(message: "工作流目录不可用，请重新安装完整 App。")
-        }
+    private func compileWorkflow(preview: Bool = false) throws -> PlaygroundTemplate.CompiledWorkflow {
         var paths = Dictionary(uniqueKeysWithValues: template.roles.compactMap { role in
             asset(for: role).map { (role.rawValue, $0.path) }
         })
@@ -171,12 +177,7 @@ struct PlaygroundDocument: Codable, Sendable {
                 paths[role.rawValue] = "/reference/\(role.rawValue)"
             }
         }
-        var input: [String: Any] = ["workflow_id": template.workflowID, "role_paths": paths,
-            "instruction": instruction,
-            "request": ["schema_version": 1, "model": settings.modelID]]
-        if template == .outpaint { input["expansion"] = outpaintExpansion }
-        return try JSONDecoder().decode(CompiledWorkflow.self,
-            from: NativeEngine.workflowRequest(input: JSONSerialization.data(withJSONObject: input)))
+        return try template.compile(paths: paths, instruction: instruction, modelID: settings.modelID, expansion: outpaintExpansion)
     }
     var prompt: String {
         (try? compileWorkflow(preview: true).prompt) ?? "工作流提示词不可用，请检查模型与参数。"

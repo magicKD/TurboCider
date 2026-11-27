@@ -353,6 +353,48 @@ textarea:focus {
   display: none !important;
 }
 
+.tc-web-back {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  color: var(--tx);
+  text-decoration: underline;
+}
+
+:root[data-tc-web][data-theme=light] {
+  --bg: #f7f6f2;
+  --bg2: #fffefa;
+  --sf: #eeede7;
+  --sf2: #e5e5dd;
+  --line: #ddded5;
+  --line2: #c4c9bc;
+}
+
+:root[data-tc-web][data-theme=dark] {
+  --bg: #17191b;
+  --bg2: #202325;
+  --sf: #272a2b;
+  --sf2: #303434;
+  --line: #373b3b;
+  --line2: #50564f;
+}
+
+[data-tc-web] .tc-web-back {
+  flex: none; align-items: center; justify-content: center; gap: 5px; margin-right: 4px;
+  min-width: 36px; min-height: 38px; padding-inline: 9px; border-radius: 99px;
+  border: 1px solid var(--line2); background: var(--bg2); font-size: 12px;
+  font-weight: 600; text-decoration: none;
+}
+[data-tc-web] .tc-web-back svg { width: 16px; height: 16px; }
+@media (max-width: 1220px) {
+  [data-tc-web] .tc-web-back span { display: none; }
+}
+
+[data-tc-web] .tc-web-back:hover {
+  background: var(--sf2);
+}
+
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: .16s !important;

@@ -664,6 +664,15 @@ public final class NativeEngine: @unchecked Sendable {
             installation.path.withCString { tc_plan_for_installation_json(input, $0, output, error) }
         }
     }
+    public static func planSchema1(_ data: Data, installation: URL? = nil) throws -> Data {
+        let text = String(decoding: data, as: UTF8.self)
+        if let installation {
+            return try jsonQuery(text) { input, output, error in
+                installation.path.withCString { tc_plan_for_installation_json(input, $0, output, error) }
+            }
+        }
+        return try jsonQuery(text, using: tc_plan_json)
+    }
     private static func requestQuery(_ request: some Encodable, using operation: JSONOperation) throws -> Data {
         let data = try JSONEncoder().encode(request)
         return try jsonQuery(String(decoding: data, as: UTF8.self), using: operation)
@@ -743,6 +752,9 @@ public final class NativeEngine: @unchecked Sendable {
     }
     public func generate(_ request: NativeRequestV2, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
         try await generate(payload: JSONEncoder().encode(request), onEvent: onEvent)
+    }
+    public func generateSchema1(_ data: Data, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
+        try await generate(payload: data, onEvent: onEvent)
     }
     private func generate(payload data: Data, onEvent: @escaping @Sendable (NativeEvent) -> Void) async throws -> Data {
         try await perform(onEvent: onEvent) { handle, context, result, error in
