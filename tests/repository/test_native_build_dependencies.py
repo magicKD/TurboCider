@@ -211,9 +211,12 @@ assert sys.argv[1] in ('tools/native/check_release_binary.py', 'tools/native/che
                     if expected is None:
                         expected = '13.0' if name == 'package.sh' else '14.7'
                     self.assertEqual(result.stdout, expected + ('\n' if status == 0 else ''))
+                    expected_probes = [['-l', str(self.mlx / 'lib/libmlx.dylib')]]
+                    if name == 'package.sh' and status == 0:
+                        expected_probes.append(['-L', str(Path(self.env['TURBOCIDER_BUILD_OUTPUT_DIR']) / 'libturbocider.dylib')])
                     self.assertEqual(
                         [json.loads(row) for row in self.otool_calls.read_text().splitlines()],
-                        [['-l', str(self.mlx / 'lib/libmlx.dylib')]],
+                        expected_probes,
                     )
 
     def test_dependency_setup_does_not_eagerly_inspect_macho(self):

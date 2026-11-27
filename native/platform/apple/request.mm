@@ -1,4 +1,5 @@
 #include "bridge.hpp"
+#include "../../models/relayvsr/pipeline.hpp"
 #include "../../core/json_keys.hpp"
 #include "../../models/qwen21/native_route.hpp"
 #include <cmath>
@@ -327,7 +328,7 @@ Request request_from_json(NSDictionary *d) {
         r.frames = number(d, @"frames", model_descriptor.frames);
         r.steps = number(d, @"steps", model_descriptor.steps);
         r.seed = number(d, @"seed", 42);
-        r.fps = number(d, @"fps", model_descriptor.fps ? model_descriptor.fps : 24);
+        r.fps = number(d, @"fps", r.model == rv::kModelID ? 0 : (model_descriptor.fps ? model_descriptor.fps : 24));
         r.compile_gpu = boolean(d, @"compile_gpu", false);
         r.dynamic_text = boolean(d, @"dynamic_text", true);
         r.allow_approximation = boolean(d, @"allow_approximation", false);
@@ -391,7 +392,7 @@ Request request_from_json(NSDictionary *d) {
         r.width = number(output, @"width", [descriptor[@"default_width"] intValue]);
         r.height = number(output, @"height", [descriptor[@"default_height"] intValue]);
         r.frames = number(output, @"frames", [descriptor[@"default_frames"] intValue]);
-        r.fps = number(output, @"fps", model_descriptor.fps ? model_descriptor.fps : 24);
+        r.fps = number(output, @"fps", r.model == rv::kModelID ? 0 : (model_descriptor.fps ? model_descriptor.fps : 24));
         r.audio = boolean(output, @"audio", model_descriptor.default_audio);
         auto sampling = d[@"sampling"] ? dictionary(d[@"sampling"], "sampling") : @{};
         keys(sampling, @[ @"seed", @"steps" ]);

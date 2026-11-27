@@ -5,6 +5,7 @@ Tensor load_image_tensor(const std::filesystem::path &, int, int, bool reference
 // Original oriented dimensions, straight-alpha RGBA in [0,1]. Transparent
 // hidden RGB may be zeroed by the decoder; visible RGB and alpha are retained.
 Tensor load_rgba_image_tensor(const std::filesystem::path &);
+Tensor load_rgba_image_tensor(const std::filesystem::path &, int max_side);
 // Experimental PE 8-bit file decoder: uint8 NHWC RGB, drop alpha without compositing,
 // preserve hidden RGB, and do not apply EXIF orientation or color management.
 // PNG byte parity is tested; JPEG decoder parity is not yet exact.

@@ -62,6 +62,30 @@ def qwen21_staged_environment(overrides=None):
 
 
 class ContractTests(unittest.TestCase):
+    def test_relayvsr_source_derived_streamed_contract(self):
+        for kind in ("image", "video"):
+            request = {
+                "schema_version": 2,
+                "model": "relayvsr-2x",
+                "operation": f"{kind}.upscale",
+                "inputs": [{"kind": kind, "role": "source", "path": "input"}],
+                "outputs": [{"kind": kind, "path": "output", "audio": kind == "video"}],
+            }
+            with self.subTest(kind=kind):
+                status, result, error = plan(request)
+                self.assertEqual(status, 0, error)
+                self.assertEqual(result["residency"], "streamed")
+                request["execution"] = {"policy": "gpu", "residency": "resident"}
+                status, _, error = plan(request)
+                self.assertNotEqual(status, 0)
+                self.assertIn("block streaming", error)
+                request["execution"]["residency"] = "streamed"
+                request["outputs"][0]["width"] = 641
+                request["outputs"][0]["height"] = 480
+                status, _, error = plan(request)
+                self.assertNotEqual(status, 0)
+                self.assertIn("2× raster", error)
+
 
     def test_qwen21_dit_w8a8_explicit_request_contract(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',

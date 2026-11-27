@@ -3,6 +3,7 @@ import CryptoKit
 
 enum HubProvider: String, Codable, Sendable, CaseIterable {
     case modelscope, huggingface
+    var title: String { self == .modelscope ? "ModelScope" : "Hugging Face" }
     var endpoint: URL { URL(string: self == .modelscope ? "https://modelscope.cn" : "https://huggingface.co")! }
     var defaultRevision: String { self == .modelscope ? "master" : "main" }
 }

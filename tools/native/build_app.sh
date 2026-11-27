@@ -44,6 +44,7 @@ STATE+=(apps/macos/SeedVR2Workflow.swift)
 STATE+=(apps/macos/HistorySelection.swift apps/macos/ImageUpscaler.swift)
 STATE+=(apps/macos/ModelHubPresentation.swift)
 STATE+=(apps/macos/EditingCanvasSizing.swift apps/macos/ItemProviderDataLoader.swift apps/macos/PlaygroundState.swift)
+VIDEO_VIEWS=(apps/macos/VideoUpscaleComparison.swift apps/macos/UpscaleComparisonDivider.swift)
 APP_VIEWS=(
  apps/macos/SeedVR2UpscaleControls.swift apps/macos/ImageUpscaleView.swift
  apps/macos/EditingCanvasSizingView.swift apps/macos/PlaygroundView.swift
@@ -51,7 +52,7 @@ APP_VIEWS=(
  apps/macos/ModelLoRALibraryView.swift apps/macos/ANELibraryView.swift
  apps/macos/ModelDownloadView.swift apps/macos/LocalAPIView.swift
  apps/macos/RunInsightsView.swift apps/macos/TensorCacheView.swift
- apps/macos/MediaViews.swift apps/macos/AccelerationView.swift apps/macos/CoreMLStorageView.swift
+ "${VIDEO_VIEWS[@]}" apps/macos/MediaViews.swift apps/macos/AccelerationView.swift apps/macos/CoreMLStorageView.swift
  apps/macos/TinyVAEViews.swift apps/macos/TinyVAELibraryView.swift apps/macos/App.swift
 )
 build_app_integration_test() {
@@ -78,7 +79,7 @@ if [[ "$APP_TARGETS" == tiny-vae ]]; then
  exit 0
 fi
 if [[ "$APP_TARGETS" == upscale-presentation ]]; then
- build_app_integration_test turbocider-upscale-presentation-tests apps/macos/SeedVR2UpscaleControls.swift tests/integration/UpscalePresentationTests.swift
+ build_app_integration_test turbocider-upscale-presentation-tests apps/macos/SeedVR2UpscaleControls.swift apps/macos/MediaViews.swift apps/macos/UpscaleComparisonDivider.swift tests/integration/UpscalePresentationTests.swift
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/RunInsights.swift tests/integration/RunInsightsTests.swift -o "$OUT/turbocider-run-insights-tests"
  printf 'Built upscale presentation and run-insights tests\n'
  exit 0
@@ -111,7 +112,7 @@ fi
 if [[ "$APP_TARGETS" == desktop-media ]]; then
  build_app_integration_test turbocider-desktop-media-tests tests/integration/DesktopMediaWorkflowTests.swift
  build_app_integration_test turbocider-keyframe-workflow-tests tests/integration/KeyframeWorkflowTests.swift
- "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O apps/macos/VideoPreview.swift tests/integration/VideoPreviewTests.swift -o "$OUT/turbocider-video-preview-tests"
+ "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O apps/macos/VideoPreview.swift "${VIDEO_VIEWS[@]}" tests/integration/VideoPreviewTests.swift -o "$OUT/turbocider-video-preview-tests"
  printf 'Built desktop media workflow, video preview tests and App\n'
  exit 0
 fi
@@ -147,7 +148,7 @@ build_app_integration_test turbocider-studio-gpu-model-tests tests/integration/S
 build_app_integration_test turbocider-ane-library-tests tests/integration/ANELibraryTests.swift
 build_app_integration_test turbocider-studio-variant-tests tests/integration/StudioVariantTests.swift
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" tests/integration/ZImagePromptTests.swift -o "$OUT/turbocider-z-image-prompt-tests"
-"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O apps/macos/VideoPreview.swift tests/integration/VideoPreviewTests.swift -o "$OUT/turbocider-video-preview-tests"
+"$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O apps/macos/VideoPreview.swift "${VIDEO_VIEWS[@]}" tests/integration/VideoPreviewTests.swift -o "$OUT/turbocider-video-preview-tests"
 
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" tests/integration/StreamingResolutionTests.swift -o "$OUT/turbocider-streaming-resolution-tests"
 build_app_integration_test turbocider-ltx-worker-tests tests/integration/LTXWorkerTests.swift

@@ -806,9 +806,23 @@ struct StudioDraft: Codable, Sendable {
         }
         try validate(model: model)
     }
+    var isRelayVSR: Bool { modelID == UpscaleModelChoice.relayVSR.rawValue }
+    var isNativeUpscale: Bool { UpscaleModelChoice(rawValue: modelID)?.supportsVideo == true }
+
     func validate(model: StudioModel, systemJSON: String? = nil) throws {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
-        guard modelID == "seedvr2-3b" || !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
+        guard isNativeUpscale || !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
+        if isRelayVSR {
+            let kind = operation == "video.upscale" ? "video" : "image"
+            guard model.supports(operation), activeAssets.count == 1,
+                  let source = activeAssets.first, source.mediaKind == kind else {
+                throw NativeFailure(message: "请选择一份用于 RelayVSR 2× 超分的源媒体。")
+            }
+            guard (1...2048).contains(source.width), (1...2048).contains(source.height) else {
+                throw NativeFailure(message: "RelayVSR 2× 支持宽高各不超过 2048 像素的源媒体。")
+            }
+            return
+        }
         if let issue = runtimeANEIssue { throw NativeFailure(message: issue) }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
         // Bound user-entered integers before any model-specific token/latent
@@ -1014,6 +1028,22 @@ struct StudioDraft: Codable, Sendable {
         let model = StudioModel.catalog().first { $0.id == modelID }
         guard let model, model.executor else { throw NativeFailure(message: "当前模型没有可用执行器。") }
         try validate(model: model, systemJSON: systemJSON)
+        if isRelayVSR, let source = activeAssets.first {
+            let video = operation == "video.upscale"
+            var request = NativeRequest(prompt: "", output: output.path)
+            request.model = modelID
+            request.operation = operation
+            request.width = source.width * 2
+            request.height = source.height * 2
+            request.frames = video ? 0 : 1
+            request.fps = 0
+            request.steps = 1
+            request.seed = 42
+            request.audio = video && audio
+            request.residency = "streamed"
+            request.inputs = [NativeInput(kind: source.mediaKind, role: "source", path: source.path, strength: nil)]
+            return request
+        }
         var request = NativeRequest(prompt: modelID == "seedvr2-3b" ? "" : prompt, output: output.path)
         request.model = modelID; request.operation = operation
         request.width = width; request.height = height; request.steps = steps
@@ -1196,37 +1226,58 @@ actor StudioAssetImporter {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw NativeFailure(message: "剪贴板不包含可解码的图片。") }
         return try stage(source: source, name: "粘贴图片", sourceURL: nil, data: data)
     }
-    func importVideoFile(_ url: URL) async throws -> StudioAsset {
+    func importVideoFile(_ url: URL, preserveTiming: Bool = false) async throws -> StudioAsset {
+        guard url.isFileURL else { throw NativeFailure(message: "请选择或拖入本地视频文件。") }
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else {
             throw NativeFailure(message: "视频文件中没有视频轨：\(url.lastPathComponent)")
         }
-        let size = try await track.load(.naturalSize)
+        let naturalSize = try await track.load(.naturalSize)
         let transform = try await track.load(.preferredTransform)
         let rate = try await track.load(.nominalFrameRate)
         let duration = try await asset.load(.duration)
+        var size = naturalSize
+        if preserveTiming, let format = try await track.load(.formatDescriptions).first {
+            let coded = CMVideoFormatDescriptionGetDimensions(format)
+            if coded.width > 0, coded.height > 0 {
+                size = CGSize(width: Int(coded.width), height: Int(coded.height))
+            }
+        }
         let oriented = CGRect(origin: .zero, size: size).applying(transform)
         let seconds = CMTimeGetSeconds(duration)
         guard rate.isFinite, seconds.isFinite, seconds > 0,
               oriented.width.isFinite, oriented.height.isFinite,
-              rate >= 1, rate <= 120, seconds * Double(rate) >= 1.5,
-              seconds * Double(rate) <= 121.5 else {
+              abs(oriented.width) <= 16_777_216, abs(oriented.height) <= 16_777_216 else {
             throw NativeFailure(message: "视频帧率、时长或尺寸元数据无效。")
         }
-        let fps = Int(rate.rounded())
-        let frameCount = Int((seconds * Double(rate)).rounded())
         let width = Int(abs(oriented.width).rounded()), height = Int(abs(oriented.height).rounded())
-        guard width > 0, height > 0, width * height <= 16_777_216,
-              fps >= 1, fps <= 120, abs(Double(rate) - Double(fps)) < 0.0001,
-              (2...121).contains(frameCount) else {
-            throw NativeFailure(message: "视频超分需要 2–121 帧、整数源 FPS 的短视频；不会自动截帧或重采样。")
+        let frameEstimate = seconds * Double(rate)
+        if preserveTiming {
+            guard (1...2048).contains(width), (1...2048).contains(height) else {
+                throw NativeFailure(message: "RelayVSR 2× 支持宽高各不超过 2048 像素的源视频。")
+            }
+        } else {
+            guard width > 0, height > 0, width * height <= 16_777_216, rate >= 1, rate <= 120,
+                  abs(Double(rate) - Double(rate.rounded())) < 0.0001,
+                  (2.0...121.0).contains(frameEstimate.rounded()) else {
+                throw NativeFailure(message: "SeedVR2 视频超分需要 2–121 帧、整数源 FPS 的短视频。")
+            }
         }
+        let fps = rate > 0 && rate <= 120 ? Int(rate.rounded()) : nil
+        let frameCount = frameEstimate >= 1 && frameEstimate < Double(Int32.max) ? Int(frameEstimate.rounded()) : nil
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
         let target = directory.appendingPathComponent("\(UUID().uuidString).\(ext)")
-        try FileManager.default.copyItem(at: url, to: target)
+        do {
+            try Task.checkCancellation()
+            try FileManager.default.copyItem(at: url, to: target)
+            try Task.checkCancellation()
+        } catch {
+            try? FileManager.default.removeItem(at: target)
+            throw error
+        }
         return StudioAsset(path: target.path, name: url.lastPathComponent, width: width, height: height,
                            kind: "video", frames: frameCount, fps: fps)
     }
@@ -1448,7 +1499,9 @@ final class StudioState: ObservableObject {
     private func validateAssetImportContext(_ context: AssetImportContext, additionalImages: Int = 0) throws {
         try Task.checkCancellation()
         guard context == assetImportContext else {
-            throw NativeFailure(message: "草稿的模型、编辑方式或参考图已改变，本次导入已取消。请重新选择图片。")
+            throw NativeFailure(message: context.operation == "video.upscale"
+                ? "超分设置或源视频已改变，请重新选择视频。"
+                : "草稿的模型、编辑方式或参考图已改变，本次导入已取消。请重新选择图片。")
         }
         if additionalImages > 0, draft.assets.count + additionalImages > imageImportLimit {
             throw NativeFailure(message: "当前设置最多保留 \(imageImportLimit) 张输入图片，本次未导入。")
@@ -1812,15 +1865,30 @@ final class StudioState: ObservableObject {
         return true
     }
     @discardableResult func activateSeedVR2Upscaling(kind: String? = nil) -> Bool {
+        activateNativeUpscaling(.seedvr2, kind: kind)
+    }
+    @discardableResult func activateNativeUpscaling(_ choice: UpscaleModelChoice, kind: String? = nil) -> Bool {
         guard !imageInputsBusy else { message = "请等待素材导入完成。"; return false }
         let media = kind ?? creationKind
-        guard ["image", "video"].contains(media),
-              let model = models.first(where: { $0.id == "seedvr2-3b" }),
+        guard choice.supportsVideo, ["image", "video"].contains(media),
+              let model = models.first(where: { $0.id == choice.rawValue }),
               model.supports(media + ".upscale") else {
-            message = "当前引擎没有可用的 SeedVR2 图像 / 视频超分。"; return false
+            message = "当前引擎没有可用的 \(choice.pickerTitle) 超分。"; return false
         }
-        if draft.modelID != model.id { selectModel(model.id) }
+        let changedModel = draft.modelID != model.id
+        if changedModel {
+            let comingFromCreation = isCreationDraft(draft)
+            selectModel(model.id)
+            if comingFromCreation {
+                let selected = draft.assets.first { $0.id == draft.initImageID && $0.mediaKind == media }
+                    ?? draft.assets.first { $0.mediaKind == media }
+                let otherMedia = draft.assets.first { $0.mediaKind != media }
+                draft.assets = [selected, otherMedia].compactMap { $0 }
+                draft.initImageID = selected?.id
+            }
+        }
         changeOperation(media + ".upscale")
+        if changedModel { synchronizeUpscaleSource(resetSeedSize: true) }
         save()
         return true
     }
@@ -1846,7 +1914,7 @@ final class StudioState: ObservableObject {
     }
     func changeCreationKind(_ kind: String) {
         guard ["image", "video"].contains(kind), kind != creationKind else { return }
-        if draft.modelID == "seedvr2-3b" { changeOperation(kind + ".upscale") }
+        if draft.isNativeUpscale { changeOperation(kind + ".upscale") }
         else { changeOperation(kind + ".generate") }
     }
     func changeOperation(_ operation: String) {
@@ -1867,7 +1935,10 @@ final class StudioState: ObservableObject {
         message = switchedModel.map { "已切换至 \($0.name)，模型参数与加速配置已重置，已恢复该模型的 LoRA 选择。" + (draft.modelPath.isEmpty ? "请在模型中心配置模型文件。" : "请核对生成参数。") }
         let operationChanged = draft.operation != operation
         draft.operation = operation
-        if operationChanged { draft.normalizeQwen21CheckpointRecipe() }
+        if operationChanged {
+            if draft.isRelayVSR { draft.audio = operation == "video.upscale" }
+            draft.normalizeQwen21CheckpointRecipe()
+        }
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
         if operation == "video.keyframes" {
             let images = draft.assets.filter { $0.mediaKind == "image" }
@@ -1883,7 +1954,7 @@ final class StudioState: ObservableObject {
                 if operationChanged || wasPublic { draft.residency = "streamed" }
             }
         }
-        synchronizeUpscaleSource()
+        synchronizeUpscaleSource(resetSeedSize: operationChanged)
     }
     func selectInstallation(modelID: String, path: String) {
         guard !imageInputsBusy, !path.isEmpty else { return }
@@ -2020,7 +2091,10 @@ final class StudioState: ObservableObject {
         guard !imageInputsBusy else { return }
         if let previous = undoAssets.popLast() {
             draft.assets = previous.0; draft.initImageID = previous.1; draft.lastImageID = previous.2
-            message = "已撤销素材修改，恢复之前的图片顺序与原图选择。"
+            if supportsVideoInputs {
+                synchronizeUpscaleSource(resetSeedSize: true)
+                message = "已撤销超分源更改。"
+            } else { message = "已撤销素材修改，恢复之前的图片顺序与原图选择。" }
         }
     }
     func addLoRA(_ path: String) {
@@ -2230,15 +2304,31 @@ final class StudioState: ObservableObject {
     }
     func selectSourceAsset(_ id: UUID) {
         guard !importing, draft.assets.contains(where: { $0.id == id }) else { return }
+        let changedSource = draft.initImageID != id
         draft.initImageID = id
-        synchronizeUpscaleSource()
+        synchronizeUpscaleSource(resetSeedSize: changedSource)
     }
-    private func synchronizeUpscaleSource() {
-        guard draft.modelID == "seedvr2-3b" else { return }
-        draft.steps = 1; draft.audio = false
+    private func synchronizeUpscaleSource(resetSeedSize: Bool = false) {
+        guard draft.isNativeUpscale else { return }
+        draft.steps = 1
+        if !draft.isRelayVSR || draft.operation == "image.upscale" { draft.audio = false }
         let kind = draft.operation == "video.upscale" ? "video" : "image"
+        let previousID = draft.initImageID
         if !draft.assets.contains(where: { $0.id == draft.initImageID && $0.mediaKind == kind }) {
             draft.initImageID = draft.assets.first(where: { $0.mediaKind == kind })?.id
+        }
+        if let source = draft.activeAssets.first {
+            if draft.isRelayVSR, (1...2048).contains(source.width), (1...2048).contains(source.height) {
+                draft.width = source.width * 2
+                draft.height = source.height * 2
+            } else if !draft.isRelayVSR, resetSeedSize || draft.initImageID != previousID {
+                let size = (try? SeedVR2OutputPreset.scale2.dimensions(source: source))
+                    ?? (try? SeedVR2OutputPreset.long1024.dimensions(source: source))
+                if let size {
+                    draft.width = size.width
+                    draft.height = size.height
+                }
+            }
         }
         if kind == "image" { draft.frames = 1 }
         else if let source = draft.activeAssets.first {
@@ -2350,9 +2440,9 @@ final class StudioState: ObservableObject {
         guard supportsImageInputs else { message = "当前模型未开放图片输入。已有素材会继续保留。"; return false }
         return true
     }
-    @discardableResult func beginImageImportFiles(_ urls: [URL]) -> Bool {
+    @discardableResult func beginImageImportFiles(_ urls: [URL], videoName: String? = nil) -> Bool {
         guard !urls.isEmpty else { return false }
-        return beginImageImport { await self.addFiles(urls) }
+        return beginImageImport { await self.addFiles(urls, videoName: videoName) }
     }
     @discardableResult func beginImageImportProviders(_ providers: [NSItemProvider]) -> Bool {
         guard !providers.isEmpty else { return false }
@@ -2380,25 +2470,40 @@ final class StudioState: ObservableObject {
     private func imageImportErrorMessage(_ error: Error) -> String {
         error is CancellationError ? "图片导入已取消，之前的参考图已保留。" : error.localizedDescription
     }
-    func addFiles(_ urls: [URL]) async {
+    private func mediaImportErrorMessage(_ error: Error, video: Bool) -> String {
+        guard video else { return imageImportErrorMessage(error) }
+        if error is CancellationError { return "视频导入已取消。" }
+        if let failure = error as? NativeFailure { return failure.localizedDescription }
+        return "无法导入视频。\(error.localizedDescription)"
+    }
+    func addFiles(_ urls: [URL], videoName: String? = nil) async {
         guard !urls.isEmpty else { return }
-        guard supportsVideoInputs || validateImageImport() else { return }
+        let video = supportsVideoInputs
+        guard video || validateImageImport() else { return }
         guard !importing else { return }
         let context = assetImportContext
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []
         do {
-            guard draft.assets.count + urls.count <= imageImportLimit else { throw NativeFailure(message: "最多保留 \(imageImportLimit) 张输入图片。本次未导入任何图片，请减少选择后重试。") }
+            if video {
+                guard urls.count == 1 else { throw NativeFailure(message: "请选择一个视频作为超分源。") }
+            } else {
+                guard draft.assets.count + urls.count <= imageImportLimit else { throw NativeFailure(message: "最多保留 \(imageImportLimit) 张输入图片。本次未导入任何图片，请减少选择后重试。") }
+            }
             for url in urls {
                 try Task.checkCancellation()
-                if supportsVideoInputs { staged.append(try await importer.importVideoFile(url)) }
-                else { staged.append(try await importer.importFile(url)) }
+                if video {
+                    var asset = try await importer.importVideoFile(url, preserveTiming: context.modelID == UpscaleModelChoice.relayVSR.rawValue)
+                    if let videoName { asset.name = videoName }
+                    staged.append(asset)
+                } else { staged.append(try await importer.importFile(url)) }
             }
-            try validateAssetImportContext(context, additionalImages: staged.count)
+            try validateAssetImportContext(context, additionalImages: video ? 0 : staged.count)
             attach(staged)
-        } catch { await importer.discard(staged); message = imageImportErrorMessage(error) }
+        } catch { await importer.discard(staged); message = mediaImportErrorMessage(error, video: video) }
     }
     func pasteImage(from board: NSPasteboard = .general) async {
+        guard !supportsVideoInputs else { message = "请点「选择视频…」或从 Finder 拖入源视频。"; return }
         guard validateImageImport() else { return }
         let urls = (board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         if !urls.isEmpty { await addFiles(urls); return }
@@ -2431,43 +2536,52 @@ final class StudioState: ObservableObject {
     }
     func importProviders(_ providers: [NSItemProvider]) async {
         guard !providers.isEmpty else { return }
-        guard supportsVideoInputs || validateImageImport() else { return }
+        let video = supportsVideoInputs
+        guard video || validateImageImport() else { return }
         guard !importing else { return }
         let context = assetImportContext
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []
         do {
-            guard draft.assets.count + providers.count <= imageImportLimit else { throw NativeFailure(message: "最多 \(imageImportLimit) 张图片，请减少选择后重试。") }
+            if video {
+                guard providers.count == 1 else { throw NativeFailure(message: "请拖入一个视频作为超分源。") }
+            } else {
+                guard draft.assets.count + providers.count <= imageImportLimit else { throw NativeFailure(message: "最多 \(imageImportLimit) 张图片，请减少选择后重试。") }
+            }
+            let fileURL = UTType.fileURL.identifier
             for provider in providers {
                 try Task.checkCancellation()
-                let type = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ? UTType.fileURL.identifier
-                    : provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true })
-                guard let type else { throw NativeFailure(message: "拖入的内容不是图片文件。") }
+                let type = provider.hasItemConformingToTypeIdentifier(fileURL) ? fileURL
+                    : video ? nil : provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true })
+                guard let type else { throw NativeFailure(message: video ? "请从 Finder 拖入一个视频文件。" : "拖入的内容不是图片文件。") }
                 let data = try await ItemProviderDataLoader.load(provider: provider, typeIdentifier: type)
                 try Task.checkCancellation()
-                if type == UTType.fileURL.identifier, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    if supportsVideoInputs { staged.append(try await importer.importVideoFile(url)) }
+                if type == fileURL, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    if video { staged.append(try await importer.importVideoFile(url, preserveTiming: context.modelID == UpscaleModelChoice.relayVSR.rawValue)) }
                     else { staged.append(try await importer.importFile(url)) }
+                } else if video {
+                    throw NativeFailure(message: "无法读取拖入的视频文件路径。")
+                } else {
+                    staged.append(try await importer.importData(data))
                 }
-                else { staged.append(try await importer.importData(data)) }
             }
-            try validateAssetImportContext(context, additionalImages: staged.count)
+            try validateAssetImportContext(context, additionalImages: video ? 0 : staged.count)
             attach(staged)
-        } catch { await importer.discard(staged); message = imageImportErrorMessage(error) }
+        } catch { await importer.discard(staged); message = mediaImportErrorMessage(error, video: video) }
     }
     private func attach(_ assets: [StudioAsset]) {
-        rememberAssets(); draft.assets.append(contentsOf: assets)
+        rememberAssets()
+        if assets.first?.mediaKind == "video" { draft.assets.removeAll { $0.mediaKind == "video" } }
+        draft.assets.append(contentsOf: assets)
         if draft.operation == "video.keyframes" {
             for asset in assets where asset.mediaKind == "image" {
                 if draft.firstKeyframe == nil { draft.initImageID = asset.id }
                 else if draft.lastKeyframe == nil && asset.id != draft.initImageID { draft.lastImageID = asset.id }
             }
         } else if draft.initImageID == nil { draft.initImageID = assets.first?.id }
-        if draft.modelID == "seedvr2-3b", let source = assets.last {
+        if draft.isNativeUpscale, let source = assets.last {
             draft.initImageID = source.id
-            draft.width = max(64, min(2048, source.width * 2) / 16 * 16)
-            draft.height = max(64, min(2048, source.height * 2) / 16 * 16)
-            synchronizeUpscaleSource()
+            synchronizeUpscaleSource(resetSeedSize: true)
         }
         message = draft.operation == "image.generate"
             ? (draft.modelID == "qwen-image-2.1"

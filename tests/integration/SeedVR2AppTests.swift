@@ -82,7 +82,74 @@ import Foundation
         try check(image.inputs?.first?.role == "source" && image.inputs?.first?.kind == "image", "image source role/kind mismatch")
         let imageV2 = NativeRequestV2(legacy: image)
         try check(imageV2.outputs[0].kind == "image", "schema-2 image output kind mismatch")
-        try check(UpscaleModelChoice.allCases.filter(\.supportsVideo) == [.seedvr2],"image-only model advertised for video")
+        try check(UpscaleModelChoice.allCases.filter(\.supportsVideo) == [.seedvr2, .relayVSR],
+                  "video upscaling choices omit a native model or include an image-only model")
+        if let relay = StudioModel.catalog().first(where: { $0.id == UpscaleModelChoice.relayVSR.rawValue && $0.executor }) {
+            let relayStudio = StudioState(directory: root.appendingPathComponent("relayvsr"))
+            relayStudio.draft.modelPaths[relay.id] = root.path
+            let still = StudioAsset(path: sourceImage.path, name: "odd", width: 127, height: 95)
+            var movie = clip
+            movie.frames = 600
+            relayStudio.draft.assets = [still, movie]
+            try check(relayStudio.activateNativeUpscaling(.relayVSR, kind: "image"), "RelayVSR image entry unavailable")
+            let stillRequest = try relayStudio.draft.request(output: root.appendingPathComponent("relay.png"))
+            try check(stillRequest.width == 254 && stillRequest.height == 190 && stillRequest.steps == 1 &&
+                      stillRequest.inputs?.first?.role == "source" && stillRequest.prompt.isEmpty && stillRequest.audio == false,
+                      "RelayVSR still did not select exact 2× output")
+            relayStudio.changeCreationKind("video")
+            let clipRequest = try relayStudio.draft.request(output: root.appendingPathComponent("relay.mp4"))
+            let relayV2 = NativeRequestV2(legacy: clipRequest)
+            try check(relayV2.operation == "video.upscale" && relayV2.outputs[0].frames == 0 &&
+                      relayV2.outputs[0].fps == 0 && relayV2.outputs[0].audio == true &&
+                      relayV2.execution.residency == "streamed",
+                      "RelayVSR SDK request discarded source timing or streaming")
+
+            let localVideo = URL(fileURLWithPath: CommandLine.arguments[1])
+            let legacyVideos = (0..<relayStudio.imageImportLimit).map { _ in
+                StudioAsset(path: movie.path, name: movie.name, width: movie.width, height: movie.height, kind: "video")
+            }
+            relayStudio.draft.assets = [still] + legacyVideos
+            await relayStudio.addFiles([localVideo], videoName: "历史视频 · 测试")
+            let source = try relayStudio.draft.activeAssets.first.unwrap("Video import did not select the input")
+            let selectedRequest = try relayStudio.draft.request(output: root.appendingPathComponent("selected.mp4"))
+            try check(relayStudio.message == nil && source.name == "历史视频 · 测试" &&
+                      relayStudio.draft.assets == [still, source] && source.path != localVideo.path &&
+                      selectedRequest.inputs?.first?.path == source.path && selectedRequest.residency == "streamed",
+                      "Video import did not replace legacy candidates and stage the selected source for streaming")
+            await relayStudio.addFiles([sourceImage])
+            try check(relayStudio.message?.contains("视频") == true && relayStudio.draft.activeAssets.first?.id == source.id,
+                      "A failed video import discarded the active source")
+            await relayStudio.addFiles([localVideo, localVideo])
+            try check(relayStudio.message?.contains("一个视频") == true && relayStudio.draft.activeAssets.first?.id == source.id,
+                      "A multi-file import silently chose a video")
+            await relayStudio.addFiles([localVideo])
+            try check(relayStudio.message == nil && relayStudio.draft.activeAssets.first?.name == localVideo.lastPathComponent &&
+                      relayStudio.draft.activeAssets.first?.id != source.id,
+                      "The file picker could not replace a history source")
+            relayStudio.undoAssetChange()
+            try check(relayStudio.draft.activeAssets == [source] && FileManager.default.fileExists(atPath: source.path),
+                      "Undo did not restore the previous video and its staged media")
+            print("PASS RelayVSR video input selection, replacement, failure recovery and streaming request")
+        }
+        if let modelPath = ProcessInfo.processInfo.environment["TURBOCIDER_RELAYVSR_TEST_MODEL"] {
+            let modelURL = URL(fileURLWithPath: modelPath)
+            let renderRoot = root.appendingPathComponent("relay-render")
+            let relayStudio = StudioState(directory: renderRoot)
+            relayStudio.draft.modelPaths[UpscaleModelChoice.relayVSR.rawValue] = modelURL.path
+            try check(relayStudio.activateNativeUpscaling(.relayVSR, kind: "image"), "RelayVSR executor missing")
+            await relayStudio.addFiles([sourceImage])
+            let jobs = NativeJobStore(directory: renderRoot)
+            let output = renderRoot.appendingPathComponent("outputs/relay.png")
+            let request = try relayStudio.draft.request(output: output)
+            let job = try await jobs.generate(modelURL: modelURL, request: request)
+            let receipt = try JSONSerialization.jsonObject(with: Data((job.resultJSON ?? "").utf8)) as? [String: Any]
+            let artifact = receipt?["image_artifact"] as? [String: Any]
+            try check(job.hasOutput && job.upscaleComparisonSource == request.inputs?.first?.path &&
+                      NSImage(contentsOf: output) != nil && receipt?["operation"] as? String == "image.upscale" &&
+                      receipt?["seed"] as? Int == request.seed && artifact?["media_verified"] as? Bool == true,
+                      "RelayVSR native image was not verified and published for the App comparison")
+            print("PASS RelayVSR streaming App image publication and comparison source")
+        }
         let frameProgress = SeedVR2ProgressPresentation(phase: "seedvr2_decode_progress",completed: 49,total: 97)
         try check(frameProgress.stage == 3 && frameProgress.detail.contains("49 / 97") && frameProgress.fraction! > 0.5,
                   "whole-video decode progress unclear")

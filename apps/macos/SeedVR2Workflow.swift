@@ -2,18 +2,42 @@ import Foundation
 
 /// Model capabilities are explicit: the existing Real-ESRGAN executor is image-only.
 enum UpscaleModelChoice: String, CaseIterable, Identifiable {
-    case seedvr2 = "seedvr2-3b", realesrgan2 = "real-esrgan-x2plus", realesrgan4 = "real-esrgan-x4plus"
+    case seedvr2 = "seedvr2-3b", relayVSR = "relayvsr-2x", realesrgan2 = "real-esrgan-x2plus", realesrgan4 = "real-esrgan-x4plus"
     var id: String { rawValue }
     var title: String {
         switch self {
         case .seedvr2: return "SeedVR2 3B · 图片 / 视频"
+        case .relayVSR: return "RelayVSR 2× INT8 · 图片 / 视频"
         case .realesrgan2: return "Real-ESRGAN x2plus · 仅图片"
         case .realesrgan4: return "Real-ESRGAN x4plus · 仅图片"
         }
     }
-    var supportsVideo: Bool { self == .seedvr2 }
+    var supportsVideo: Bool { self == .seedvr2 || self == .relayVSR }
+    static func available(for kind: String, models: [StudioModel]) -> [Self] {
+        allCases.filter { choice in
+            choice.supportsVideo
+                ? models.contains { $0.id == choice.rawValue && $0.supports(kind + ".upscale") }
+                : kind == "image"
+        }
+    }
+
+    static func preferred(for kind: String, models: [StudioModel], draft: StudioDraft, remembered: Self?) -> Self? {
+        let choices = available(for: kind, models: models)
+        if let remembered, choices.contains(remembered) { return remembered }
+        if let current = Self(rawValue: draft.modelID), choices.contains(current) { return current }
+        return choices.first { $0.isConfigured(in: draft) } ?? choices.first
+    }
+
+    var pickerTitle: String {
+        switch self {
+        case .seedvr2: return "SeedVR2 3B"
+        case .relayVSR: return "RelayVSR 2× INT8"
+        case .realesrgan2: return "Real-ESRGAN ×2"
+        case .realesrgan4: return "Real-ESRGAN ×4"
+        }
+    }
     func isConfigured(in draft: StudioDraft) -> Bool {
-        if self == .seedvr2 { return !(draft.modelPaths[rawValue] ?? "").isEmpty }
+        if supportsVideo { return !(draft.modelPaths[rawValue] ?? "").isEmpty }
         guard let variant = UpscaleVariant.from(modelID: rawValue) else { return false }
         let path = draft.upscaleVariant == variant ? draft.upscaleModelPath
             : draft.upscaleModelPaths[variant.rawValue] ?? ""

@@ -138,6 +138,24 @@ private final class ProgressProbe: @unchecked Sendable {
         } catch let error as LibraryFailure {
             try check(error.message.contains("ModelScope 固定权重"), error.message)
         }
+        guard let relay = LibraryRecipe.all.first(where: { $0.modelID == "relayvsr-2x" }),
+              let relayPreset = relay.downloadVariants.first else {
+            throw LibraryFailure(message: "RelayVSR 2× recipe missing")
+        }
+        let relayRequest = try relayPreset.request(modelID: relay.modelID)
+        let relayPlan = try await LibraryDownloader(store: store, client: HubClient(provider: .huggingface, testEndpoint: endpoint))
+            .plan(relayRequest)
+        let relayPins = Dictionary(uniqueKeysWithValues: relayPlan.files.map { ($0.path, $0.sha256) })
+        try check(relayPlan.snapshot.provider == .huggingface && relayPlan.snapshot.repository == "Comfy-Org/RelayVSR"
+            && relayPlan.snapshot.revision == "202c35eb0a5bb64b7017d5a09ea9acea87b7a081"
+            && relayPlan.downloadBytes == 5_291_054_712 && relayPlan.files.count == 2
+            && relayPlan.files.allSatisfy { $0.installationPath == $0.path && $0.revision == relayPlan.snapshot.revision },
+            "RelayVSR preview changed the pinned provider, revision, byte count, or checkpoint layout")
+        try check(relayPins["diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors"] ==
+            "240e75e0c17cf2845d559b25254a230ff7458f81449d7a8c5e7e3fb8275c7b3c"
+            && relayPins["vae/relayvsr_flash_vae_x2_fp32.safetensors"] ==
+            "b5bb0339acb5b52545911ea29a51b4c5b805776a779222b5a14591571f42e21c",
+            "RelayVSR preview did not bind the original Wan and VAE digests")
         try check(LibraryRecipe.all.allSatisfy { !$0.downloadVariants.isEmpty }, "Existing model lost its default download preset")
         let ltxINT8 = LibraryRecipe.all.first { $0.modelID == "ltx-2.5-distilled" }!.downloadVariants.first { $0.id == "distilled-int8-convrot" }!
         let ltxVAEs = try ltxINT8.request(modelID: "ltx-2.5-distilled", componentKind: "vae")

@@ -6,7 +6,7 @@ import AVKit
 @main struct VideoPreviewTests {
     @MainActor static func main() {
         guard CommandLine.arguments.count >= 2 else {
-            print("video-preview-tests VIDEO.mp4"); exit(1)
+            print("video-preview-tests VIDEO.mp4 [UPSCALED.mp4]"); exit(1)
         }
         let path = CommandLine.arguments[1]
         let app = NSApplication.shared
@@ -75,9 +75,79 @@ import AVKit
                 window.contentView = NSView()
                 window.close()
                 print("PASS video preview: bounded/cached thumbnails, file replacement, corrupt-file recovery, cancellation, mount, playback, stable updates, release and reload; no inference runtime")
+                if CommandLine.arguments.count >= 3 {
+                    try await compare(source: path, output: CommandLine.arguments[2])
+                }
                 exit(0)
             } catch { print("FAIL \(error)"); exit(1) }
         }
         app.run()
+    }
+
+    @MainActor private static func compare(source: String, output: String) async throws {
+        let playback = VideoComparisonPlayback()
+        defer { playback.unload() }
+        await playback.load(originalPath: source, resultPath: output)
+        precondition(playback.size != nil && playback.duration > 0.35, "Comparison could not load the fixture pair")
+        precondition(playback.original.isMuted && !playback.result.isMuted, "Both soundtracks could play together")
+        playback.toggleAudio()
+        precondition(playback.original.isMuted && playback.result.isMuted, "Mute did not affect both sides")
+
+        let initialLeft = playback.original.currentTime().seconds
+        let initialRight = playback.result.currentTime().seconds
+        func times() -> (left: Double, right: Double) {
+            (playback.original.currentTime().seconds - initialLeft,
+             playback.result.currentTime().seconds - initialRight)
+        }
+        func aligned(at expected: Double) -> Bool {
+            let (left, right) = times()
+            return abs(left - expected) < 0.012 && abs(right - expected) < 0.012
+        }
+        func waitFor(_ description: String, until condition: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(4)
+            while !condition() {
+                precondition(ContinuousClock.now < deadline, description)
+                try await Task.sleep(for: .milliseconds(15))
+            }
+        }
+
+        playback.togglePlayback()
+        try await waitFor("The players did not start from the same anchor") {
+            let (left, right) = times()
+            return min(left, right) > 0.09 && abs(left - right) < 0.012
+        }
+        playback.togglePlayback()
+        let paused = playback.position
+        try await waitFor("The players did not pause on the same time") { aligned(at: paused) }
+        try await Task.sleep(for: .milliseconds(100))
+        precondition(!playback.playing && aligned(at: paused), "One side continued playing while paused")
+
+        playback.togglePlayback()
+        playback.setScrubbing(true)
+        playback.seek(to: playback.duration * 0.4)
+        try await waitFor("The two frames did not follow a drag in progress") { aligned(at: playback.duration * 0.4) }
+        playback.seek(to: playback.duration * 0.2)
+        playback.seek(to: playback.duration * 0.6)
+        let target = playback.duration * 0.6
+        try await waitFor("A superseded seek won the scrub queue") { aligned(at: target) }
+        precondition(playback.original.rate == 0 && playback.result.rate == 0, "A decoder ran ahead during scrubbing")
+        playback.setScrubbing(false)
+        try await waitFor("Playback did not resume together after scrubbing") {
+            let (left, right) = times()
+            return min(left, right) > target + 0.05 && abs(left - right) < 0.012
+        }
+        try await waitFor("Both sides did not stop at their shared end") {
+            !playback.playing && playback.position >= playback.duration && aligned(at: playback.duration)
+        }
+        playback.togglePlayback()
+        try await waitFor("Play did not restart both players from the beginning") {
+            let (left, right) = times()
+            return min(left, right) > 0.05 && max(left, right) < target && abs(left - right) < 0.012
+        }
+        playback.unload()
+        precondition(playback.original.currentItem == nil && playback.result.currentItem == nil, "Comparison retained a decoder")
+        await playback.load(originalPath: source + ".missing", resultPath: output)
+        precondition(playback.failure == .original, "A missing history source prevented output-only playback")
+        print("PASS video comparison: same-clock play and pause, coalesced accurate scrubbing, synchronized resume and replay, audio and decoder cleanup")
     }
 }

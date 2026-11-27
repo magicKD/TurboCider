@@ -7,7 +7,6 @@ struct ImageUpscaleView: View {
     @ObservedObject var studio: StudioState
     var showSettings = true
     @Binding var sourcePath: String
-    var showsWorkspaceTitle = true
     var modelSelection: Binding<String>? = nil
     var manageModels: () -> Void
     var historyContent: AnyView? = nil
@@ -19,80 +18,95 @@ struct ImageUpscaleView: View {
     private var locked: Bool { store.busy || submitting || studio.imageInputsBusy || store.externalServiceActive }
     private var result: NativeJob? {
         if let selectedPreviewJob, selectedPreviewJob.hasOutput { return selectedPreviewJob }
+        guard !sourcePath.isEmpty else { return nil }
         let candidate = store.jobs.first { $0.id == resultID && $0.hasOutput }
-            ?? store.jobs.first { $0.request.operation == "image.upscale" && $0.hasOutput }
-        // A newly selected source must not be obscured by an unrelated past result.
-        guard sourcePath.isEmpty || candidate?.request.inputs?.first?.path == sourcePath else { return nil }
-        return candidate
+        return candidate?.upscaleComparisonSource == sourcePath ? candidate : nil
     }
+
     var body: some View {
         HStack(spacing: 0) {
-            VStack(spacing: 8) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if showsWorkspaceTitle { Text("图像超分").font(.title2) }
-                    Text("x2plus 放大 2 倍，x4plus 放大 4 倍。原图保留，结果另存为 PNG。")
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        TextField("要超分的图片路径", text: $sourcePath).textFieldStyle(.roundedBorder)
-                            .accessibilityIdentifier("upscaleInputPath")
-                        Button("选择图片…") {
-                            let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false
-                            present(panel) { sourcePath = $0.path }
-                        }
-                        Button("开始超分 ×\(studio.draft.upscaleVariant.scale)", action: run)
-                            .buttonStyle(.borderedProminent).disabled(sourcePath.isEmpty || studio.draft.upscaleModelPath.isEmpty)
-                            .accessibilityIdentifier("upscaleStart")
-                    }.disabled(locked)
-                    if store.busy {
-                        HStack {
-                            ProgressView().controlSize(.small)
-                            if let job = store.activeJob { Text("超分分块 \(job.completed)/\(job.total)") }
-                            else { Text(store.sessionState) }
-                            Spacer(); Button("取消") { store.cancel() }
-                        }
-                    }
-                    if let message = studio.message { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
-                    if let result {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("\(result.request.operation == "image.upscale" ? "超分结果" : "历史图片") · \(result.request.width) × \(result.request.height)").font(.headline)
-                            InteractiveMediaPreview(path: result.request.output).frame(height: 360)
-                                .accessibilityIdentifier("upscaleOutput")
-                            HStack {
-                                Text(result.routeSummary ?? "").font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                if selectedPreviewJob != nil, let usePreviewAsSource {
-                                    Button("用作超分原图") { usePreviewAsSource(result) }
-                                        .disabled(locked || studio.imageInputsBusy)
-                                        .accessibilityIdentifier("usePreviewAsUpscaleSource")
-                                }
-                                Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.request.output)]) }
-                            }
-                        }
-                    } else if !sourcePath.isEmpty {
-                        Text("待超分原图").font(.headline)
-                        InteractiveMediaPreview(path: sourcePath).frame(height: 280)
-                    } else {
-                        ContentUnavailableView("选择要放大的图片", systemImage: "photo.badge.plus",
-                                               description: Text("选择原图，在右侧选择超分模型后开始超分。"))
-                            .frame(height: 280)
-                    }
-                }.padding(24)
-            }
-            if let historyContent { historyContent.padding(.horizontal, 18).padding(.bottom, 12) }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 10) {
+                preview
+                if let historyContent { historyContent }
+                sourceControls
+            }.padding(.horizontal, 18).padding(.bottom, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("upscaleCanvasScrollArea")
             if showSettings {
                 Divider()
                 ScrollView {
                     UpscaleSettingsView(store: store, studio: studio, locked: locked,
                                         modelSelection: modelSelection, manageModels: manageModels)
-                        .padding(18)
+                        .padding(16)
                 }.frame(width: 270).background(Color(nsColor: .controlBackgroundColor))
                     .accessibilityIdentifier("upscaleInspector")
             }
         }
         .onDisappear { studio.save() }
+    }
+
+    private var preview: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Label(result?.request.operation == "image.upscale" ? "超分结果" : result == nil ? "源图片" : "历史图片",
+                      systemImage: "photo")
+                if let result {
+                    Text("\(result.request.width) × \(result.request.height)").monospacedDigit()
+                }
+                Spacer(minLength: 0)
+                if let result, selectedPreviewJob != nil, let usePreviewAsSource {
+                    Button("用作超分原图") { usePreviewAsSource(result) }
+                        .disabled(locked).accessibilityIdentifier("usePreviewAsUpscaleSource")
+                }
+                if let result {
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.request.output)])
+                    } label: { Image(systemName: "folder") }.buttonStyle(.borderless)
+                        .help("在 Finder 中显示").accessibilityLabel("在 Finder 中显示")
+                }
+            }.font(.caption).foregroundStyle(.secondary).controlSize(.small).frame(height: 24)
+            if let result {
+                let comparison = result.upscaleComparisonSource
+                InteractiveMediaPreview(path: result.request.output, maxPixel: comparison == nil ? 2400 : 4096,
+                                        comparisonSourcePath: comparison)
+                    .accessibilityIdentifier("upscaleOutput")
+            } else if !sourcePath.isEmpty {
+                InteractiveMediaPreview(path: sourcePath)
+            } else {
+                ContentUnavailableView("选择要放大的图片", systemImage: "photo.badge.plus")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+    }
+
+    private var sourceControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("源图片路径", text: $sourcePath).textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("upscaleInputPath")
+                Button("选择图片…") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false
+                    present(panel) { sourcePath = $0.path }
+                }
+                Button("开始超分 ×\(studio.draft.upscaleVariant.scale)", action: run)
+                    .buttonStyle(.borderedProminent).disabled(sourcePath.isEmpty || studio.draft.upscaleModelPath.isEmpty)
+                    .accessibilityIdentifier("upscaleStart")
+            }.disabled(locked)
+            if store.busy {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    if let job = store.activeJob { Text("超分分块 \(job.completed)/\(job.total)") }
+                    else { Text(store.sessionState) }
+                    Spacer()
+                    Button("取消") { store.cancel() }
+                }.font(.caption)
+            } else if let message = studio.message {
+                Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+            }
+        }.padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
     }
     private func run() {
         guard !locked else { return }
@@ -149,7 +163,8 @@ struct UpscaleSettingsView: View {
                     Text(studio.draft.upscaleModelPath.isEmpty ? "尚未选择模型" : URL(fileURLWithPath: studio.draft.upscaleModelPath).lastPathComponent)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(studio.draft.upscaleModelPath)
                     Spacer()
-                    Button("管理模型", action: manageModels).accessibilityIdentifier("manageUpscaleModels")
+                    Button(studio.draft.upscaleModelPath.isEmpty ? "下载或导入…" : "管理模型", action: manageModels)
+                        .accessibilityIdentifier("manageUpscaleModels")
                 }
                 Picker("超分设备", selection: $studio.draft.upscaleCompute) {
                     ForEach(UpscaleCompute.allCases, id: \.self) { Text($0.title).tag($0) }

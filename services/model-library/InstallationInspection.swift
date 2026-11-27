@@ -178,6 +178,9 @@ private struct InstallationProbe {
             issue("missing_root", report.path, "模型目录不可访问或已移动；请选择现有目录重新登记。"); return
         }
         switch report.modelID {
+        case "relayvsr-2x":
+            weights("diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors")
+            weights("vae/relayvsr_flash_vae_x2_fp32.safetensors")
         case "seedvr2-3b":
             weights("diffusion_models/seedvr2_3b_fp16.safetensors")
             weights("vae/seedvr2_ema_vae_fp16.safetensors")

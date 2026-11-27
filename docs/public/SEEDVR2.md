@@ -74,13 +74,11 @@ preserved. Image output is PNG.
 
 ### App: 超分 workspace
 
-1. Open **模型 → 超分 → SeedVR2**, and register the existing model directory
-   containing both DiT and VAE. SeedVR2 also appears in the image/video filters.
-   Registration retains the original files; no download starts automatically.
-2. Click **超分** in the sidebar. Use **图片 / 视频** to select the source
-   kind, then choose the model at the top. SeedVR2 supports both kinds;
-   Real-ESRGAN x2plus/x4plus are image-only and are not offered for videos.
-   Select SeedVR2 and add one source image or video to use this native engine.
+1. Open **模型 → 超分 → SeedVR2** to download the matching files or
+   register a directory that contains both DiT and VAE.
+2. Open **超分** from the sidebar or the creation page. Use **图片 / 视频**
+   to select the source kind, then choose SeedVR2 in the right inspector
+   and add one source image or video.
 3. Choose **2× / 4× / 长边 512 / 长边 1024**. These source-based shortcuts
    preserve aspect ratio up to the native 16-pixel alignment and reject sizes
    beyond the current 2048-pixel per-axis bound. Explicit width/height remain
@@ -88,6 +86,8 @@ preserved. Image output is PNG.
 4. Click **开始图像超分 / 开始视频超分**. Every request is one restoration
    step, without a prompt. The source is preserved; PNG/silent MP4 outputs
    appear in the shared history with progress and cancellation controls.
+   Drag the result's divider to compare the original and restored media. In
+   a video result, the play button and timeline control both sides together.
 
 Video import fills and locks the complete source frame count/FPS; output-size
 shortcuts do not truncate frames or change the frame rate. The existing 2–121
@@ -98,8 +98,9 @@ I/O, frame history and a 1-GiB cache, retaining explicit spatial-row choices.
 The current effective settings are visible. Neither shortcut lowers output
 resolution or drops frames; the memory option can be slower and is not a hard
 memory guarantee. No new speed/approximation qualification is implied.
-Detailed VAE controls are under **模型 → SeedVR2 → 加速与编译缓存**; residency
-can also be selected in the creation inspector's advanced settings.
+Detailed VAE controls are under **模型 → SeedVR2 → 加速与编译缓存**.
+Output sizing, runtime preferences, and residency are in the right inspector
+of the upscaling workspace.
 
 Running SeedVR2 requests show five stages: preparation/import, VAE encode,
 model restoration, VAE decode and save. Encode/decode count completed source

@@ -44,14 +44,23 @@ struct LibraryVariant: Codable, Identifiable, Sendable {
     var runnable: Bool
     var preparation: String
     var modelScopePins: [HubFile]? = nil
+    var huggingFacePins: [HubFile]? = nil
 
-    func request(modelID: String, provider: HubProvider = .modelscope, componentKind: String? = nil) throws -> LibraryDownloadRequest {
-        if modelScopePins != nil && provider != .modelscope {
-            throw LibraryFailure(message: "此版本使用 ModelScope 固定权重，请选择 ModelScope。")
+    var pinnedProvider: HubProvider? {
+        if modelScopePins != nil { return .modelscope }
+        if huggingFacePins != nil { return .huggingface }
+        return nil
+    }
+    var pinnedFiles: [HubFile]? { modelScopePins ?? huggingFacePins }
+
+    func request(modelID: String, provider: HubProvider? = nil, componentKind: String? = nil) throws -> LibraryDownloadRequest {
+        let source = provider ?? pinnedProvider ?? .modelscope
+        if let pinnedProvider, source != pinnedProvider {
+            throw LibraryFailure(message: "此版本使用 \(pinnedProvider.title) 固定权重，请选择 \(pinnedProvider.title)。")
         }
-        let request = LibraryDownloadRequest(modelID: modelID, repository: repository, provider: provider,
+        let request = LibraryDownloadRequest(modelID: modelID, repository: repository, provider: source,
             name: title, include: include, supplements: supplements, destinations: destinations,
-            pinnedVariantID: modelScopePins == nil ? nil : id)
+            pinnedVariantID: pinnedProvider == nil ? nil : id)
         guard let componentKind else { return request }
         let kinds: [String]
         switch componentKind {
@@ -224,7 +233,28 @@ struct LibraryRecipe: Codable, Sendable {
                 runnable: supported, preparation: note + " GGUF 文件仅含 DiT；此配方补齐 BF16 编码器、VAE 和 Tokenizer，不下载第二份 DiT。默认优先 ModelScope；任一配套来源无镜像时可切换 Hugging Face。请确认 Qwen 研究用途许可。")
         }
     }()
+    private static let relayVSR: LibraryRecipe = {
+        let repository = "Comfy-Org/RelayVSR"
+        let revision = "202c35eb0a5bb64b7017d5a09ea9acea87b7a081"
+        let weights = [
+            HubFile(path: "diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors", size: 5_163_295_248,
+                    sha256: "240e75e0c17cf2845d559b25254a230ff7458f81449d7a8c5e7e3fb8275c7b3c",
+                    gitOID: nil, revision: revision),
+            HubFile(path: "vae/relayvsr_flash_vae_x2_fp32.safetensors", size: 127_759_464,
+                    sha256: "b5bb0339acb5b52545911ea29a51b4c5b805776a779222b5a14591571f42e21c",
+                    gitOID: nil, revision: revision)
+        ]
+        let paths = weights.map(\.path)
+        let note = "图像与视频 2× 超分需要配套的 ConvRot INT8 和 Flash VAE。也可登记已有的模型文件夹。"
+        let variant = LibraryVariant(id: "relayvsr-x2-convrot", title: "RelayVSR 2× INT8",
+                                     repository: repository, include: paths, runnable: true,
+                                     preparation: note, huggingFacePins: weights)
+        return LibraryRecipe(modelID: "relayvsr-2x", repository: repository, include: paths,
+                             preparation: note, variants: [variant])
+    }()
+
     static let all: [LibraryRecipe] = [
+        relayVSR,
         .init(modelID: "seedvr2-3b", repository: "Comfy-Org/SeedVR2",
               include: ["diffusion_models/seedvr2_3b_fp16.safetensors", "vae/seedvr2_ema_vae_fp16.safetensors"],
               preparation: "原生图像 / 视频超分；原始 FP16 权重、BF16 DiT、FP16 因果 VAE。无需文本编码器。先使用 GPU；GPU+ANE 和成对速度验收仍在进行。视频需填写完整源帧数和整数源 FPS，当前输出无音轨。"),

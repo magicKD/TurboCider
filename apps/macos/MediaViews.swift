@@ -92,16 +92,68 @@ private struct ImageZoomControls: View {
     }
 }
 
-/// A fitted image canvas with local zoom/pan state. Changing the path resets the
-/// viewport; decoding remains off the main actor and cancelled loads cannot publish.
+private struct PreviewBitmap {
+    let image: NSImage
+    let transparent: Bool
+
+    init(_ decoded: CGImage) {
+        image = NSImage(cgImage: decoded, size: .zero)
+        transparent = ![CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(decoded.alphaInfo)
+    }
+
+    nonisolated static func decode(path: String, data: Data?, maxPixel: Int) async -> CGImage? {
+        await Task.detached(priority: .utility) {
+            let source = data.map { CGImageSourceCreateWithData($0 as CFData, nil) }
+                ?? CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil)
+            guard let source else { return nil }
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixel)
+            ] as CFDictionary)
+        }.value
+    }
+}
+
+/// Shared image pixels, clipping and divider geometry use the result viewport
+/// so both sides stay aligned through zoom, pan and window resizing.
+struct UpscaleComparisonSplit<Original: View, Restored: View>: View {
+    let imageRect: CGRect
+    let visibleRect: CGRect
+    @Binding var fraction: CGFloat
+    @ViewBuilder let original: () -> Original
+    @ViewBuilder let restored: () -> Restored
+
+    var body: some View {
+        let divider = visibleRect.minX + fraction * visibleRect.width
+        let leftWidth = divider - imageRect.minX
+        let rightWidth = imageRect.maxX - divider
+        ZStack(alignment: .topLeading) {
+            ZStack {
+                restored().mask(alignment: .trailing) { Rectangle().frame(width: max(0, rightWidth)) }
+                original().mask(alignment: .leading) { Rectangle().frame(width: max(0, leftWidth)) }
+            }
+            .frame(width: imageRect.width, height: imageRect.height)
+            .position(x: imageRect.midX, y: imageRect.midY)
+            .allowsHitTesting(false)
+            UpscaleComparisonDivider(visibleRect: visibleRect, fraction: $fraction)
+        }
+    }
+}
+
+/// A fitted image canvas supports zoom and pan. Comparisons use that same
+/// viewport, with the original on the left and the result on the right.
 struct InteractiveMediaPreview: View {
     let path: String
     var imageData: Data? = nil
     var maxPixel = 2400
     var showsControls = true
-    @State private var image: NSImage?
+    var comparisonSourcePath: String? = nil
+    @State private var bitmap: PreviewBitmap?
+    @State private var original: PreviewBitmap?
     @State private var failed = false
-    @State private var transparent = false
+    @State private var comparisonFailed = false
+    @State private var split: CGFloat = 0.5
     @State private var viewport = ImageViewport()
     @State private var panOrigin: CGSize?
     @State private var magnificationOrigin: ImageViewport?
@@ -110,78 +162,101 @@ struct InteractiveMediaPreview: View {
         let data: Data?
         let maxPixel: Int
     }
+    private struct ComparisonInput: Equatable {
+        let sourcePath: String?
+        let outputPath: String
+        let maxPixel: Int
+    }
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 Color.primary.opacity(0.025)
-                if let image {
-                    let rect = viewport.imageRect(source: image.size, bounds: proxy.size)
-                    Image(nsImage: image).resizable().interpolation(.high)
-                        .frame(width: rect.width, height: rect.height)
-                        .background { if transparent { TransparencyGrid() } }
-                        .position(x: rect.midX, y: rect.midY)
+                if let bitmap {
+                    let rect = viewport.imageRect(source: bitmap.image.size, bounds: proxy.size)
+                    let visible = rect.intersection(CGRect(origin: .zero, size: proxy.size))
+                    if let original, visible.width > 0, visible.height > 0 {
+                        UpscaleComparisonSplit(imageRect: rect, visibleRect: visible, fraction: $split) {
+                            pixels(original, rect: rect)
+                        } restored: {
+                            pixels(bitmap, rect: rect)
+                        }
+                    } else {
+                        pixels(bitmap, rect: rect).position(x: rect.midX, y: rect.midY)
+                    }
                 } else if failed {
                     Label("无法读取图片", systemImage: "photo.badge.exclamationmark")
                         .font(.callout).foregroundStyle(.secondary)
                 } else { ProgressView().controlSize(.small) }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
+            .coordinateSpace(name: UpscaleComparisonDivider.coordinateSpace)
             .clipped().contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 2)
                 .onChanged { drag in
-                    guard let image, viewport.zoom > 1, magnificationOrigin == nil else { return }
+                    guard let bitmap, viewport.zoom > 1, magnificationOrigin == nil else { return }
                     if panOrigin == nil { panOrigin = viewport.offset }
-                    viewport.pan(from: panOrigin ?? .zero, by: drag.translation, source: image.size, bounds: proxy.size)
+                    viewport.pan(from: panOrigin ?? .zero, by: drag.translation, source: bitmap.image.size, bounds: proxy.size)
                 }
                 .onEnded { _ in panOrigin = nil })
             .simultaneousGesture(MagnificationGesture()
                 .onChanged { value in
-                    guard let image else { return }
+                    guard let bitmap else { return }
                     if magnificationOrigin == nil { magnificationOrigin = viewport; panOrigin = nil }
                     var next = magnificationOrigin ?? viewport
-                    next.setZoom(next.zoom * value, source: image.size, bounds: proxy.size)
+                    next.setZoom(next.zoom * value, source: bitmap.image.size, bounds: proxy.size)
                     viewport = next
                 }
                 .onEnded { _ in magnificationOrigin = nil; panOrigin = nil })
-            .onTapGesture(count: 2) { viewport = ImageViewport(); panOrigin = nil; magnificationOrigin = nil }
+            .onTapGesture(count: 2) { resetViewport() }
+            .overlay(alignment: .topLeading) {
+                if comparisonFailed, bitmap != nil {
+                    Label("原图不可读", systemImage: "photo.badge.exclamationmark")
+                        .font(.caption).padding(6).background(.regularMaterial, in: Capsule())
+                        .padding(10)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
-                if showsControls, let image {
-                    ImageZoomControls(zoom: viewport.zoom,
-                                      fit: { viewport = ImageViewport(); panOrigin = nil; magnificationOrigin = nil },
-                                      change: { viewport.setZoom($0, source: image.size, bounds: proxy.size) })
+                if showsControls, let bitmap {
+                    ImageZoomControls(zoom: viewport.zoom, fit: resetViewport,
+                                      change: { viewport.setZoom($0, source: bitmap.image.size, bounds: proxy.size) })
                         .padding(12)
                 }
             }
             .onChange(of: proxy.size) { _, size in
-                if let image { viewport.constrain(source: image.size, bounds: size) }
+                if let bitmap { viewport.constrain(source: bitmap.image.size, bounds: size) }
                 panOrigin = nil; magnificationOrigin = nil
             }
         }.accessibilityIdentifier("interactiveMediaPreview")
             .task(id: Input(path: path, data: imageData, maxPixel: maxPixel)) {
-                // Keep the last live frame visible until its replacement has
-                // decoded; use the same fitted viewport as a final image.
-                if imageData == nil || image == nil {
-                    image = nil; transparent = false
-                    viewport = ImageViewport(); panOrigin = nil; magnificationOrigin = nil
+                if imageData == nil || bitmap == nil {
+                    bitmap = nil
+                    resetViewport()
                 }
                 failed = false
-                let filePath = path, bytes = imageData, pixelLimit = max(1, maxPixel)
-                let decoded = await Task.detached(priority: .utility) { () -> CGImage? in
-                    let source: CGImageSource?
-                    if let bytes { source = CGImageSourceCreateWithData(bytes as CFData, nil) }
-                    else { source = CGImageSourceCreateWithURL(URL(fileURLWithPath: filePath) as CFURL, nil) }
-                    guard let source else { return nil }
-                    return CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                        kCGImageSourceCreateThumbnailFromImageAlways: true,
-                        kCGImageSourceCreateThumbnailWithTransform: true,
-                        kCGImageSourceThumbnailMaxPixelSize: pixelLimit
-                    ] as CFDictionary)
-                }.value
+                let decoded = await PreviewBitmap.decode(path: path, data: imageData, maxPixel: maxPixel)
                 guard !Task.isCancelled else { return }
-                image = decoded.map { NSImage(cgImage: $0, size: .zero) }; failed = decoded == nil
-                if let decoded { transparent = ![CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(decoded.alphaInfo) }
+                bitmap = decoded.map(PreviewBitmap.init)
+                failed = decoded == nil
             }
+            .task(id: ComparisonInput(sourcePath: comparisonSourcePath, outputPath: path, maxPixel: maxPixel)) {
+                original = nil; comparisonFailed = false; split = 0.5
+                guard let comparisonSourcePath else { return }
+                let decoded = await PreviewBitmap.decode(path: comparisonSourcePath, data: nil, maxPixel: maxPixel)
+                guard !Task.isCancelled else { return }
+                original = decoded.map(PreviewBitmap.init)
+                comparisonFailed = decoded == nil
+            }
+    }
+
+    private func pixels(_ bitmap: PreviewBitmap, rect: CGRect) -> some View {
+        Image(nsImage: bitmap.image).resizable().interpolation(.high)
+            .frame(width: rect.width, height: rect.height)
+            .background { if bitmap.transparent { TransparencyGrid() } }
+    }
+
+    private func resetViewport() {
+        viewport = ImageViewport(); panOrigin = nil; magnificationOrigin = nil
     }
 }
 
@@ -411,11 +486,7 @@ struct MediaPreview: View {
             else { ProgressView().controlSize(.small) }
         }.task(id: "\(path)#\(maxPixel)") {
             image = nil; failed = false; transparent = false
-            let pixelLimit = maxPixel, filePath = path
-            let decoded = await Task.detached(priority: .utility) { () -> CGImage? in
-                guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: filePath) as CFURL, nil) else { return nil }
-                return CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixelLimit] as CFDictionary)
-            }.value
+            let decoded = await PreviewBitmap.decode(path: path, data: nil, maxPixel: maxPixel)
             guard !Task.isCancelled else { return }
             image = decoded.map { NSImage(cgImage: $0, size: .zero) }; failed = decoded == nil
             if let decoded {

@@ -8,6 +8,13 @@ and request-scoped preview publication. The full license is retained in
 `native/licenses/TAESD-LICENSE.txt`. Official weights are optional local assets;
 development-only PyTorch conversion is not included in the App.
 
+The optional RelayVSR 2× runtime adapts the Wan transformer and Flash
+VAE/Metal implementations from EZVideoRepair revision
+`d2e03fb` and upstream RelayVSR under Apache-2.0. TurboCider adds the
+request-scoped block scheduler, timed media export, and still-image support.
+RelayVSR, PyTorch and LLVM OpenMP licenses are in `native/licenses/` and
+included in distributions with RelayVSR enabled.
+
 The optional private ANE program layer adapts selectors, IOSurface layout and
 shared-event handoff from Splash PR #260, commit
 `0ac3d5b170523774d8c85cd86493908a64c80eee`, under Apache-2.0. TurboCider adds

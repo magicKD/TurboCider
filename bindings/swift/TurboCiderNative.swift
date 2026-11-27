@@ -238,7 +238,7 @@ public struct NativeRequestV2: Codable, Sendable {
             policy: request.execution,
             // A Qwen weight-cache budget belongs to its explicit streamed
             // recipe. Public streaming selectors still omit private knobs.
-            residency: targetBytes == nil && (request.model == "seedvr2-3b" ||
+            residency: targetBytes == nil && (request.model == "seedvr2-3b" || request.model == "relayvsr-2x" ||
                 request.model == "qwen-image-2.1" && request.qwen21_stream_weight_budget_bytes != nil) ? request.residency : nil,
             profile: request.profile,
             ane_manifest: request.ane_manifest, encoder_ane_manifest: nil,

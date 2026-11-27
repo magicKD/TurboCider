@@ -112,6 +112,11 @@ struct NativeJob: Codable, Identifiable, Sendable {
     }
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var outputMediaKind: StudioMediaKind { StudioMediaKind(path: request.output) }
+    var upscaleComparisonSource: String? {
+        let kind = outputMediaKind.rawValue
+        guard request.operation == "\(kind).upscale" else { return nil }
+        return request.inputs?.first { $0.kind == kind && $0.role == "source" && !$0.path.isEmpty }?.path
+    }
     var routeSummary: String? {
         if let runtimeReceipt { return runtimeReceipt.label }
         if UpscaleVariant.from(modelID: request.model) != nil, request.operation == "image.upscale" {
@@ -121,6 +126,9 @@ struct NativeJob: Codable, Identifiable, Sendable {
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
               let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let plan = result["plan"] as? [String: Any], let execution = plan["execution"] as? String else { return nil }
+        if request.model == "relayvsr-2x", let precision = result["precision"] as? String {
+            return precision == "convrot_w8a8" ? "Metal TensorOps · W8A8 · SSD 流式" : "MPS · W8A16 · SSD 流式"
+        }
         if request.model == "seedvr2-3b" {
             return "\(execution.hasPrefix("gpu_ane") ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU") · 原始 FP16 权重 / FP32 稳定状态"
         }
@@ -1073,6 +1081,8 @@ final class NativeJobStore: ObservableObject {
             else if usesLTXWorker { sessionState = "视频完成 · 独立进程已释放" }
             else if request.model == "qwen-image-2.1", request.residency == "streamed" {
                 sessionState = "图片完成 · 流式权重已释放"
+            } else if request.model == "relayvsr-2x" {
+                sessionState = "RelayVSR 超分完成 · 流式权重已释放"
             } else if request.residency == "component_staged" {
                 sessionState = request.model == "seedvr2-3b"
                     ? "会话就绪 · DiT 已释放，VAE 可复用" : "会话就绪 · 图像权重已释放"

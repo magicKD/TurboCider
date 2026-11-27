@@ -34,6 +34,14 @@ MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
 "${TURBOCIDER_BUILD_PYTHON:-python3}" tools/native/check_package_in_use.py \
  --app "$APP" --cli "$DIST/cli"
+relay_packaged=0
+if otool -L "$OUT/libturbocider.dylib" | grep -q 'libtorch_cpu.dylib'; then
+ [[ -n "$TURBOCIDER_RELAY_TORCH_ROOT" ]] || {
+  echo 'Set TURBOCIDER_RELAY_TORCH_ROOT to the LibTorch SDK used for this RelayVSR build.' >&2
+  exit 1
+ }
+ relay_packaged=1
+fi
 PACKAGE_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 rm -rf "$APP" "$DIST/cli"
 mkdir -p "$BIN" "$RES" "$DIST/cli"
@@ -62,6 +70,18 @@ for folder in "$BIN" "$DIST/cli"; do
  cp "$OUT"/h3_shaders.metal "$OUT"/ltx_shaders.metal "$folder/"
  cp "$OUT"/ltx-video-finalizer "$OUT"/ltx-video-vae-decode "$folder/"
  install_name_tool -delete_rpath "$MLX_ROOT/lib" "$folder/libturbocider.dylib"
+ if [[ "$relay_packaged" == 1 ]]; then
+  relay_lib="$TURBOCIDER_RELAY_TORCH_ROOT/lib"
+  for relay_name in torch torch_cpu c10 omp; do
+   cp "$relay_lib/lib${relay_name}.dylib" "$folder/"
+  done
+  install_name_tool -delete_rpath "$relay_lib" "$folder/libturbocider.dylib"
+  for library in "$folder/libtorch.dylib" "$folder/libtorch_cpu.dylib" "$folder/libc10.dylib" "$folder/libomp.dylib"; do
+   while IFS= read -r rpath; do
+    [ -n "$rpath" ] && install_name_tool -delete_rpath "$rpath" "$library"
+   done < <(otool -l "$library" | awk '/cmd LC_RPATH/{found=1; next} found && /path /{print $2;found=0}')
+  done
+ fi
  install_name_tool -add_rpath @loader_path "$folder/libturbocider.dylib"
  # Third-party binaries may carry build-machine rpaths; remove every such path.
  for library in "$folder/libmlx.dylib" "$folder/libjaccl.dylib"; do
@@ -99,6 +119,12 @@ cp native/licenses/TAESD-LICENSE.txt "$RES/"
 cp native/licenses/TAESD-LICENSE.txt "$DIST/cli/"
 cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$DIST/cli/"
 cp "$RES/TurboCider-LICENSE.txt" "$DIST/cli/"
+if [[ "$relay_packaged" == 1 ]]; then
+ relay_licenses=(native/licenses/RelayVSR-LICENSE.txt native/licenses/PyTorch-LICENSE.txt
+                 native/licenses/LLVM-OpenMP-LICENSE.txt)
+ cp "${relay_licenses[@]}" "$RES/"
+ cp "${relay_licenses[@]}" "$DIST/cli/"
+fi
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

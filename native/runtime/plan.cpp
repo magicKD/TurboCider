@@ -1,4 +1,5 @@
 #include "session.hpp"
+#include "../models/relayvsr/pipeline.hpp"
 #include "quantized_execution_profiles.hpp"
 #include "streaming/public_request_validation.hpp"
 #include "../models/qwen21/checkpoint_recipe.hpp"
@@ -134,9 +135,17 @@ static ExecutionPlan make_plan_impl(
         r.lora_strategy = lora_strategy;
     auto recipe = model_recipe(r.model);
     validate_recipe(recipe);
-    const int max_dimension = r.model == "qwen-image-2.1" ? 4096 : 2048;
-    require(r.width >= 64 && r.height >= 64 && r.width <= max_dimension && r.height <= max_dimension,
-            "dimensions must be 64..." + std::to_string(max_dimension));
+    if (r.model == rv::kModelID) {
+        const int max_side = rv::kMaxInputSide * 2;
+        require((r.width == 0 && r.height == 0) ||
+                    (r.width >= 2 && r.height >= 2 && r.width <= max_side && r.height <= max_side &&
+                     r.width % 2 == 0 && r.height % 2 == 0),
+                "RelayVSR dimensions must be omitted or specify a valid 2× raster");
+    } else {
+        const int max_dimension = r.model == "qwen-image-2.1" ? 4096 : 2048;
+        require(r.width >= 64 && r.height >= 64 && r.width <= max_dimension && r.height <= max_dimension,
+                "dimensions must be 64..." + std::to_string(max_dimension));
+    }
     require(r.steps >= 1 && r.steps <= 50, "steps must be 1...50");
     require(r.execution == "gpu" || r.execution == "auto" || r.execution == "gpu_ane",
             "unknown execution mode");
@@ -252,6 +261,9 @@ static ExecutionPlan make_plan_impl(
         // this remains a heuristic, not an allocator-enforced limit.
         plan.memory_estimate_bytes = (12ull << 30) +
             uint64_t(r.width) * r.height * r.frames * (hybrid ? 1024 : 1408);
+    else if (r.model == rv::kModelID)
+        // Host frame windows and one live GPU weight block, independent of clip duration.
+        plan.memory_estimate_bytes = (4ull << 30) + uint64_t(r.width) * r.height * 28;
     else if (r.model == "seedvr2-3b")
         // Resident checkpoint bank, causal histories, sliced VAE activations
         // and whole-clip DiT. A conservative heuristic, not an enforced cap.

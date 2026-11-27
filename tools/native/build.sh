@@ -61,6 +61,14 @@ COMMON+=(-isystem "$MLX_ROOT/include/metal_cpp")
 if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
 if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
 COMMON+=(-DTURBOCIDER_HAS_BUNDLED_CATALOG=1)
+RELAY_FLAGS=() RELAY_LINK=()
+if [[ -n "$TURBOCIDER_RELAY_TORCH_ROOT" ]]; then
+ COMMON+=(-DTURBOCIDER_HAS_RELAYVSR=1)
+ RELAY_FLAGS=(-isystem "$TURBOCIDER_RELAY_TORCH_ROOT/include"
+              -isystem "$TURBOCIDER_RELAY_TORCH_ROOT/include/torch/csrc/api/include")
+ RELAY_LINK=(-L"$TURBOCIDER_RELAY_TORCH_ROOT/lib" -ltorch -ltorch_cpu -lc10
+             -Wl,-rpath,"$TURBOCIDER_RELAY_TORCH_ROOT/lib")
+fi
 if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
  COMMON+=(-DTURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS=1)
 fi
@@ -189,6 +197,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/qwen21/bf16_streaming.cpp native/models/qwen21/bf16_streaming_pipeline.cpp
  native/platform/apple/qwen21_bf16_streaming.mm
  native/models/qwen21_module.cpp
+ native/models/relayvsr_module.cpp
  native/models/seedvr2_module.cpp native/models/seedvr2/geometry.cpp
  native/models/seedvr2/model.cpp native/models/seedvr2/vae.cpp
  native/models/seedvr2/pipeline.cpp native/models/seedvr2/media.cpp
@@ -209,6 +218,13 @@ fi
 if [[ "$VAE_CAUSAL_EXPERIMENT" == "1" ]]; then
  SOURCES+=(tools/native/seedvr2_vae_ane_causal_conv.mm)
 fi
+if [[ -n "$TURBOCIDER_RELAY_TORCH_ROOT" ]]; then
+ SOURCES+=(native/models/relayvsr/common.cpp native/models/relayvsr/wan.cpp
+           native/models/relayvsr/flash.cpp native/models/relayvsr/pipeline.cpp
+           native/platform/apple/relayvsr/weights.mm native/platform/apple/relayvsr/convrot.mm
+           native/platform/apple/relayvsr/metal_attention.mm native/platform/apple/relayvsr/flash_tensorops.mm
+           native/platform/apple/relayvsr/video.mm native/platform/apple/relayvsr_session.mm)
+fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
  # intentionally contain common names such as dit.cpp and pipeline.cpp.
@@ -217,7 +233,11 @@ for src in "${SOURCES[@]}"; do
  flags=(-x c++)
  if [[ "$src" == *.mm ]]; then flags=(-x objective-c++ -fobjc-arc); fi
  if [[ "$src" == native/third_party/cider/*.mm ]]; then flags+=(-fno-objc-arc); fi
- "$CXX" "${COMMON[@]}" "${flags[@]}" -fvisibility=default -c "$src" -o "$obj"
+ if [[ "$src" == native/models/relayvsr/* || "$src" == native/platform/apple/relayvsr/* ]]; then
+  "$CXX" "${COMMON[@]}" "${flags[@]}" "${RELAY_FLAGS[@]}" -O3 -Wno-deprecated-declarations -c "$src" -o "$obj"
+ else
+  "$CXX" "${COMMON[@]}" "${flags[@]}" -fvisibility=default -c "$src" -o "$obj"
+ fi
  OBJECTS+=("$obj")
 done
 VIDEO_ROOT="$PWD/native/models/h3_runtime"
@@ -278,7 +298,7 @@ fi
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_video_finalizer_tool.o" "$LTX_OUT/libltx-runtime.a" "$OUT/native_media_audio.o" "$OUT/native_media_video.o" -o "$OUT/ltx-video-finalizer" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo -Wl,-rpath,"$MLX_ROOT/lib"
 "$CXX" -std=c++20 -O3 -fobjc-arc -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I native/media -c tools/native/ltx_audio_mux.mm -o "$LTX_OUT/ltx_audio_mux_tool.o"
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_mux_tool.o" "$OUT/native_media_audio.o" "$OUT/native_media_video.o" -o "$OUT/ltx-audio-mux" -framework Foundation -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo
-"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
+"$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib "${RELAY_LINK[@]}"
 if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
  runtime_build_identity --verify
  printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"

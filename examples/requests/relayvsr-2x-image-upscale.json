@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "model": "relayvsr-2x",
+  "operation": "image.upscale",
+  "inputs": [{"kind": "image", "role": "source", "path": "source.png"}],
+  "outputs": [{"kind": "image", "path": "relayvsr-2x.png"}],
+  "sampling": {"seed": 42, "steps": 1},
+  "execution": {"policy": "gpu", "residency": "streamed"}
+}

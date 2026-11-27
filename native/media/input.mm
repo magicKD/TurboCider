@@ -4,12 +4,15 @@
 #include <cmath>
 namespace tc {
 Tensor load_rgba_image_tensor(const std::filesystem::path &path) {
+    return load_rgba_image_tensor(path, 100000000);
+}
+Tensor load_rgba_image_tensor(const std::filesystem::path &path, int max_side) {
     CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:@(path.c_str())], nullptr);
     require(source != nullptr, "cannot read image: " + path.string());
     NSDictionary *properties = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr));
     int w = [properties[(__bridge NSString*)kCGImagePropertyPixelWidth] intValue];
     int h = [properties[(__bridge NSString*)kCGImagePropertyPixelHeight] intValue];
-    if (w <= 0 || h <= 0 || uint64_t(w) * h > 100000000) {
+    if (w <= 0 || h <= 0 || w > max_side || h > max_side || uint64_t(w) * h > 100000000) {
         CFRelease(source);
         throw std::invalid_argument("image dimensions exceed import limit");
     }
@@ -19,6 +22,10 @@ Tensor load_rgba_image_tensor(const std::filesystem::path &path) {
     CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, nullptr);
     CFRelease(source);
     require(image != nullptr, "RGBA image decode failed");
+    if (CGImageGetWidth(image) > size_t(max_side) || CGImageGetHeight(image) > size_t(max_side)) {
+        CGImageRelease(image);
+        throw std::invalid_argument("decoded image dimensions exceed import limit");
+    }
     w = int(CGImageGetWidth(image)); h = int(CGImageGetHeight(image));
     std::vector<float> rgba(size_t(w) * h * 4, 0.f);
     CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);

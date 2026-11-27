@@ -43,7 +43,7 @@ struct TurboCiderNativeApp: App {
                 .disabled(store.busy || submitting || studio.imageInputsBusy) }
             CommandGroup(after: .pasteboard) {
                 Button("粘贴图片到创作") { studio.beginPasteImage() }.keyboardShortcut("v", modifiers: [.command, .shift])
-                    .disabled((submitting && !store.busy) || studio.imageInputsBusy)
+                    .disabled((submitting && !store.busy) || studio.imageInputsBusy || studio.supportsVideoInputs)
             }
         }
         Settings { ScrollView { VStack(alignment: .leading, spacing: 14) {
@@ -97,6 +97,8 @@ private func phaseName(_ value: String) -> String {
     if value == "latent_upsample" { return "细化视频画面" }
     if value == "mux" { return "保存视频" }
     if value == "upscale" { return "图像超分" }
+    if value == "media_import" { return "读取源媒体" }
+    if value == "relayvsr_restore" { return "RelayVSR 流式超分" }
     if value == "denoise" { return "采样" }
     if ["image_encode", "vision_encode", "reference_vae_encode"].contains(value) { return "编码参考图" }
     if value.contains("text_cache_hit") { return "复用文本编码" }
@@ -141,12 +143,14 @@ struct StudioView: View {
     @State private var referenceDropTarget: UUID?
     @State private var showingRecentResults = false
     @State private var showingResources = false
+    @State private var showingVideoPicker = false
     @State private var ignoredStatusID: UUID?
     @State private var dropping = false
     @State private var compareOriginal = false
     @State private var comparisonInputRole = "first_frame"
     @State private var upscaleSourcePath = ""
     @State private var imageUpscaling = false
+    @State private var preferredUpscaleModels: [String: UpscaleModelChoice] = [:]
     @State private var pendingUpscaleReuseSource: String?
     @State private var librarySelection: String?
     @Binding var submitting: Bool
@@ -157,7 +161,8 @@ struct StudioView: View {
     @State private var keyframeHistoryRole: StudioKeyframeRole?
     private var selectedJob: NativeJob? { store.jobs.first { $0.id == selected && $0.hasOutput } }
     private var previewAsset: StudioAsset? {
-        studio.draft.assets.first { $0.id == previewAssetID } ?? studio.draft.activeAssets.first
+        if videoUpscaling { return studio.draft.activeAssets.first }
+        return studio.draft.assets.first { $0.id == previewAssetID } ?? studio.draft.activeAssets.first
     }
     private var editingImage: Bool { ["image.edit", "image.transform"].contains(studio.draft.operation) }
     private var qwenCanvasLocked: Bool {
@@ -185,9 +190,27 @@ struct StudioView: View {
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
     private var preparingSubmission: Bool { submitting && !store.busy }
     private var assetControlsLocked: Bool { preparingSubmission || studio.imageInputsBusy }
+    private var upscaleControlsLocked: Bool {
+        store.busy || submitting || studio.imageInputsBusy || api.running || api.changing || store.resolvingAcceleration
+    }
+    private var videoUpscaling: Bool { page == .upscale && studio.supportsVideoInputs }
+    private var upscaleKind: String { imageUpscaling ? "image" : studio.creationKind }
+    private var sidebarSelection: Binding<StudioPage?> {
+        Binding(get: { page }, set: { destination in
+            guard destination != page else { return }
+            if destination == .upscale { openUpscale() }
+            else { page = destination }
+        })
+    }
+    private var latestCreationJob: NativeJob? {
+        store.jobs.first { $0.request.operation?.hasSuffix(".upscale") != true }
+    }
     private var statusJob: NativeJob? {
-        guard let job = store.jobs.first else { return nil }
-        return page == .studio && job.id == ignoredStatusID ? nil : job
+        if page == .upscale {
+            return store.jobs.first { $0.request.model == studio.draft.modelID && $0.request.operation == studio.draft.operation }
+        }
+        let latestCreation = latestCreationJob
+        return latestCreation?.id == ignoredStatusID ? nil : latestCreation
     }
     private var hasDetailedRunStatus: Bool {
         if store.activeJob != nil || store.busy || store.workerCleanupPending || submitting || store.resolvingAcceleration ||
@@ -199,8 +222,7 @@ struct StudioView: View {
         studio.imageImportLimit
     }
     private var workflowOperations: [String] {
-        if imageUpscaling { return ["image.generate", "image.transform", "image.edit"] }
-        if studio.draft.modelID == "seedvr2-3b" {
+        if studio.draft.isNativeUpscale {
             return model?.availableOperations.filter { $0.hasPrefix(studio.creationKind + ".") } ?? []
         }
         if studio.draft.modelID == "qwen-image-2.1" { return ["image.generate", "image.edit"] }
@@ -208,10 +230,14 @@ struct StudioView: View {
             let operations = model.availableOperations.filter { $0.hasPrefix("video.") }
             return operations + (operations.contains("video.upscale") || !studio.creationOperations.contains("video.upscale") ? [] : ["video.upscale"])
         }
-        return studio.creationOperations.filter { $0 != "image.upscale" || studio.draft.modelID == "seedvr2-3b" }
+        return studio.creationOperations.filter { $0 != "image.upscale" || studio.draft.isNativeUpscale }
     }
     private var generationBlocker: String? {
         guard let model, model.executor else { return "请选择可运行的本地模型。" }
+        if page == .upscale, studio.draft.modelPath.isEmpty { return "请先在模型中心下载或导入超分模型。" }
+        if videoUpscaling, studio.draft.activeAssets.isEmpty {
+            return historyJobs.isEmpty ? "请选择或拖入源视频。" : "请选择本地视频，或在历史视频预览中点「用作超分源」。"
+        }
         if !studio.selectedStreamingTargetAvailable { return "当前流式档位不可用，请在参数中选择可用档位。" }
         do { try studio.draft.validate(model: model) }
         catch { return error.localizedDescription }
@@ -224,8 +250,8 @@ struct StudioView: View {
         case "video.image": return "选择首帧图片，描述镜头与动作。"
         case "video.keyframes": return "分别选择首帧与尾帧，描述画面如何过渡。尾图参与模型生成，结尾可能有重绘差异。"
         case "video.reference": return "添加参考图，描述人物、场景和动作。"
-        case "image.upscale": return "添加源图片，选择输出尺寸，使用 SeedVR2 单步恢复清晰度。原图保留。"
-        case "video.upscale": return "添加 2–121 帧的源视频，保留完整帧数和整数源 FPS。输出为无音轨 MP4。"
+        case "image.upscale": return studio.draft.isRelayVSR ? "添加源图片，导出 2× PNG。" : "添加源图片，选择输出尺寸，使用 SeedVR2 单步恢复清晰度。"
+        case "video.upscale": return studio.draft.isRelayVSR ? "添加源视频，导出 2× MP4 并保留源帧时间。" : "添加 2–121 帧的源视频，保留完整帧数和整数源 FPS。输出为无音轨 MP4。"
         default: return model?.isVideo == true ? "描述场景、镜头与动作，在本机生成视频。" : "描述主体、场景与风格，在本机生成图片。"
         }
     }
@@ -260,7 +286,7 @@ struct StudioView: View {
                     else { Image(systemName: "sparkles").foregroundStyle(ciderAccent) }
                     Text("TurboCider").font(.title3.weight(.semibold))
                 }.padding(.horizontal, 12).padding(.top, 16)
-                List(StudioPage.allCases, selection: $page) { item in
+                List(StudioPage.allCases, selection: sidebarSelection) { item in
                     Label(item.rawValue, systemImage: item.symbol).tag(item)
                         .accessibilityIdentifier("navigation-\(item.id)")
                 }.listStyle(.sidebar)
@@ -326,11 +352,11 @@ struct StudioView: View {
         }
         .onChange(of: studio.workspaceResetID) { _, _ in
             focusInput(); annotationAsset = nil; preparationAsset = nil; showingCanvasSizing = false
-            showingRecentResults = false; ignoredStatusID = store.jobs.first?.id
+            showingRecentResults = false; ignoredStatusID = latestCreationJob?.id
             if let source = pendingUpscaleReuseSource {
                 imageUpscaling = true; upscaleSourcePath = source; pendingUpscaleReuseSource = nil; page = .upscale
             } else {
-                imageUpscaling = false; page = studio.draft.modelID == "seedvr2-3b" ? .upscale : .studio
+                imageUpscaling = false; page = studio.draft.isNativeUpscale ? .upscale : .studio
             }
         }
         .onChange(of: page) { previous, next in
@@ -347,14 +373,10 @@ struct StudioView: View {
                 guard studio.activateCreation() else { page = previous; return }
                 imageUpscaling = false
             }
-            if next == .upscale, !imageUpscaling, studio.draft.modelID != "seedvr2-3b" {
-                showSeedVR2()
-                if studio.draft.modelID != "seedvr2-3b" { page = previous }
-            }
         }
-        .onChange(of: studio.draft.modelID) { _, id in
-            if page == .upscale && id != "seedvr2-3b" && !imageUpscaling { page = .studio }
-            if page == .studio && id == "seedvr2-3b" { page = .upscale }
+        .onChange(of: studio.draft.modelID) { _, _ in
+            if page == .upscale && !studio.draft.isNativeUpscale && !imageUpscaling { page = .studio }
+            if page == .studio && studio.draft.isNativeUpscale { page = .upscale }
         }
         .onChange(of: upscaleSourcePath) { _, _ in
             if imageUpscaling { selected = nil; compareOriginal = false; resultSelection.clear() }
@@ -378,7 +400,7 @@ struct StudioView: View {
         }
         .task {
             library.refresh(studio: studio, migrate: true)
-            if studio.draft.modelID == "seedvr2-3b" { page = .upscale }
+            if studio.draft.isNativeUpscale { page = .upscale }
         }
         .task(id: "\(page?.rawValue ?? ""):\(imageUpscaling):\(studio.draft.upscaleAutoPreload):\(studio.draft.upscaleAfterGeneration):\(studio.draft.upscaleModelPath):\(studio.draft.upscaleCompute.rawValue)") {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
@@ -402,19 +424,12 @@ struct StudioView: View {
     }
     private var workspace: some View {
         VStack(spacing: 0) {
-            if page == .upscale { upscaleHeader.padding(.horizontal,18).padding(.top,12) }
-            if page == .upscale && studio.draft.modelID == "seedvr2-3b" && !imageUpscaling {
-                SeedVR2UpscaleControls(studio: studio,
-                    locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
-                    manageModels: { librarySelection = "seedvr2-3b"; page = .models })
-                    .padding(.horizontal, 18).padding(.top, 12)
-            }
-            if page != .upscale { creationHeader.padding(.horizontal, 18).padding(.vertical, 12) }
+            if page == .upscale { upscaleHeader.padding(.horizontal, 18).padding(.top, 12) }
+            if page != .upscale { creationModeHeader.padding(.horizontal, 18).padding(.vertical, 12) }
             if imageUpscaling {
                 ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath,
-                                 showsWorkspaceTitle: page != .upscale,
                                  modelSelection: upscaleModelSelection,
-                                 manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models },
+                                 manageModels: { showUpscaleModelLibrary(studio.draft.upscaleVariant.modelID) },
                                  historyContent: imageHistoryJobs.isEmpty ? nil : AnyView(resultStrip), selectedPreviewJob: selectedJob,
                                  usePreviewAsSource: useHistoryAsUpscaleSource) { job in
                     selected = job.id; compareOriginal = false; resultSelection.select(job.id, orderedIDs: outputIDs)
@@ -425,78 +440,90 @@ struct StudioView: View {
         }
     }
     private var upscaleHeader: some View {
-        UpscaleWorkspaceHeader(
-                kind: Binding(get: { imageUpscaling ? "image" : studio.creationKind }, set: { kind in
-                    guard kind != (imageUpscaling ? "image" : studio.creationKind) else { return }
-                    if imageUpscaling || studio.draft.modelID != "seedvr2-3b" { showSeedVR2(kind: kind) }
-                    else { studio.changeOperation(kind + ".upscale"); focusInput() }
-                }), locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+        UpscaleWorkspaceHeader(kind: Binding(get: { upscaleKind }, set: { kind in
+            if kind != upscaleKind { openUpscale(kind: kind) }
+        }), locked: upscaleControlsLocked)
     }
     private var upscaleModelSelection: Binding<String> {
         Binding(get: {
-            imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b"
+            imageUpscaling ? studio.draft.upscaleVariant.modelID : studio.draft.modelID
         }, set: { id in
-            guard id != (imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b") else { return }
-            if id == "seedvr2-3b" { showSeedVR2(kind: "image") }
-            else if let variant = UpscaleVariant.from(modelID: id) {
-                if let asset = studio.draft.activeAssets.first, asset.mediaKind == "image", upscaleSourcePath.isEmpty {
-                    upscaleSourcePath = asset.path
-                }
-                studio.selectUpscaleVariant(variant); imageUpscaling = true; focusInput()
-            }
+            guard id != (imageUpscaling ? studio.draft.upscaleVariant.modelID : studio.draft.modelID),
+                  let choice = UpscaleModelChoice(rawValue: id) else { return }
+            openUpscale(kind: upscaleKind, choice: choice)
         })
     }
-    private func showSeedVR2(kind: String? = nil) {
-        guard !store.busy, !submitting, !studio.imageInputsBusy, !api.running, !api.changing,
-              !store.resolvingAcceleration else {
-            studio.message = "请先完成当前任务或停止本地 API，再切换超分模型。"; return
-        }
-        guard studio.activateSeedVR2Upscaling(kind: kind) else { return }
-        let previousSource = imageUpscaling ? upscaleSourcePath : ""
-        imageUpscaling = false; page = .upscale; focusInput()
-        if kind == "image", !previousSource.isEmpty, studio.draft.activeAssets.first?.path != previousSource {
-            Task { await studio.addFiles([URL(fileURLWithPath: previousSource)]) }
-        }
+    private func showUpscaleModelLibrary(_ modelID: String) {
+        librarySelection = modelID
+        page = .models
     }
-    @ViewBuilder private var creationHeader: some View {
-        if imageUpscaling {
-            HStack {
-                Button { imageUpscaling = false; focusInput() } label: { Label("返回创作", systemImage: "chevron.left") }
-                Text("图像超分").font(.headline)
-                Spacer()
-                Button("超分设置") { inspector = true }
+    private func openUpscale(kind requestedKind: String? = nil, choice requestedChoice: UpscaleModelChoice? = nil,
+                             source explicitSource: String? = nil, videoSourceName: String? = nil) {
+        guard !upscaleControlsLocked else {
+            studio.message = "请先完成当前任务或停止本地 API，再进入超分。"
+            return
+        }
+        let kind = requestedKind ?? upscaleKind
+        guard let choice = requestedChoice ?? UpscaleModelChoice.preferred(
+            for: kind, models: studio.models, draft: studio.draft, remembered: preferredUpscaleModels[kind]
+        ) else {
+            studio.message = "当前引擎没有可用的\(kind == "video" ? "视频" : "图片")超分模型。"
+            return
+        }
+
+        let visibleOutput = (page == .studio && selectedJob?.outputMediaKind.rawValue == kind) ? selectedJob?.request.output : nil
+        let workspaceSource = previewAsset.flatMap { $0.mediaKind == kind ? $0.path : nil }
+        let auxiliarySource = imageUpscaling && kind == "image" && !upscaleSourcePath.isEmpty ? upscaleSourcePath : nil
+        let source = explicitSource ?? visibleOutput ?? auxiliarySource ?? workspaceSource
+
+        if choice.supportsVideo {
+            guard studio.activateNativeUpscaling(choice, kind: kind) else { return }
+            imageUpscaling = false
+            if let source, source != studio.draft.activeAssets.first?.path {
+                if let asset = studio.draft.assets.first(where: { $0.path == source && $0.mediaKind == kind }) {
+                    studio.selectSourceAsset(asset.id)
+                    studio.save()
+                } else {
+                    studio.beginImageImportFiles([URL(fileURLWithPath: source)], videoName: videoSourceName)
+                }
             }
-        } else { creationModeHeader }
+        } else if let variant = UpscaleVariant.from(modelID: choice.rawValue), kind == "image" {
+            studio.selectUpscaleVariant(variant)
+            imageUpscaling = true
+            upscaleSourcePath = source ?? ""
+        }
+        preferredUpscaleModels[kind] = choice
+        if page != .upscale { inspector = true }
+        studio.message = nil
+        page = .upscale
+        focusInput()
     }
     private var creationModeHeader: some View {
         HStack(spacing: 16) {
-            Picker("创作类型", selection: Binding(get: { imageUpscaling ? "image" : studio.creationKind }, set: {
-                guard $0 != (imageUpscaling ? "image" : studio.creationKind) else { return }
+            Picker("创作类型", selection: Binding(get: { studio.creationKind }, set: {
+                guard $0 != studio.creationKind else { return }
                 imageUpscaling = false; studio.changeCreationKind($0); focusInput()
             })) {
                 Text("图片").tag("image")
                 Text("视频").tag("video")
             }.labelsHidden().pickerStyle(.segmented).frame(width: 112)
                 .disabled(store.busy || assetControlsLocked).accessibilityIdentifier("creationKind")
-            Picker("创作方式", selection: Binding(get: { imageUpscaling ? "image.transform" : studio.draft.operation }, set: {
-                guard $0 != (imageUpscaling ? "image.transform" : studio.draft.operation) else { return }
-                if $0 == "image.upscale" && studio.draft.modelID != "seedvr2-3b" {
-                    upscaleSourcePath = selectedJob?.request.output ?? previewAsset?.path ?? ""
-                    imageUpscaling = true; page = .upscale
+            Picker("创作方式", selection: Binding(get: { studio.draft.operation }, set: {
+                guard $0 != studio.draft.operation else { return }
+                if $0.hasSuffix(".upscale") {
+                    openUpscale(kind: $0.hasPrefix("video.") ? "video" : "image")
                     return
                 }
-                if $0 == "video.upscale" { showSeedVR2(kind: "video"); return }
                 imageUpscaling = false
                 studio.changeOperation(studio.draft.modelID == "qwen-image-2.1" && $0 == "image.transform" ? "image.edit" : $0)
                 focusInput()
             })) {
                 ForEach(workflowOperations, id: \.self) { operation in
-                    Text(imageUpscaling && operation == "image.transform" ? "超分"
-                         : operation == "image.generate" ? "生成"
+                    Text(operation == "image.generate" ? "生成"
                          : studio.draft.modelID == "qwen-image-2.1" && operation == "image.edit" ? "编辑"
                          : operationName(operation)).tag(operation)
                 }
-                if model?.isVideo != true && studio.draft.modelID != "seedvr2-3b" { Text("超分").tag("image.upscale") }
+                if model?.isVideo != true && !studio.draft.isNativeUpscale { Text("超分").tag("image.upscale") }
             }.labelsHidden().pickerStyle(.segmented).frame(maxWidth: model?.isVideo == true ? 330 : 240)
                 .disabled(store.busy || assetControlsLocked).accessibilityIdentifier("operation")
             Spacer(minLength: 0)
@@ -515,7 +542,7 @@ struct StudioView: View {
                 Divider()
                 ScrollView { inspectorContents.padding(16) }
                     .frame(width: 270).background(Color(nsColor: .controlBackgroundColor))
-                    .accessibilityIdentifier("generationInspector")
+                    .accessibilityIdentifier(page == .upscale ? "upscaleInspector" : "generationInspector")
             }
         }
     }
@@ -533,10 +560,10 @@ struct StudioView: View {
                         mediaStage.frame(maxWidth: .infinity)
                             .frame(height: max(170, proxy.size.height
                                 - (historyJobs.isEmpty ? 0 : 66)
-                                - (studio.draft.operation == "video.keyframes" ? 122 : studio.draft.assets.isEmpty ? 0 : 80))).layoutPriority(1)
+                                - (studio.draft.operation == "video.keyframes" ? 122 : videoUpscaling || studio.draft.assets.isEmpty ? 0 : 80))).layoutPriority(1)
                         if !historyJobs.isEmpty { resultStrip }
                         if studio.draft.operation == "video.keyframes" { keyframeInputs }
-                        else if !studio.draft.assets.isEmpty { inputStrip }
+                        else if !videoUpscaling, !studio.draft.assets.isEmpty { inputStrip }
                     }.frame(minHeight: proxy.size.height)
                 }.accessibilityIdentifier("canvasScrollArea")
             }.frame(minHeight: 170, maxHeight: .infinity)
@@ -548,8 +575,9 @@ struct StudioView: View {
             }
         }.padding(.horizontal, 18).padding(.bottom, 12)
             .frame(minWidth: 480)
-            .onDrop(of: [.fileURL, .image], isTargeted: $dropping) { providers in
+            .onDrop(of: videoUpscaling ? [.fileURL] : [.fileURL, .image], isTargeted: $dropping) { providers in
                 guard !assetControlsLocked, studio.supportsImageInputs || studio.supportsVideoInputs else { return false }
+                guard !videoUpscaling || !upscaleControlsLocked else { return false }
                 return studio.beginImageImportProviders(providers)
             }
     }
@@ -562,10 +590,12 @@ struct StudioView: View {
                     Spacer(minLength: 0)
                 } else if let job = selectedJob {
                     Label(compareOriginal ? (job.request.operation == "video.keyframes"
-                        ? (comparisonInputRole == "last_frame" ? "输入尾帧" : "输入首帧") : "输入素材") : "生成结果", systemImage: job.outputMediaKind.symbol)
+                        ? (comparisonInputRole == "last_frame" ? "输入尾帧" : "输入首帧") : "输入素材")
+                        : job.request.operation?.hasSuffix(".upscale") == true ? "超分结果" : "生成结果",
+                        systemImage: job.outputMediaKind.symbol)
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
-                    if job.request.inputs?.first != nil {
+                    if job.upscaleComparisonSource == nil, job.request.inputs?.first != nil {
                         if job.request.operation == "video.keyframes" {
                             Menu("对比首尾帧") {
                                 Button("查看首帧") { comparisonInputRole = "first_frame"; compareOriginal = true }
@@ -585,10 +615,15 @@ struct StudioView: View {
                             if await studio.editResult(job) { imageUpscaling = false; focusInput(); page = .studio }
                         } } label: { Label("继续编辑", systemImage: "pencil") }
                             .disabled(store.busy || assetControlsLocked).accessibilityIdentifier("editResult")
+                    } else if !compareOriginal {
+                        Button { useVideoAsUpscaleSource(job) } label: {
+                            Label(videoUpscaling ? "用作超分源" : "超分此视频", systemImage: "arrow.up.left.and.arrow.down.right")
+                        }.disabled(upscaleControlsLocked).accessibilityIdentifier("useVideoAsUpscaleSource")
                     }
                     Menu {
                         if job.outputMediaKind == .image {
-                            Button("超分此图…") { upscaleSourcePath = job.request.output; imageUpscaling = true; page = .upscale }.disabled(store.busy || assetControlsLocked)
+                            Button("超分此图…") { openUpscale(kind: "image", source: job.request.output) }
+                                .disabled(upscaleControlsLocked)
                         }
                         Button("另存为…") { exportResult(job.request.output) }
                         Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: job.request.output)]) }
@@ -600,7 +635,7 @@ struct StudioView: View {
                     let index = (studio.draft.assets.firstIndex(where: { $0.id == asset.id }) ?? 0) + 1
                     Label(studio.draft.operation == "video.keyframes" ? (asset.id == studio.draft.lastImageID ? "视频尾帧" : "视频首帧")
                           : studio.draft.operation == "video.image" ? "视频首帧"
-                          : studio.draft.modelID == "seedvr2-3b" ? (asset.mediaKind == "video" ? "源视频" : "源图片")
+                          : studio.draft.isNativeUpscale ? (asset.mediaKind == "video" ? "源视频" : "源图片")
                           : studio.draft.activeAssets.count == 1 ? "编辑原图" : "参考图 \(index)", systemImage: asset.mediaKind == "video" ? "film" : "photo")
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Text(assetTitle(asset)).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
@@ -622,13 +657,20 @@ struct StudioView: View {
             if let data = store.livePreview, store.livePreviewWorkflowID == nil {
                 TinyLivePreview(data: data, step: store.livePreviewStep, total: store.livePreviewTotal)
             } else if let job = selectedJob {
+                let comparison = job.upscaleComparisonSource
                 let path = compareOriginal ? ((job.request.operation == "video.keyframes"
                     ? job.request.inputs?.first(where: { $0.role == comparisonInputRole })?.path
                     : job.request.inputs?.first?.path) ?? job.request.output) : job.request.output
-                if StudioMediaKind(path: path) == .video {
+                if job.outputMediaKind == .video, let comparison {
+                    VideoUpscaleComparison(originalPath: comparison, resultPath: job.request.output).id(job.id)
+                        .accessibilityIdentifier("videoUpscaleComparison")
+                } else if StudioMediaKind(path: path) == .video {
                     StudioOutputPreview(path: path).frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("generatedVideo")
                 } else {
-                    InteractiveMediaPreview(path: path).accessibilityIdentifier("generatedImage")
+                    InteractiveMediaPreview(path: comparison == nil ? path : job.request.output,
+                                            maxPixel: comparison == nil ? 2400 : 4096,
+                                            comparisonSourcePath: comparison)
+                        .accessibilityIdentifier("generatedImage")
                 }
             } else if let asset = previewAsset {
                 if asset.mediaKind == "video" {
@@ -638,14 +680,16 @@ struct StudioView: View {
                 }
             } else {
                 VStack(spacing: 12) {
-                    Image(systemName: editingImage ? "photo.badge.plus" : "sparkles.rectangle.stack")
+                    Image(systemName: videoUpscaling ? "film" : editingImage ? "photo.badge.plus" : "sparkles.rectangle.stack")
                         .font(.system(size: 36, weight: .ultraLight)).foregroundStyle(ciderAccent.opacity(0.75))
-                    Text(studio.draft.operation == "video.keyframes" ? "从首尾两张图片开始"
+                    Text(studio.supportsVideoInputs ? "选择要超分的视频"
+                         : studio.draft.isNativeUpscale ? "选择要超分的图片"
+                         : studio.draft.operation == "video.keyframes" ? "从首尾两张图片开始"
                          : studio.draft.operation.hasSuffix("generate") ? "把想法变成画面" : "从一张图片开始").font(.title2.weight(.medium))
                     Text(workflowDescription).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    if studio.supportsImageInputs || studio.supportsVideoInputs {
-                        Button(action: chooseImages) { Label(studio.supportsVideoInputs ? "选择源视频" : "选择图片", systemImage: "plus") }.disabled(assetControlsLocked)
-                        Text(studio.supportsVideoInputs ? "也可以拖入源视频" : "也可以拖入或粘贴图片").font(.caption).foregroundStyle(.tertiary)
+                    if !videoUpscaling, studio.supportsImageInputs {
+                        Button(action: chooseImages) { Label("选择图片", systemImage: "plus") }.disabled(assetControlsLocked)
+                        Text("也可以拖入或粘贴图片").font(.caption).foregroundStyle(.tertiary)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -656,15 +700,24 @@ struct StudioView: View {
     private func resultMetadata(_ job: NativeJob) -> String {
         if compareOriginal { return "输入素材" }
         let dimensions = "\(job.request.width) × \(job.request.height)"
-        let detail = job.outputMediaKind == .video
-            ? "\(job.request.frames) 帧 · \(job.request.fps ?? 24) FPS · 种子 \(job.request.seed)"
-            : job.request.operation == "image.upscale" ? "超分结果" : "种子 \(job.request.seed)"
+        let detail: String
+        if job.outputMediaKind == .video, job.request.model == UpscaleModelChoice.relayVSR.rawValue,
+           let data = job.resultJSON?.data(using: .utf8),
+           let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let frames = result["frames"] as? Int, let fps = result["fps"] as? Double {
+            let rate = fps.formatted(.number.precision(.fractionLength(0...3)))
+            detail = "\(frames) 帧 · \(rate) FPS"
+        } else if job.outputMediaKind == .video {
+            detail = "\(job.request.frames) 帧 · \(job.request.fps ?? 24) FPS · 种子 \(job.request.seed)"
+        } else {
+            detail = job.request.operation == "image.upscale" ? "超分结果" : "种子 \(job.request.seed)"
+        }
         return "\(dimensions) · \(detail)" + (job.routeSummary.map { " · \($0)" } ?? "")
     }
     private var resultStrip: some View {
         HStack(spacing: 8) {
             Label("历史\(historyKind.title)", systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
-                .fixedSize().help("点击预览；⌘ 点击多选，Shift 连续选择")
+                .fixedSize().help(videoUpscaling ? "点击预览后可用作超分源，或右键直接使用" : "点击预览；⌘ 点击多选，Shift 连续选择")
             ScrollView(.horizontal) { LazyHStack(spacing: 8) {
                 ForEach(historyJobs) { job in
                     resultThumbnail(job, height: 52, orderedIDs: historyIDs, keepsCreationMode: true).frame(width: historyKind == .video ? 84 : 56)
@@ -674,6 +727,9 @@ struct StudioView: View {
                             Button("查看\(historyKind.title)") { selected = job.id; compareOriginal = false }
                             if job.outputMediaKind == .image {
                                 Button("用作视频首帧") { useResultForVideo(job) }.disabled(historySourceLocked)
+                            } else {
+                                Button(videoUpscaling ? "用作超分源" : "超分此视频") { useVideoAsUpscaleSource(job) }
+                                    .disabled(upscaleControlsLocked)
                             }
                             if imageUpscaling {
                                 Button("用作超分原图") { useHistoryAsUpscaleSource(job) }
@@ -706,6 +762,10 @@ struct StudioView: View {
             showingVideoImages = false
             imageUpscaling = false; focusInput(); page = .studio
         }
+    }
+    private func useVideoAsUpscaleSource(_ job: NativeJob) {
+        let date = job.createdAt.formatted(date: .abbreviated, time: .shortened)
+        openUpscale(kind: "video", source: job.request.output, videoSourceName: "历史视频 · \(date)")
     }
     private var videoImageHistoryButton: some View {
         Button {
@@ -749,7 +809,7 @@ struct StudioView: View {
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if studio.draft.modelID != "seedvr2-3b" {
+            if !studio.draft.isNativeUpscale {
             HStack {
                 Text(editingImage ? "想修改哪里？" : "描述你的想法").font(.subheadline.weight(.medium))
                 if store.busy { Text("修改将用于下一次生成").font(.caption2).foregroundStyle(.secondary) }
@@ -776,20 +836,24 @@ struct StudioView: View {
     private var generationControls: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                if studio.supportsImageInputs || studio.supportsVideoInputs || !studio.draft.assets.isEmpty {
+                if videoUpscaling {
+                    upscaleVideoSourceControl
+                } else if studio.supportsImageInputs || !studio.draft.assets.isEmpty {
                     Menu {
-                        Button(studio.supportsVideoInputs ? "选择源视频…" : "选择图片…", action: chooseImages)
-                            .disabled((!studio.supportsImageInputs && !studio.supportsVideoInputs) || studio.draft.assets.count >= referenceImportLimit)
+                        Button("选择图片…", action: chooseImages)
+                            .disabled(!studio.supportsImageInputs || studio.draft.assets.count >= referenceImportLimit)
                         Button("粘贴图片") { studio.beginPasteImage() }
-                            .disabled(!studio.supportsImageInputs || studio.supportsVideoInputs || studio.draft.assets.count >= referenceImportLimit)
+                            .disabled(!studio.supportsImageInputs || studio.draft.assets.count >= referenceImportLimit)
                         if studio.canUndoAssets { Divider(); Button("撤销素材修改") { studio.undoAssetChange() } }
                     } label: { Image(systemName: "plus.circle").font(.title3) }
                         .menuStyle(.borderlessButton).fixedSize().disabled(assetControlsLocked)
                         .accessibilityLabel("添加图片").accessibilityIdentifier("addImages")
                 }
-                Text(studio.draft.modelID == "seedvr2-3b" ? "单步恢复 · 无需提示词" : studio.draft.qwen21TurboSummary ?? "\(studio.draft.steps) 步")
-                    .font(.caption).foregroundStyle(.secondary)
-                if studio.draft.assets.count > studio.draft.activeAssets.count,
+                if !videoUpscaling {
+                    Text(studio.draft.isNativeUpscale ? "单步恢复 · 无需提示词" : studio.draft.qwen21TurboSummary ?? "\(studio.draft.steps) 步")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if !studio.draft.isNativeUpscale, studio.draft.assets.count > studio.draft.activeAssets.count,
                    studio.creationKind != "video" || studio.draft.activeAssets.isEmpty {
                     Button(studio.creationKind == "video" ? "使用图片生成视频" : "使用已添加图片") {
                         if let operation = imageInputOperation { studio.changeOperation(operation); focusInput() }
@@ -797,7 +861,7 @@ struct StudioView: View {
                 }
                 if ["video.image", "video.keyframes"].contains(studio.draft.operation) { videoImageHistoryButton }
                 Spacer(minLength: 0)
-                if studio.creationKind != "video" && studio.draft.modelID != "seedvr2-3b" {
+                if studio.creationKind != "video" && !studio.draft.isNativeUpscale {
                     Menu {
                         Button("原始输出") { studio.selectGenerationUpscale(nil) }
                         Button("超分 ×2") { studio.selectGenerationUpscale(.x2plus) }
@@ -809,8 +873,8 @@ struct StudioView: View {
                         .accessibilityIdentifier("generationUpscale").help("生成后超分")
                 }
                 Button(action: generate) {
-                    Label(store.busy ? (studio.draft.modelID == "seedvr2-3b" ? "正在超分" : "正在生成")
-                          : studio.draft.modelID == "seedvr2-3b" ? "开始\(studio.creationKind == "video" ? "视频" : "图像")超分"
+                    Label(store.busy ? (studio.draft.isNativeUpscale ? "正在超分" : "正在生成")
+                          : studio.draft.isNativeUpscale ? "开始\(studio.creationKind == "video" ? "视频" : "图像")超分"
                           : (studio.creationKind == "video" ? "生成视频" : editingImage ? "生成修改" : "生成图片"), systemImage: "arrow.up")
                         .padding(.horizontal, 8).padding(.vertical, 4)
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
@@ -829,11 +893,16 @@ struct StudioView: View {
                 }.font(.caption).accessibilityIdentifier("studioImageImportStatus")
             }
             if !store.busy, !submitting, !studio.imageInputsBusy, let blocker = generationBlocker,
-               (studio.draft.modelID == "seedvr2-3b" || !studio.draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+               (studio.draft.isNativeUpscale || !studio.draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                 HStack(alignment: .top) {
                     Label(blocker, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    if studio.draft.modelPath.isEmpty { Button("选择模型") { page = .models }.font(.caption) }
+                    if studio.draft.modelPath.isEmpty {
+                        Button("选择模型") {
+                            if page == .upscale { showUpscaleModelLibrary(studio.draft.modelID) }
+                            else { page = .models }
+                        }.font(.caption)
+                    }
                     else if !studio.draft.qwen21TurboConfigurationIssues.isEmpty {
                         Button("应用 Turbo 设置") { studio.applyQwen21TurboPreset() }
                             .font(.caption).disabled(assetControlsLocked || api.running || api.changing)
@@ -845,11 +914,32 @@ struct StudioView: View {
                     else if studio.draft.operation == "video.keyframes", studio.draft.lastKeyframe == nil {
                         Button("选择尾帧") { chooseKeyframe(.last) }.font(.caption).disabled(assetControlsLocked)
                     }
-                    else if studio.supportsImageInputs, studio.draft.operation != "image.generate", studio.draft.activeAssets.isEmpty {
+                    else if !videoUpscaling, studio.supportsImageInputs, studio.draft.operation != "image.generate", studio.draft.activeAssets.isEmpty {
                         Button("添加图片", action: chooseImages).font(.caption).disabled(assetControlsLocked)
                     }
-                    else { Button("查看设置") { inspector = true }.font(.caption) }
+                    else if !videoUpscaling || !studio.draft.activeAssets.isEmpty { Button("查看设置") { inspector = true }.font(.caption) }
                 }.accessibilityIdentifier("generationRequirement")
+            }
+        }
+    }
+    private var upscaleVideoSourceControl: some View {
+        let source = studio.draft.activeAssets.first
+        return HStack(spacing: 8) {
+            Button(action: chooseUpscaleVideo) {
+                Label(source == nil ? "选择视频…" : "更换视频…", systemImage: "folder")
+            }.disabled(upscaleControlsLocked || showingVideoPicker)
+                .accessibilityIdentifier("chooseUpscaleVideo")
+            if let source {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("超分源视频").font(.caption2).foregroundStyle(.secondary)
+                    Text(source.name).font(.caption.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                }.help(source.name).accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("upscaleVideoSource")
+            }
+            if studio.canUndoAssets {
+                Button(action: studio.undoAssetChange) { Image(systemName: "arrow.uturn.backward") }
+                    .buttonStyle(.borderless).disabled(upscaleControlsLocked)
+                    .help("撤销超分源更改").accessibilityLabel("撤销超分源更改")
             }
         }
     }
@@ -985,7 +1075,7 @@ struct StudioView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("图 \(index + 1)").font(.caption.weight(.semibold))
                                 Menu {
-                                    if studio.draft.modelID == "seedvr2-3b" {
+                                    if studio.draft.isNativeUpscale {
                                         Button("设为源媒体") {
                                             studio.changeOperation(asset.mediaKind == "video" ? "video.upscale" : "image.upscale")
                                             studio.selectSourceAsset(asset.id); focusInput(asset)
@@ -1033,15 +1123,37 @@ struct StudioView: View {
             }
         }
     }
-    private var inspectorContents: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(studio.draft.modelID == "seedvr2-3b" ? "超分设置" : "生成设置").font(.headline)
-            VStack(alignment: .leading, spacing: 8) {
-                if page == .upscale {
-                    UpscaleModelPicker(studio: studio, modelID: upscaleModelSelection,
-                                       kind: studio.creationKind,
-                                       locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+    @ViewBuilder private var inspectorContents: some View {
+        if page == .upscale && studio.draft.isNativeUpscale {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("超分设置").font(.headline)
+                UpscaleModelPicker(studio: studio, modelID: upscaleModelSelection, kind: upscaleKind,
+                                  locked: upscaleControlsLocked)
+                Button(studio.draft.modelPath.isEmpty ? "下载或导入模型…" : "管理模型") {
+                    showUpscaleModelLibrary(studio.draft.modelID)
+                }.disabled(upscaleControlsLocked).accessibilityIdentifier("manageUpscaleModels")
+                Divider()
+                if studio.draft.isRelayVSR {
+                    if let source = studio.draft.activeAssets.first,
+                       (1...2048).contains(source.width), (1...2048).contains(source.height) {
+                        LabeledContent("输出尺寸", value: "\(source.width * 2) × \(source.height * 2)")
+                    }
+                    LabeledContent("权重加载", value: "SSD 流式")
+                    if upscaleKind == "video" {
+                        Toggle("保留原音轨", isOn: $studio.draft.audio)
+                            .disabled(upscaleControlsLocked)
+                    }
                 } else {
+                    SeedVR2UpscaleControls(studio: studio, locked: upscaleControlsLocked)
+                }
+            }
+        } else { generationInspector }
+    }
+
+    private var generationInspector: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("生成设置").font(.headline)
+            VStack(alignment: .leading, spacing: 8) {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
                     ForEach(studio.creationModels) { item in
                         let downloaded = !(studio.draft.modelPaths[item.id] ?? "").isEmpty
@@ -1052,7 +1164,6 @@ struct StudioView: View {
                             .tag(item.id)
                     }
                 }.disabled(store.busy || studio.imageInputsBusy).accessibilityIdentifier("studioModel")
-                }
                 if studio.draft.modelID == "z-image-turbo" {
                     let versions = ZImageInstallation.choices(library.installations, currentPath: studio.draft.modelPath)
                     if !versions.isEmpty {
@@ -1583,11 +1694,12 @@ struct StudioView: View {
                 if job.request.model == "seedvr2-3b" {
                     SeedVR2RunProgressView(job: job, cancel: { store.cancel() })
                 } else {
+                let status = job.state == "running" && page == .upscale ? "超分中" : stateName(job.state)
                 HStack(alignment: .firstTextBaseline) {
                     Text(phaseName(job.phase)).font(.title3.weight(.semibold))
                     if job.phase == "denoise" { Text("\(job.completed) / \(job.total) 步已完成").font(.title2.weight(.semibold)).monospacedDigit().accessibilityIdentifier("denoiseStepProgress") }
                     Spacer()
-                    Text(stateName(job.state)).font(.callout).foregroundStyle(.secondary)
+                    Text(status).font(.callout).foregroundStyle(.secondary)
                 }
                 Text(store.actualRoute.map { "实际路径：\($0)" } ?? "实际路径：准备后确认").font(.caption2).foregroundStyle(.secondary)
                 if job.total > 0 {
@@ -1596,8 +1708,10 @@ struct StudioView: View {
                     ProgressView().controlSize(.small)
                 }
                 HStack {
-                    Text(Qwen21MemoryPresentation.progressText(phase: job.phase, completed: job.completed, total: job.total)
-                         ?? "\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
+                    Text(job.phase == "relayvsr_restore" && job.total == 0
+                         ? "已处理 \(job.completed) 帧"
+                         : Qwen21MemoryPresentation.progressText(phase: job.phase, completed: job.completed, total: job.total)
+                             ?? "\(status) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
                     Spacer()
                     if job.phase == "denoise", let speed = job.secondsPerStep {
                         Text(String(format: "近期均速 %.2f 秒/步", speed)).monospacedDigit()
@@ -1621,14 +1735,15 @@ struct StudioView: View {
             } else if store.workerCleanupPending { HStack { Text(store.sessionState).font(.caption); Spacer(); Button("检查清理状态") { Task { await store.refreshWorkerCleanup() } } } }
             else if store.busy { HStack { ProgressView().controlSize(.small); Text(store.sessionState).font(.caption); Spacer(); Button("取消") { store.cancel() } } }
             else if submitting || store.resolvingAcceleration {
-                HStack { ProgressView().controlSize(.small); Text(store.accelerationStatus ?? "正在准备生成请求…").font(.callout); Spacer() }
+                HStack { ProgressView().controlSize(.small); Text(store.accelerationStatus ?? (page == .upscale ? "正在准备超分请求…" : "正在准备生成请求…")).font(.callout); Spacer() }
             }
             else if let job = statusJob, studio.message == nil || page != .studio {
                 Text("\(stateName(job.state)) · 共用时 \(String(format: "%.1f", job.elapsed)) 秒 · 种子 \(job.request.seed)").font(.caption).foregroundStyle(.secondary)
                 if job.state == "failed" || job.state == "interrupted", let error = job.error {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Label(job.state == "failed" ? "生成失败" : "任务已中断", systemImage: "exclamationmark.triangle.fill").font(.callout.weight(.medium))
+                            Label(job.state == "failed" ? (page == .upscale ? "超分失败" : "生成失败") : "任务已中断",
+                                  systemImage: "exclamationmark.triangle.fill").font(.callout.weight(.medium))
                             Spacer(minLength: 8)
                             Button("恢复这次参数") { reuseParameters(job) }.font(.caption).disabled(assetControlsLocked)
                         }
@@ -1676,8 +1791,9 @@ struct StudioView: View {
     }
     private var modelsPage: some View {
         ModelLibraryView(store: store, studio: studio, library: library, selection: $librarySelection, chooseModel: chooseModel,
-                         loadModel: loadModel, importConfiguration: importConfiguration,
-                         operationName: operationName)
+                         loadModel: loadModel, useUpscaler: { choice in
+                             openUpscale(kind: choice.supportsVideo ? upscaleKind : "image", choice: choice)
+                         }, importConfiguration: importConfiguration, operationName: operationName)
             .disabled(preparingSubmission || studio.imageInputsBusy)
     }
     private var tasksPage: some View {
@@ -1774,6 +1890,8 @@ struct StudioView: View {
                                 Button("查看结果") { showResult(job) }
                                 if job.outputMediaKind == .image {
                                     Button("用作视频首帧") { useResultForVideo(job) }.disabled(historySourceLocked)
+                                } else {
+                                    Button("超分此视频") { useVideoAsUpscaleSource(job) }.disabled(upscaleControlsLocked)
                                 }
                                 Button("复用参数") { reuseParameters(job) }.disabled(store.busy || assetControlsLocked)
                                 Button(resultDeletionTitle(for: job), role: .destructive) { trashResults(resultDeletionIDs(for: job)) }.disabled(store.busy)
@@ -1822,6 +1940,9 @@ struct StudioView: View {
         guard !assetControlsLocked else { return }
         pendingUpscaleReuseSource = UpscaleVariant.from(modelID: job.request.model) != nil ? job.request.inputs?.first?.path ?? "" : nil
         studio.reuse(job)
+        if let choice = UpscaleModelChoice(rawValue: job.request.model), job.request.operation?.hasSuffix(".upscale") == true {
+            preferredUpscaleModels[job.outputMediaKind.rawValue] = choice
+        }
         imageUpscaling = UpscaleVariant.from(modelID: job.request.model) != nil
         if imageUpscaling { upscaleSourcePath = job.request.inputs?.first?.path ?? "" }
         focusInput(); page = job.request.operation?.hasSuffix(".upscale") == true ? .upscale : .studio
@@ -1877,9 +1998,29 @@ struct StudioView: View {
         if panel.runModal() == .OK, let url = panel.url { studio.draft.profilePath = url.path; var acceleration = studio.draft.acceleration ?? StudioAcceleration(); acceleration.policy = "profile"; studio.draft.acceleration = acceleration }
     }
     private func chooseImages() {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = studio.supportsVideoInputs ? [.movie] : [.image]
-        panel.allowsMultipleSelection = studio.draft.modelID != "seedvr2-3b"
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = !studio.draft.isNativeUpscale
         if panel.runModal() == .OK { studio.beginImageImportFiles(panel.urls) }
+    }
+    private func chooseUpscaleVideo() {
+        guard videoUpscaling, !upscaleControlsLocked, !showingVideoPicker else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.movie]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = "选择用于超分的视频"
+        panel.prompt = "导入视频"
+        showingVideoPicker = true
+        let onSelection: (NSApplication.ModalResponse) -> Void = { response in
+            showingVideoPicker = false
+            guard response == .OK, videoUpscaling, !upscaleControlsLocked, let url = panel.url else { return }
+            studio.beginImageImportFiles([url])
+        }
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: window, completionHandler: onSelection)
+        } else {
+            panel.begin(completionHandler: onSelection)
+        }
     }
     private func chooseLoRA() {
         guard studio.draft.loras.count < 8 else { studio.message = "最多可配置 8 个 LoRA 文件。"; return }
@@ -1929,7 +2070,7 @@ struct StudioView: View {
         guard !store.busy, !api.running, !api.changing, !submitting, !studio.imageInputsBusy else { return }
         if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
-        if snapshot.upscaleAfterGeneration && studio.creationKind != "video" && snapshot.modelID != "seedvr2-3b" {
+        if snapshot.upscaleAfterGeneration && studio.creationKind != "video" && !snapshot.isNativeUpscale {
             do { try ImageUpscaler.validateModelURL(URL(fileURLWithPath: snapshot.upscaleModelPath)) }
             catch { studio.message = error.localizedDescription; return }
         }
@@ -1953,7 +2094,7 @@ struct StudioView: View {
                     inputAssets: resolved.activeAssets)
                 selected = job.id; compareOriginal = false
                 resultSelection.select(job.id, orderedIDs: outputIDs)
-                if snapshot.upscaleAfterGeneration && ext == "png" && snapshot.modelID != "seedvr2-3b" {
+                if snapshot.upscaleAfterGeneration && ext == "png" && !snapshot.isNativeUpscale {
                     let upscaled = try await store.upscale(source: output, modelURL: URL(fileURLWithPath: snapshot.upscaleModelPath), compute: snapshot.upscaleCompute)
                     if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
                     selected = upscaled.id; resultSelection.select(upscaled.id, orderedIDs: outputIDs)

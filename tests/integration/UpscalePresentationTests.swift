@@ -9,7 +9,8 @@ import SwiftUI
         guard !FileManager.default.fileExists(atPath: root.path) else { throw NativeFailure(message: "fresh output required") }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         _ = NSApplication.shared
-        func render<V: View>(_ name: String, width: CGFloat, height: CGFloat, _ content: V) throws {
+        @discardableResult
+        func render<V: View>(_ name: String, width: CGFloat, height: CGFloat, _ content: V) throws -> NSBitmapImageRep {
             let host = NSHostingView(rootView: content.padding(14).frame(width: width, height: height)
                 .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme,.light))
             host.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -18,6 +19,7 @@ import SwiftUI
             host.cacheDisplay(in: host.bounds, to: bitmap)
             guard let png = bitmap.representation(using: .png, properties: [:]) else { throw NativeFailure(message: "cannot encode \(name)") }
             try png.write(to: root.appendingPathComponent(name + ".png"))
+            return bitmap
         }
         let studio = StudioState(directory: root.appendingPathComponent("state"))
         _ = studio.activateSeedVR2Upscaling(kind: "video")
@@ -33,11 +35,36 @@ import SwiftUI
                    UpscaleModelPicker(studio: studio,modelID: .constant("real-esrgan-x2plus"),kind: "image",locked: false))
         try render("video-model-picker",width: 270,height: 90,
                    UpscaleModelPicker(studio: studio,modelID: .constant("seedvr2-3b"),kind: "video",locked: false))
-        try render("settings-speed",width: 760,height: 220,
-                   SeedVR2UpscaleControls(studio: studio,locked: false,manageModels: {}))
+        try render("settings-speed",width: 270,height: 344,
+                   SeedVR2UpscaleControls(studio: studio, locked: false))
         studio.applySeedVR2MemoryAdvice()
-        try render("settings-memory",width: 760,height: 220,
-                   SeedVR2UpscaleControls(studio: studio,locked: false,manageModels: {}))
+        try render("settings-memory",width: 270,height: 344,
+                   SeedVR2UpscaleControls(studio: studio, locked: false))
+        let region = CGRect(x: 0, y: 0, width: 332, height: 202)
+        for fraction: CGFloat in [0.5, 0.25] {
+            let bitmap = try render("comparison-\(fraction)", width: 360, height: 230,
+                UpscaleComparisonSplit(imageRect: region, visibleRect: region, fraction: .constant(fraction)) {
+                    Color(red: 0.95, green: 0.05, blue: 0.05)
+                } restored: {
+                    Color(red: 0.05, green: 0.05, blue: 0.95)
+                }
+            )
+            func redDominates(_ x: Double) throws -> Bool {
+                guard let color = bitmap.colorAt(x: Int(Double(bitmap.pixelsWide) * x), y: bitmap.pixelsHigh / 2)?
+                    .usingColorSpace(.deviceRGB) else { throw NativeFailure(message: "cannot sample comparison") }
+                return color.redComponent > color.blueComponent
+            }
+            let leading = try redDominates(0.15), middle = try redDominates(0.39), trailing = try redDominates(0.78)
+            guard leading && middle == (fraction == 0.5) && !trailing else {
+                throw NativeFailure(message: "comparison did not clip the original to the left of the moving divider")
+            }
+        }
+        let available = studio.models
+        let draft = studio.draft
+        guard UpscaleModelChoice.preferred(for: "video", models: available, draft: draft, remembered: .realesrgan2) == .seedvr2,
+              UpscaleModelChoice.preferred(for: "image", models: available, draft: draft, remembered: .realesrgan2) == .realesrgan2 else {
+            throw NativeFailure(message: "workspace model preference was not filtered by media kind")
+        }
         var request = NativeRequest(prompt: "",output: "metadata-only.mp4")
         request.model = "seedvr2-3b";request.operation = "video.upscale";request.width = 1024;request.height = 1024
         request.frames = 97;request.fps = 24
@@ -46,6 +73,6 @@ import SwiftUI
                                 completed: completed,total: total,elapsed: 160,phaseStartedElapsed: 100)
             try render(phase,width: 480,height: 170,SeedVR2RunProgressView(job: job,cancel: {}))
         }
-        print("PASS own-view offscreen render: model headers, runtime preferences and narrow 97-frame stage progress; no GUI clicks")
+        print("PASS own-view offscreen render: model headers, compact settings, comparison clipping and 97-frame stage progress; no GUI clicks")
     }
 }

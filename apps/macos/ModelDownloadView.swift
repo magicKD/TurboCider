@@ -28,8 +28,9 @@ struct ModelDownloadView: View {
             ? Qwen21Installation.turboName : model.displayName
     }
     private var isPreset: Bool { model.id != "z-image-turbo" && repository == preset?.repository }
-    private var hasPinnedSource: Bool { isPreset && preset?.modelScopePins != nil }
-    private var downloadProvider: HubProvider { hasPinnedSource ? .modelscope : provider }
+    private var pinnedProvider: HubProvider? { isPreset ? preset?.pinnedProvider : nil }
+    private var downloadProvider: HubProvider { pinnedProvider ?? provider }
+    private var needsPairedWeights: Bool { model.id == UpscaleModelChoice.relayVSR.rawValue && pinnedProvider != nil }
     private var isComfy: Bool { model.id == "z-image-turbo" && repository == ZImageVariant.repository }
     private var variant: ZImageVariant { ZImageVariant.all.first { $0.id == variantID } ?? ZImageVariant.all[0] }
     private var estimatedWeightBytes: Int64 {
@@ -67,7 +68,7 @@ struct ModelDownloadView: View {
         }
         if isPreset, let preset {
             var base = try preset.request(modelID: model.id, provider: downloadProvider, componentKind: componentKind == "all" ? nil : componentKind)
-            if !hasPinnedSource { base.revision = revision.isEmpty ? nil : revision }
+            if pinnedProvider == nil { base.revision = revision.isEmpty ? nil : revision }
             return try include.map { try base.subset(include: $0) } ?? base
         }
         return LibraryDownloadRequest(modelID: model.id, repository: repository.trimmingCharacters(in: .whitespacesAndNewlines), provider: provider,
@@ -79,7 +80,8 @@ struct ModelDownloadView: View {
                 ModelBrandBadge(modelID: model.id, size: 44)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("下载 \(downloadName)").font(.title2.weight(.semibold))
-                    Text("选择版本与组件，先预览再下载。").font(.callout).foregroundStyle(.secondary)
+                    Text(needsPairedWeights ? "预览配套权重和所需空间。" : "选择版本与组件，先预览再下载。")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("完成") { dismiss() }.disabled(busy)
@@ -89,8 +91,9 @@ struct ModelDownloadView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("下载来源").font(.headline)
-                        if hasPinnedSource {
-                            Text("ModelScope · 固定版本").accessibilityIdentifier("downloadPinnedProvider")
+                        if let pinnedProvider {
+                            Text("\(pinnedProvider.title) · 固定版本")
+                                .accessibilityIdentifier("downloadPinnedProvider")
                             Text("预览来自内置文件清单。下载逐文件核对大小和 SHA-256。")
                                 .font(.caption).foregroundStyle(.secondary)
                         } else {
@@ -146,7 +149,7 @@ struct ModelDownloadView: View {
                     if isComfy { zImageOptions }
                     if model.id == "z-image-turbo" { sharedTextOptions }
                     if presets.count <= 1, let recipe { Text(recipe.preparation).font(.caption).foregroundStyle(.secondary) }
-                    if !hasPinnedSource {
+                    if pinnedProvider == nil {
                         DisclosureGroup("仓库与版本") {
                             VStack(alignment: .leading, spacing: 10) {
                                 TextField("仓库 owner/name", text: $repository).textFieldStyle(.roundedBorder).accessibilityIdentifier("downloadRepository")
@@ -165,19 +168,18 @@ struct ModelDownloadView: View {
                     if let plan {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("下载预览 · \(plan.files.count) 个文件").font(.headline)
-                            Text("取消勾选可仅保存部分组件；不完整的安装不会自动用于创作。").font(.caption).foregroundStyle(.secondary)
+                            if !needsPairedWeights {
+                                Text("取消勾选可仅保存部分组件；不完整的安装不会自动用于创作。").font(.caption).foregroundStyle(.secondary)
+                            }
                             ForEach(plan.files, id: \.path) { file in
-                                Toggle(isOn: Binding(get: { selectedPaths.contains(file.path) }, set: {
-                                    if $0 { selectedPaths.insert(file.path) } else { selectedPaths.remove(file.path) }
-                                })) {
-                                    HStack(alignment: .top) {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(file.installationPath).font(.caption).textSelection(.enabled)
-                                            if let source = file.sourceRepository { Text(source).font(.caption2).foregroundStyle(.secondary) }
-                                        }
-                                        Spacer(); Text(bytes(file.size)).font(.caption).monospacedDigit()
-                                    }
-                                }.toggleStyle(.checkbox).padding(.vertical, 4)
+                                if needsPairedWeights {
+                                    downloadFileRow(file).padding(.vertical, 4)
+                                } else {
+                                    Toggle(isOn: Binding(get: { selectedPaths.contains(file.path) }, set: {
+                                        if $0 { selectedPaths.insert(file.path) } else { selectedPaths.remove(file.path) }
+                                    })) { downloadFileRow(file) }
+                                        .toggleStyle(.checkbox).padding(.vertical, 4)
+                                }
                             }
                         }
                     }
@@ -199,7 +201,9 @@ struct ModelDownloadView: View {
                     if let plan {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(bytes(plan.files.filter { selectedPaths.contains($0.path) }.reduce(0) { $0 + $1.size })).font(.callout.weight(.semibold))
-                            Text("完整预览缓存 \(bytes(plan.cachedBytes))").font(.caption2).foregroundStyle(.secondary)
+                            if plan.cachedBytes > 0 {
+                                Text("已缓存 \(bytes(plan.cachedBytes))").font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
                     }
                     Button("开始下载") { startDownload() }.buttonStyle(.borderedProminent)
@@ -224,6 +228,16 @@ struct ModelDownloadView: View {
             }
             .onChange(of: fingerprint) { _, _ in plan = nil; selectedPaths = []; localError = nil }
             .interactiveDismissDisabled(busy)
+    }
+    private func downloadFileRow(_ file: HubFile) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(file.installationPath).font(.caption).textSelection(.enabled)
+                if let source = file.sourceRepository { Text(source).font(.caption2).foregroundStyle(.secondary) }
+            }
+            Spacer()
+            Text(bytes(file.size)).font(.caption).monospacedDigit()
+        }
     }
     private func repositoryURL(_ repository: String) -> URL {
         downloadProvider.endpoint.appendingPathComponent(downloadProvider == .modelscope ? "models/" + repository : repository)

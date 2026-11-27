@@ -3,6 +3,7 @@
 #include "../../models/qwen21/diagnostic_options.hpp"
 #include "../../models/qwen21/memory_policy.hpp"
 #include "../../models/seedvr2/precision.hpp"
+#include "../../models/relayvsr/pipeline.hpp"
 #include "../../models/qwen21/native_route.hpp"
 #include "../../models/qwen21/viggle_adapter.hpp"
 #include <cstdlib>
@@ -832,6 +833,21 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             ? @"capabilities depend on model artifacts and configured hardware"
             : @"native executor migration incomplete"
     } mutableCopy];
+    if (r.model == rv::kModelID) {
+        report[@"backend"] = @"libtorch_mps_metal";
+        report[@"validation"] = @"native_relayvsr_2x";
+        report[@"weight_validation"] = @"safetensors format, ConvRot packing and source identity checked at execution";
+        report[@"precision"] = @"convrot_w8a8_or_w8a16";
+        report[@"gpu_graph"] = @"relayvsr_streamed_wan_flash";
+        report[@"encoder_execution"] = @"not_applicable";
+        report[@"encoder_backend"] = @"not_applicable";
+        report[@"encoder_precision"] = @"not_applicable";
+        report[@"encoder_gpu_graph"] = @"embedded_conditioning_no_text_encoder";
+        report[@"encoder_weight_validation"] = @"embedded conditioning is part of the Wan checkpoint";
+        report[@"executor_operations"] = @[@"image.upscale", @"video.upscale"];
+        if (r.audio) report[@"audio_capability"] = @"source_audio_passthrough";
+        if (!recipe.executable) report[@"limitation"] = @"build with LibTorch 2.14.1 to enable RelayVSR";
+    }
     if (r.model == "qwen-image-2.1") {
         NSMutableArray *blocks = [NSMutableArray array];
         const auto precision = qwen21::staged_quantized_precision(

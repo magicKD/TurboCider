@@ -9,6 +9,7 @@ struct ModelLibraryView: View {
     @Binding var selection: String?
     let chooseModel: (String) -> Void
     let loadModel: (String) -> Void
+    let useUpscaler: (UpscaleModelChoice) -> Void
     let importConfiguration: () -> Void
     let operationName: (String) -> String
     @State private var query = ""
@@ -128,7 +129,7 @@ struct ModelLibraryView: View {
             }
         }.padding(24)
             .task {
-                if let selection, UpscaleVariant.from(modelID: selection) != nil || selection == "seedvr2-3b" { category = .upscale }
+                if let selection, UpscaleModelChoice(rawValue: selection) != nil { category = .upscale }
                 library.refresh(studio: studio)
             }
             .onChange(of: store.busy) { _, busy in if !busy { library.refresh(studio: studio) } }
@@ -180,11 +181,16 @@ struct ModelLibraryView: View {
         if !path.isEmpty { library.inspectComponents(modelID: selected.id, path: path) }
     }
     private func hubRow(_ entry: ModelHubEntry) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        let subtitle: String
+        if entry.isQwen21Turbo { subtitle = "固定 8 步 · Turbo 原始权重" }
+        else if let choice = UpscaleModelChoice(rawValue: entry.id) {
+            subtitle = choice.supportsVideo ? "图像与视频超分" : "图像超分"
+        } else { subtitle = entry.model?.isVideo == true ? "视频生成" : "图像生成" }
+        return HStack(alignment: .top, spacing: 10) {
             ModelBrandBadge(modelID: entry.id, size: 38)
             VStack(alignment: .leading, spacing: 5) {
                 Text(entry.title).font(.callout.weight(.semibold)).multilineTextAlignment(.leading).lineLimit(2)
-                Text(entry.isQwen21Turbo ? "固定 8 步 · Turbo 原始权重" : entry.model?.isVideo == true ? "视频生成" : entry.upscaler != nil ? "图像超分" : "图像生成")
+                Text(subtitle)
                     .font(.caption).foregroundStyle(.secondary)
                 if entry.localState == .missing { Label("文件缺失或无效", systemImage: "exclamationmark.circle").font(.caption2).foregroundStyle(.orange) }
                 else if entry.installationCount > 0 { Text("\(entry.installationCount) 个本机安装").font(.caption2).foregroundStyle(.tint) }
@@ -266,8 +272,13 @@ struct ModelLibraryView: View {
             if !path.isEmpty {
                 Text(path).font(.caption).textSelection(.enabled).accessibilityIdentifier("upscaleLibraryPath")
                 if !exists { Text("文件已移动或不可访问，请重新导入。").foregroundStyle(.orange) }
-                Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-                    .disabled(!exists)
+                HStack {
+                    Button("用于超分") {
+                        if let choice = UpscaleModelChoice(rawValue: variant.modelID) { useUpscaler(choice) }
+                    }.buttonStyle(.borderedProminent).disabled(!exists || library.busy || store.busy)
+                    Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                        .disabled(!exists)
+                }
             }
             Divider()
             Text("已登记路径").font(.headline)
@@ -337,7 +348,9 @@ struct ModelLibraryView: View {
                     }
                     Text(recipe.downloadVariants.count > 1 ? "\(recipe.downloadVariants.map(\.title).joined(separator: " · "))" : recipe.repository)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                    Text("ModelScope 优先 · 可切换 Hugging Face · 下载前预览文件与大小")
+                    Text(recipe.downloadVariants.first?.pinnedProvider == .huggingface
+                         ? "Hugging Face 固定版本 · 下载时校验配套文件"
+                         : "ModelScope 优先 · 可切换 Hugging Face · 下载前预览文件与大小")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.accentColor.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
@@ -349,7 +362,11 @@ struct ModelLibraryView: View {
                     Text(path.isEmpty ? "尚未登记模型文件夹" : path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     HStack {
                         Button("选择文件夹…") { chooseModel(item.id) }.disabled(store.busy || library.busy).accessibilityIdentifier("chooseModel")
-                        Button("下载模型…") { downloadSelection = DownloadSelection(model: item, presetID: nil) }.buttonStyle(.borderedProminent).disabled(library.busy || LibraryRecipe.all.first(where: { $0.modelID == item.id }) == nil).accessibilityIdentifier("downloadModel")
+                        if LibraryRecipe.all.contains(where: { $0.modelID == item.id }) {
+                            Button("下载模型…") { downloadSelection = DownloadSelection(model: item, presetID: nil) }
+                                .buttonStyle(.borderedProminent).disabled(library.busy)
+                                .accessibilityIdentifier("downloadModel")
+                        }
                         if !path.isEmpty {
                             Button("在 Finder 中显示") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path) }
                             Button("检查安装") { library.inspect(modelID: item.id, path: path) }
@@ -357,6 +374,10 @@ struct ModelLibraryView: View {
                         }
                     }
                     if let report = library.inspection(modelID: item.id, path: path) { inspectionView(report) }
+                    if item.id == UpscaleModelChoice.relayVSR.rawValue {
+                        Text("下载配套权重，或选择含 diffusion_models 和 vae 的本地文件夹。支持目录软链接。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if item.id == "z-image-turbo" {
                         Text("支持 Comfy 和 Diffusers 目录；可复用 FLUX.2 Klein 4B 的文本编码器与 tokenizer。").font(.caption).foregroundStyle(.secondary)
                     }
@@ -390,7 +411,14 @@ struct ModelLibraryView: View {
                                 }
                                 Text(installation.path).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                                 HStack {
-                                    Button("使用此安装") { studio.selectInstallation(modelID: item.id, path: installation.path) }
+                                    Button("使用此安装") {
+                                        if let choice = UpscaleModelChoice(rawValue: item.id) {
+                                            studio.applyLibraryInstallation(installation, replace: true)
+                                            useUpscaler(choice)
+                                        } else {
+                                            studio.selectInstallation(modelID: item.id, path: installation.path)
+                                        }
+                                    }
                                         .disabled(store.busy || store.resolvingAcceleration || studio.imageInputsBusy || library.busy || studio.draft.modelPaths[item.id] == installation.path || library.inspection(modelID: item.id, path: installation.path)?.status == "incomplete")
                                     if ["z-image-turbo", "flux2-klein-4b", "flux2-klein-9b"].contains(item.id) {
                                         Button("校验文件") {
@@ -411,16 +439,29 @@ struct ModelLibraryView: View {
                 }
                 Divider()
                 HStack {
-                    Button(studio.draft.modelID == item.id ? "当前创作模型" : "用于创作") { studio.selectModel(item.id) }
-                        .buttonStyle(.borderedProminent).disabled(studio.draft.modelID == item.id || store.busy || studio.imageInputsBusy)
-                    Button("加载权重") { loadModel(item.id) }
-                        .disabled(store.busy || library.busy || (studio.draft.modelPaths[item.id] ?? "").isEmpty || library.inspection(modelID: item.id, path: studio.draft.modelPaths[item.id] ?? "")?.status == "incomplete").accessibilityIdentifier("loadModel")
+                    if let choice = UpscaleModelChoice(rawValue: item.id) {
+                        Button("用于超分") { useUpscaler(choice) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(store.busy || studio.imageInputsBusy || (studio.draft.modelPaths[item.id] ?? "").isEmpty)
+                            .accessibilityIdentifier("useUpscaleModel")
+                    } else {
+                        Button(studio.draft.modelID == item.id ? "当前创作模型" : "用于创作") { studio.selectModel(item.id) }
+                            .buttonStyle(.borderedProminent).disabled(studio.draft.modelID == item.id || store.busy || studio.imageInputsBusy)
+                    }
+                    if item.id != UpscaleModelChoice.relayVSR.rawValue {
+                        Button("加载权重") { loadModel(item.id) }
+                            .disabled(store.busy || library.busy || (studio.draft.modelPaths[item.id] ?? "").isEmpty || library.inspection(modelID: item.id, path: studio.draft.modelPaths[item.id] ?? "")?.status == "incomplete").accessibilityIdentifier("loadModel")
+                    }
                 }
-                Text("加载与预热可能需要准备提示词和加速分区。会话打开后按需加载权重；分阶段模式会释放已完成阶段的权重。").font(.caption).foregroundStyle(.secondary)
-                if studio.draft.modelID == item.id {
-                    DisclosureGroup("加速与编译缓存") { AccelerationView(store: store, studio: studio, library: library).padding(.top, 12) }
+                if item.id == UpscaleModelChoice.relayVSR.rawValue {
+                    Text("开始超分后从 SSD 逐块加载 Wan 权重。").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Text("设为创作模型后，可配置此模型的 GPU / ANE 加速。").font(.caption).foregroundStyle(.secondary)
+                    Text("加载与预热可能需要准备提示词和加速分区。会话打开后按需加载权重；分阶段模式会释放已完成阶段的权重。").font(.caption).foregroundStyle(.secondary)
+                    if studio.draft.modelID == item.id {
+                        DisclosureGroup("加速与编译缓存") { AccelerationView(store: store, studio: studio, library: library).padding(.top, 12) }
+                    } else {
+                        Text("设为创作模型后，可配置此模型的 GPU / ANE 加速。").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             } else { Text("此模型执行器尚未开放。").foregroundStyle(.secondary) }
             if store.loadedModelID == item.id, let report = store.sessionReport {
@@ -436,8 +477,13 @@ struct ModelLibraryView: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     @ViewBuilder private func capabilityTags(_ item: StudioModel) -> some View {
-        hubTag(item.isVideo ? "视频" : "图像", symbol: item.isVideo ? "film" : "photo", tint: .accentColor)
-        hubTag(item.acceptsImageInputs ? "参考图编辑" : "文字输入", symbol: item.acceptsImageInputs ? "photo.on.rectangle" : "text.alignleft")
+        if UpscaleModelChoice(rawValue: item.id)?.supportsVideo == true {
+            hubTag("图像超分", symbol: "photo", tint: .accentColor)
+            hubTag("视频超分", symbol: "film", tint: .accentColor)
+        } else {
+            hubTag(item.isVideo ? "视频" : "图像", symbol: item.isVideo ? "film" : "photo", tint: .accentColor)
+            hubTag(item.acceptsImageInputs ? "参考图编辑" : "文字输入", symbol: item.acceptsImageInputs ? "photo.on.rectangle" : "text.alignleft")
+        }
         if item.supports_lora == true { hubTag("LoRA") }
         if item.supports_gpu_ane == true { hubTag("GPU + ANE") }
     }

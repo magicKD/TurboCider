@@ -26,3 +26,30 @@ turbocider_mlx_min_macos() {
     build && /minos /{print $2; exit}
   '
 }
+
+# Optional native RelayVSR runtime. The local slot is ignored by Git, and an
+# explicit SDK path supports builds without an editable workspace.
+TURBOCIDER_RELAY_TORCH_ROOT="${TURBOCIDER_RELAY_TORCH_ROOT:-}"
+if [[ -z "$TURBOCIDER_RELAY_TORCH_ROOT" && -d "$PWD/.deps/relayvsr-torch" ]]; then
+  TURBOCIDER_RELAY_TORCH_ROOT="$PWD/.deps/relayvsr-torch"
+fi
+if [[ -n "$TURBOCIDER_RELAY_TORCH_ROOT" ]]; then
+  TURBOCIDER_RELAY_TORCH_ROOT="$(cd "$TURBOCIDER_RELAY_TORCH_ROOT" && pwd)"
+  relay_version_header="$TURBOCIDER_RELAY_TORCH_ROOT/include/torch/headeronly/version.h"
+  relay_version="$(awk '
+    $2 == "TORCH_VERSION_MAJOR" {major=$3}
+    $2 == "TORCH_VERSION_MINOR" {minor=$3}
+    $2 == "TORCH_VERSION_PATCH" {patch=$3}
+    END {print major "." minor "." patch}
+  ' "$relay_version_header" 2>/dev/null || true)"
+  if [[ "$relay_version" != "2.14.1" ]]; then
+    echo 'RelayVSR requires the arm64 LibTorch 2.14.1 SDK (headers and dylibs).' >&2
+    exit 1
+  fi
+  for relay_library in torch torch_cpu c10 omp; do
+    if [[ ! -f "$TURBOCIDER_RELAY_TORCH_ROOT/lib/lib${relay_library}.dylib" ]]; then
+      echo "Missing RelayVSR runtime library lib${relay_library}.dylib" >&2
+      exit 1
+    fi
+  done
+fi

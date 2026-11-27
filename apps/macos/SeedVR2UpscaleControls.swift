@@ -4,19 +4,15 @@ struct UpscaleWorkspaceHeader: View {
     @Binding var kind: String
     var locked: Bool
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
-                Text("超分").font(.title2.weight(.semibold))
-                Picker("媒体", selection: $kind) {
-                    Text("图片").tag("image"); Text("视频").tag("video")
-                }.pickerStyle(.segmented).frame(width: 120).labelsHidden()
-                Spacer(minLength: 0)
-            }.disabled(locked)
-            Text(kind == "video"
-                 ? "当前可用视频超分模型：SeedVR2。保留完整帧数与源 FPS；暂不保留音轨。"
-                 : "选择模型恢复细节并放大图片。SeedVR2 也支持视频；Real-ESRGAN 为图片专用。")
-                .font(.caption).foregroundStyle(.secondary)
-        }.padding(.bottom,8).accessibilityIdentifier("upscaleWorkspace")
+        HStack(spacing: 16) {
+            Text("超分").font(.title2.weight(.semibold))
+            Picker("媒体", selection: $kind) {
+                Text("图片").tag("image")
+                Text("视频").tag("video")
+            }.pickerStyle(.segmented).frame(width: 120).labelsHidden()
+                .disabled(locked).accessibilityIdentifier("upscaleMediaKind")
+            Spacer(minLength: 0)
+        }.padding(.bottom, 12).accessibilityIdentifier("upscaleWorkspace")
     }
 }
 
@@ -30,10 +26,9 @@ struct UpscaleModelPicker: View {
 
     var body: some View {
         Picker("模型", selection: $modelID) {
-            ForEach(UpscaleModelChoice.allCases.filter { kind != "video" || $0.supportsVideo }) { choice in
+            ForEach(UpscaleModelChoice.available(for: kind, models: studio.models)) { choice in
                 let configured = choice.isConfigured(in: studio.draft)
-                let name = choice == .seedvr2 ? "SeedVR2 3B"
-                    : choice == .realesrgan2 ? "Real-ESRGAN ×2" : "Real-ESRGAN ×4"
+                let name = choice.pickerTitle
                 Label("\(name) · \(configured ? "已配置" : "未配置")",
                       systemImage: configured ? "checkmark.circle.fill" : "arrow.down.circle")
                     .tag(choice.rawValue)
@@ -45,56 +40,66 @@ struct UpscaleModelPicker: View {
 struct SeedVR2UpscaleControls: View {
     @ObservedObject var studio: StudioState
     var locked: Bool
-    var manageModels: () -> Void
     private var source: StudioAsset? { studio.draft.activeAssets.first }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("SeedVR2 恢复设置", systemImage: "slider.horizontal.3")
-                    .font(.headline)
-                Spacer()
-                Button("管理模型", action: manageModels)
-                    .disabled(locked).accessibilityIdentifier("seedvr2ManageModel")
-            }
-            if let source {
-                HStack {
-                    Text("源媒体 \(source.width) × \(source.height)")
-                    if source.mediaKind == "video" {
-                        Text("\(source.frames ?? studio.draft.frames) 帧 · \(source.fps ?? studio.draft.fps) FPS")
-                    }
-                    Text("→ \(studio.draft.width) × \(studio.draft.height)")
-                }.font(.caption).monospacedDigit()
-            }
-            HStack(spacing: 8) {
-                Text("输出尺寸").font(.caption)
-                ForEach(SeedVR2OutputPreset.allCases) { preset in
-                    Button(preset.title) { studio.applySeedVR2OutputPreset(preset) }
-                        .disabled(locked || source == nil)
-                        .accessibilityIdentifier("seedvr2Output-\(preset.rawValue)")
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("输出尺寸").font(.subheadline.weight(.medium))
+                if let source {
+                    Text("\(source.width) × \(source.height) → \(studio.draft.width) × \(studio.draft.height)")
+                        .font(.caption.monospacedDigit())
                 }
-                Spacer(minLength: 0)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                    ForEach(SeedVR2OutputPreset.allCases) { preset in
+                        Button { studio.applySeedVR2OutputPreset(preset) } label: {
+                            Text(preset.title).frame(maxWidth: .infinity)
+                        }
+                        .disabled(source == nil)
+                        .accessibilityIdentifier("seedvr2Output-\(preset.rawValue)")
+                    }
+                }
             }
-            HStack {
-                Text("运行偏好").font(.caption)
-                Spacer()
-                Button("速度优先") { studio.applySeedVR2SpeedSettings() }
-                    .disabled(locked).accessibilityIdentifier("seedvr2SpeedSettings")
-                Button("省内存") { studio.applySeedVR2MemoryAdvice() }
-                    .disabled(locked).accessibilityIdentifier("seedvr2QuickMemoryAdvice")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("运行偏好").font(.subheadline.weight(.medium))
+                HStack {
+                    Button("速度优先") { studio.applySeedVR2SpeedSettings() }
+                        .accessibilityIdentifier("seedvr2SpeedSettings")
+                    Button("省内存") { studio.applySeedVR2MemoryAdvice() }
+                        .accessibilityIdentifier("seedvr2QuickMemoryAdvice")
+                }
+                let options = studio.draft.seedvr2VAE ?? NativeSeedVR2VAEConfig()
+                let residency = studio.draft.residency == "resident" ? "常驻权重" : "分阶段驻留"
+                Text("\(residency) · 缓存 \(SeedVR2ResourceAdvice.gib(options.allocator_cache_bytes))")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("seedvr2CurrentConfiguration")
+                if studio.creationKind == "video" {
+                    Text("\(options.encoder == "streaming" ? "逐帧导入" : "缓冲导入") · \(options.decoder == "streaming" ? "逐帧导出" : "缓冲导出")")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("视频需 2–121 帧和整数 FPS，输出为无音轨 MP4。").font(.caption).foregroundStyle(.secondary)
+                }
             }
-            let options = studio.draft.seedvr2VAE ?? NativeSeedVR2VAEConfig()
-            Text("当前：\(studio.draft.residency == "resident" ? "常驻权重" : "分阶段驻留") · \(options.encoder == "streaming" ? "逐帧导入" : "缓冲导入") / \(options.decoder == "streaming" ? "逐帧导出" : "缓冲导出") · 缓存 \(SeedVR2ResourceAdvice.gib(options.allocator_cache_bytes))")
-                .font(.caption).foregroundStyle(.secondary)
-                .help("速度优先使用完整空间、4 GiB 缓存和分帧历史；省内存采用分阶段驻留、1 GiB 缓存及视频流式读写，可能更慢。两者都不减帧、不降低恢复分辨率。")
-                .accessibilityIdentifier("seedvr2CurrentConfiguration")
-            Text(studio.draft.modelPath.isEmpty
-                 ? "尚未配置模型：到模型中心导入已有 SeedVR2 DiT 和 VAE。不会自动下载模型。"
-                 : "省内存可能更慢，不降低画质。视频需 2–121 帧、整数 FPS；原媒体保留，输出为无音轨 MP4。")
-                .font(.caption).foregroundStyle(studio.draft.modelPath.isEmpty ? Color.orange : Color.secondary)
-        }.padding(12)
-            .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-            .accessibilityIdentifier("seedvr2Workspace")
+            DisclosureGroup("高级设置") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        TextField("宽度", value: $studio.draft.width, format: .number)
+                            .accessibilityIdentifier("width")
+                        Text("×")
+                        TextField("高度", value: $studio.draft.height, format: .number)
+                            .accessibilityIdentifier("height")
+                    }.textFieldStyle(.roundedBorder)
+                    Text("宽高为 64–2048 内的 16 倍数。").font(.caption).foregroundStyle(.secondary)
+                    Picker("权重驻留", selection: $studio.draft.residency) {
+                        Text("常驻").tag("resident")
+                        Text("分阶段").tag("component_staged")
+                    }.accessibilityIdentifier("seedvr2Residency")
+                    Toggle("随机种子", isOn: $studio.draft.randomSeed)
+                    if !studio.draft.randomSeed {
+                        TextField("种子", text: $studio.draft.seedText).textFieldStyle(.roundedBorder)
+                    }
+                }.padding(.top, 6)
+            }
+        }.disabled(locked).accessibilityIdentifier("seedvr2Workspace")
     }
 }
 

@@ -177,27 +177,27 @@ struct LibraryDownloader: Sendable {
         if let id = request.pinnedVariantID {
             let recipe = LibraryRecipe.all.first { $0.modelID == request.modelID }
             guard let variant = recipe?.downloadVariants.first(where: { $0.id == id }),
-                  let pins = variant.modelScopePins, let primaryPin = pins.first,
-                  request.provider == .modelscope, request.repository == variant.repository,
+                  let provider = variant.pinnedProvider, let pins = variant.pinnedFiles, let primaryPin = pins.first,
+                  request.provider == provider, request.repository == variant.repository,
                   request.revision == nil, request.components.isEmpty,
                   request.supplements.isEmpty, request.destinations.isEmpty,
                   !request.include.isEmpty else {
-                throw LibraryFailure(message: "ModelScope 固定版本只能使用内置来源和明确的文件选择。")
+                throw LibraryFailure(message: "\(request.provider.title) 固定版本只能使用内置来源和明确的文件选择。")
             }
             let selected = pins.filter { request.include.contains($0.path) }
             guard selected.count == request.include.count else {
-                throw LibraryFailure(message: "文件选择超出此 ModelScope 固定版本。")
+                throw LibraryFailure(message: "文件选择超出此 \(provider.title) 固定版本。")
             }
             // Planning consumes only the catalog. The usual installer still
             // verifies each file's exact length and SHA-256 before publishing.
-            let snapshot = HubSnapshot(provider: .modelscope, repository: variant.repository,
+            let snapshot = HubSnapshot(provider: provider, repository: variant.repository,
                 revision: primaryPin.revision, files: selected.filter { $0.sourceRepository == nil })
             let supplements = Dictionary(grouping: selected.filter { $0.sourceRepository != nil }) {
                 $0.sourceRepository ?? variant.repository
             }
             let additional = supplements.keys.sorted().compactMap { repository -> HubSnapshot? in
                 guard let files = supplements[repository], let first = files.first else { return nil }
-                return HubSnapshot(provider: .modelscope, repository: repository, revision: first.revision, files: files)
+                return HubSnapshot(provider: provider, repository: repository, revision: first.revision, files: files)
             }
             return (snapshot, selected, additional)
         }
