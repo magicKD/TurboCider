@@ -46,6 +46,17 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/labs/metal/capture.trace.zip"]
         self.assertEqual(self.ignored(paths), set(paths))
 
+    def test_web_test_artifacts_stay_local_and_studio_assets_remain_trackable(self):
+        paths = ["node_modules/playwright-core/index.js",
+                 "tests/integration/node_modules/playwright-core/index.js",
+                 "playwright-report/index.html", "test-results/run/trace.zip",
+                 "build/lan-web-acceptance/jobs.json",
+                 "dist/TurboCider.app/Contents/Resources/WebStudio/index.html"]
+        self.assertEqual(self.ignored(paths), set(paths))
+        sources = ["assets/web-studio/index.html", "assets/web-studio/amber-study.webp",
+                   "tests/integration/lan_web_browser.cjs"]
+        self.assertEqual(self.ignored(sources), set())
+
     def test_runtime_ane_runs_and_legacy_output_directories_stay_local(self):
         paths = ["output/run/request.json", "Output/run/image.png",
                  "outputs/qwen-runtime/trial/report.json",

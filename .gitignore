@@ -50,12 +50,17 @@ htmlcov/
 venv/
 env/
 ENV/
-/build/
-/dist/
 *.egg-info/
 pip-wheel-metadata/
 
-# Native compiler/linker output, including out-of-tree experimental builds
+# Local browser tooling and Playwright output
+node_modules/
+/playwright-report/
+/test-results/
+
+# Native build and package output, including out-of-tree experimental builds
+/build/
+/dist/
 *.o
 *.a
 *.dylib
